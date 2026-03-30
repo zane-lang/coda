@@ -4,6 +4,9 @@
 #include "parser.hpp"
 #include <fstream>
 #include <sstream>
+#include <vector>
+#include <string>
+#include <map>
 
 class Coda {
 	std::string indentUnit = "\t"; 
@@ -20,35 +23,78 @@ class Coda {
 		return s;
 	}
 
-	static std::string serializeTableRow(const CodaTable& t, const std::vector<std::string>& fields) {
+	std::string serializeTableRow(const CodaTable& t, const std::vector<std::string>& fields) const {
 		std::string out;
 		for (size_t i = 0; i < fields.size(); ++i) {
-			out += serializeToken(t.content.at(fields[i]).asString()); // <- Add .asString()
+			out += serializeValue(t.content.at(fields[i]), 0); 
 			if (i < fields.size() - 1) out += " ";
 		}
 		return out;
 	}
 
-	static std::vector<std::string> fieldsOf(const CodaTable& t) {
+	// Helper to check if a CodaTable is a "Keyed Table" (a collection of rows)
+	bool isKeyedTable(const CodaTable& t) const {
+		if (t.content.empty()) return false;
+		// If the values inside this table are themselves tables, it's a keyed collection
+		return std::holds_alternative<CodaTable>(t.content.begin()->second.content.value);
+	}
+
+	// Helper to extract field names from the first row of a keyed table
+	std::vector<std::string> fieldsOfKeyed(const CodaTable& t) const {
 		std::vector<std::string> fields;
-		for (const auto& [k, _] : t.content) fields.push_back(k);
+		if (t.content.empty()) return fields;
+		
+		// The first value in the table is the first row
+		const CodaTable& firstRow = t.content.begin()->second.asTable();
+		for (const auto& [k, _] : firstRow.content) {
+			fields.push_back(k);
+		}
 		return fields;
 	}
 
+	std::string serializeKeyedTable(const CodaTable& t, int indent) const {
+		if (t.content.empty()) return "[]";
+		
+		std::vector<std::string> fields = fieldsOfKeyed(t);
+		std::string out = "[\n";
+
+		// Header: key field1 field2 ...
+		out += pad(indent + 1) + "key";
+		for (const auto& f : fields) out += " " + serializeToken(f);
+		out += "\n";
+
+		// Rows: rowKey val1 val2 ...
+		for (const auto& [rowKey, rowVal] : t.content) {
+			out += pad(indent + 1) + serializeToken(rowKey);
+			const CodaTable& row = rowVal.asTable();
+			for (const auto& f : fields) {
+				out += " " + serializeValue(row.content.at(f), 0);
+			}
+			out += "\n";
+		}
+
+		out += pad(indent) + "]";
+		return out;
+	}
+
 	std::string serializeValue(const CodaValue& val, int indent) const {
-		return val.content.visit(overloaded{
-			[](const std::string& s) { return serializeToken(s); },
-			[&](const CodaBlock& b)   { return serializeBlock(b, indent); },
-			[&](const CodaArray& a)   { return serializeArray(a, indent); },
-			[](const CodaTable& t) {
+		return val.content.match(
+			[](const std::string& s) -> std::string { return serializeToken(s); },
+			[&](const CodaBlock& b)   -> std::string { return serializeBlock(b, indent); },
+			[&](const CodaArray& a)   -> std::string { return serializeArray(a, indent); },
+			[&](const CodaTable& t)   -> std::string {
+				if (isKeyedTable(t)) {
+					return serializeKeyedTable(t, indent);
+				}
+				// Fallback for "Plain Table" rows (inline serialization)
 				std::string out;
 				for (auto it = t.content.begin(); it != t.content.end(); ++it) {
-					out += serializeToken(it->second.asString()); // <- Add .asString()
+					out += serializeValue(it->second, 0);
 					if (std::next(it) != t.content.end()) out += " ";
 				}
 				return out;
 			}
-		});
+		);
 	}
 
 	std::string serializeBlock(const CodaBlock& block, int indent) const {
@@ -64,71 +110,53 @@ class Coda {
 		std::vector<std::string> containers;
 
 		for (const auto& [k, v] : m) {
-			if constexpr (std::is_same_v<T, Ptr<CodaValue>>) {
-				if (v->isContainer()) containers.push_back(k);
-				else scalars.push_back(k);
-			} else {
-				if (v.isContainer()) containers.push_back(k);
-				else scalars.push_back(k);
-			}
+			if (v.isContainer()) containers.push_back(k);
+			else scalars.push_back(k);
 		}
 
 		std::string out;
 		for (const auto& k : scalars) {
-			if constexpr (std::is_same_v<T, Ptr<CodaValue>>) 
-				out += pad(indent) + k + " " + serializeValue(*m.at(k), indent) + "\n";
-			else 
-				out += pad(indent) + k + " " + serializeValue(m.at(k), indent) + "\n";
+			out += pad(indent) + k + " " + serializeValue(m.at(k), indent) + "\n";
 		}
 
 		for (const auto& k : containers) {
-			out += "\n"; // Padding above container
-			if constexpr (std::is_same_v<T, Ptr<CodaValue>>) 
-				out += pad(indent) + k + " " + serializeValue(*m.at(k), indent) + "\n";
-			else 
-				out += pad(indent) + k + " " + serializeValue(m.at(k), indent) + "\n";
+			out += "\n"; 
+			out += pad(indent) + k + " " + serializeValue(m.at(k), indent) + "\n";
 		}
 		return out;
 	}
 
 	std::string serializeArray(const CodaArray& array, int indent) const {
+		if (array.content.empty()) return "[]";
+		
 		std::string out = "[\n";
-		out += array.content.visit(overloaded{
-			[&](const std::map<std::string, CodaValue>& table) {
-				std::string inner;
-				if (table.empty()) return inner;
-				auto fields = fieldsOf(table.begin()->second.asTable());
-				inner += pad(indent + 1) + "key";
-				for (const auto& f : fields) inner += " " + f;
-				inner += "\n";
-				for (const auto& [rowKey, rowVal] : table) {
-					inner += pad(indent + 1) + serializeToken(rowKey) + " "
-						+ serializeTableRow(rowVal.asTable(), fields) + "\n";
-				}
-				return inner;
-			},
-			[&](const std::vector<CodaValue>& list) {
-				std::string inner;
-				if (list.empty()) return inner;
-				if (std::get_if<CodaTable>(&list[0].content.value)) {
-					auto fields = fieldsOf(list[0].asTable());
-					inner += pad(indent + 1);
+		
+		// Check if this is a "Plain Table" array (array of CodaTables)
+		if (std::holds_alternative<CodaTable>(array[0].content.value)) {
+			// Get fields from the first row
+			const CodaTable& firstRow = array[0].asTable();
+			std::vector<std::string> fields;
+			for (const auto& [k, _] : firstRow.content) fields.push_back(k);
 
-					for (size_t i = 0; i < fields.size(); ++i) {
-						inner += fields[i];
-						if (i < fields.size() - 1) inner += " ";
-					}
-
-					inner += "\n";
-					for (const auto& row : list)
-					inner += pad(indent + 1) + serializeTableRow(row.asTable(), fields) + "\n";
-				} else {
-					for (const auto& v : list)
-					inner += pad(indent + 1) + serializeValue(v, indent + 1) + "\n";
-				}
-				return inner;
+			// Header row
+			out += pad(indent + 1);
+			for (size_t i = 0; i < fields.size(); ++i) {
+				out += fields[i] + (i < fields.size() - 1 ? " " : "");
 			}
-		});
+			out += "\n";
+
+			// Data rows
+			for (const auto& row : array) {
+				out += pad(indent + 1) + serializeTableRow(row.asTable(), fields) + "\n";
+			}
+		}
+		else {
+			// Bare list (array of scalars or nested blocks)
+			for (const auto& v : array) {
+				out += pad(indent + 1) + serializeValue(v, indent + 1) + "\n";
+			}
+		}
+		
 		out += pad(indent) + "]";
 		return out;
 	}

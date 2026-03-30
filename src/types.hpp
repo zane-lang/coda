@@ -54,15 +54,14 @@ struct Variant {
 		return std::visit(std::forward<Callback>(callback), value);
 	}
 
-	// Match with callbacks - automatically adds a no-op catch-all if needed
 	template<typename... Callbacks>
 	decltype(auto) match(Callbacks&&... callbacks) {
-		return std::visit(overloaded{std::forward<Callbacks>(callbacks)..., [](auto&&){}}, value);
+		return std::visit(overloaded{std::forward<Callbacks>(callbacks)...}, value);
 	}
 
 	template<typename... Callbacks>
 	decltype(auto) match(Callbacks&&... callbacks) const {
-		return std::visit(overloaded{std::forward<Callbacks>(callbacks)..., [](auto&&){}}, value);
+		return std::visit(overloaded{std::forward<Callbacks>(callbacks)...}, value);
 	}
 
 	template<typename Archive>
@@ -109,15 +108,14 @@ struct WrappingVariant {
 		return std::visit(std::forward<Callback>(callback), value);
 	}
 
-	// Match with callbacks - automatically adds a no-op catch-all if needed
 	template<typename... Callbacks>
 	decltype(auto) match(Callbacks&&... callbacks) {
-		return std::visit(overloaded{std::forward<Callbacks>(callbacks)..., [](auto&&){}}, value);
+		return std::visit(overloaded{std::forward<Callbacks>(callbacks)...}, value);
 	}
 
 	template<typename... Callbacks>
 	decltype(auto) match(Callbacks&&... callbacks) const {
-		return std::visit(overloaded{std::forward<Callbacks>(callbacks)..., [](auto&&){}}, value);
+		return std::visit(overloaded{std::forward<Callbacks>(callbacks)...}, value);
 	}
 
 	template<typename Archive>

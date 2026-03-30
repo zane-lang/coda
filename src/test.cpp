@@ -4,7 +4,12 @@
 
 int main() {
 	Coda coda("test.coda");
-	std::cout << coda["deps"]["http"]["link"].asString();
+
+	// deps is a keyed CodaTable
+	for (auto& [k, v] : coda["deps"].asTable()) {
+		std::cout << k << " -> " << v["link"].asString() << "\n";
+	}
+
 	coda.save("test.coda");
 	return 0;
 }

@@ -115,22 +115,26 @@ public:
 		CodaFile file;
 		skipNewlines();
 		while (current.type != TokenType::Eof) {
-			std::string key      = expect(TokenType::Ident).value;
+			if (current.type == TokenType::Newline) { advance(); continue; }
+
+			std::string key = expect(TokenType::Ident).value;
 			file.statements[key] = parseValue();
+
 			skipNewlines();
 		}
 		return file;
 	}
 
 private:
-	Ptr<CodaValue> parseValue() {
+	CodaValue parseValue() {
 		if (current.type == TokenType::LBrace)
-			return makePtr<CodaValue>(CodaValue{parseBlock()});
+			return CodaValue{parseBlock()};
 		if (current.type == TokenType::LBracket)
-			return makePtr<CodaValue>(CodaValue{parseArray()});
+			return parseArray();
+
 		std::string val = current.value;
 		advance();
-		return makePtr<CodaValue>(CodaValue{val});
+		return CodaValue { val };
 	}
 
 	CodaBlock parseBlock() {
@@ -138,13 +142,17 @@ private:
 		skipNewlines();
 		CodaBlock block;
 
-		std::map<std::string, Ptr<CodaValue>> children;
+		std::map<std::string, CodaValue> children; 
+
 		while (current.type != TokenType::RBrace && current.type != TokenType::Eof) {
 			if (current.type == TokenType::Newline) { advance(); continue; }
 			if (current.type == TokenType::Key)
 				throw std::runtime_error("key header not allowed in block — use [] for tables");
+
 			std::string key = expect(TokenType::Ident).value;
-			children[key]   = parseValue();
+
+			children[key] = parseValue(); 
+
 			skipNewlines();
 		}
 		block.content = std::move(children);
@@ -153,10 +161,9 @@ private:
 		return block;
 	}
 
-	CodaArray parseArray() {
+	CodaValue parseArray() {
 		expect(TokenType::LBracket);
 		skipNewlines();
-		CodaArray array;
 
 		if (current.type == TokenType::Key) {
 			// keyed table — no nesting allowed
@@ -166,7 +173,7 @@ private:
 				fields.push_back(advance().value);
 			skipNewlines();
 
-			std::map<std::string, CodaValue> table;
+			CodaTable table;
 			while (current.type != TokenType::RBracket && current.type != TokenType::Eof) {
 				auto row = collectFlatRow();
 				skipNewlines();
@@ -175,21 +182,27 @@ private:
 				CodaTable entry;
 				for (size_t i = 0; i < fields.size() && (i + 1) < row.size(); i++)
 					entry.content[fields[i]] = row[i + 1];
-				table[rowKey] = CodaValue{std::move(entry)};
+				table.content[rowKey] = CodaValue{std::move(entry)};
 			}
-			array.content = std::move(table);
+			
+			expect(TokenType::RBracket);
+			return CodaValue{std::move(table)};
 
 		} else if (current.type == TokenType::LBrace
 				|| current.type == TokenType::LBracket) {
 			// starts with a nested value — bare list, nesting allowed
+			CodaArray array;
 			std::vector<CodaValue> list;
 			while (current.type != TokenType::RBracket && current.type != TokenType::Eof) {
 				skipNewlines();
 				if (current.type == TokenType::RBracket) break;
-				list.push_back(*parseValue());
+				list.push_back(parseValue());
 				skipNewlines();
 			}
 			array.content = std::move(list);
+			
+			expect(TokenType::RBracket);
+			return CodaValue{std::move(array)};
 
 		} else {
 			// peek at first line to decide: plain table or bare list
@@ -198,6 +211,7 @@ private:
 
 			if (firstRow.size() > 1) {
 				// plain table — firstRow is the header, no nesting allowed
+				CodaArray array;
 				std::vector<CodaValue> rows;
 				while (current.type != TokenType::RBracket && current.type != TokenType::Eof) {
 					auto row = collectFlatRow();
@@ -209,23 +223,27 @@ private:
 					rows.push_back(CodaValue{std::move(entry)});
 				}
 				array.content = std::move(rows);
+				
+				expect(TokenType::RBracket);
+				return CodaValue{std::move(array)};
 
 			} else {
 				// bare list — nesting allowed for subsequent elements
+				CodaArray array;
 				std::vector<CodaValue> list;
 				if (!firstRow.empty())
 					list.push_back(CodaValue { firstRow [0]});
 				while (current.type != TokenType::RBracket && current.type != TokenType::Eof) {
 					skipNewlines();
 					if (current.type == TokenType::RBracket) break;
-					list.push_back(*parseValue());
+					list.push_back(parseValue());
 					skipNewlines();
 				}
 				array.content = std::move(list);
+				
+				expect(TokenType::RBracket);
+				return CodaValue{std::move(array)};
 			}
 		}
-
-		expect(TokenType::RBracket);
-		return array;
 	}
 };
