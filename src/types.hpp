@@ -66,17 +66,17 @@ struct Variant {
 	}
 
 	template<typename Archive>
-    void save(Archive& ar) const {
-        ar(value.index());
-        std::visit([&ar](const auto& v) { ar(v); }, value);
-    }
+	void save(Archive& ar) const {
+		ar(value.index());
+		std::visit([&ar](const auto& v) { ar(v); }, value);
+	}
 
-    template<typename Archive>
-    void load(Archive& ar) {
-        std::size_t idx;
-        ar(idx);
-        loadVariantAt<0>(idx, value, ar);
-    }
+	template<typename Archive>
+	void load(Archive& ar) {
+		std::size_t idx;
+		ar(idx);
+		loadVariantAt<0>(idx, value, ar);
+	}
 };
 
 template<template<typename> class Wrapper, typename... Types>
@@ -121,15 +121,15 @@ struct WrappingVariant {
 	}
 
 	template<typename Archive>
-    void save(Archive& ar) const {
-        ar(value.index());
-        std::visit([&ar](const auto& v) { ar(v); }, value);
-    }
+	void save(Archive& ar) const {
+		ar(value.index());
+		std::visit([&ar](const auto& v) { ar(v); }, value);
+	}
 
-    template<typename Archive>
-    void load(Archive& ar) {
-        std::size_t idx;
-        ar(idx);
-        loadVariantAt<0>(idx, value, ar);
-    }
+	template<typename Archive>
+	void load(Archive& ar) {
+		std::size_t idx;
+		ar(idx);
+		loadVariantAt<0>(idx, value, ar);
+	}
 };

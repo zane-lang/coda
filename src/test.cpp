@@ -4,7 +4,7 @@
 
 int main() {
 	Coda coda("test.coda");
-	std::cout << (coda["test"][0]["link"].asString());
+	std::cout << (std::string)coda["deps"]["http"]["link"];
 	coda.save("test.coda");
 	return 0;
 }
