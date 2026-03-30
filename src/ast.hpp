@@ -6,153 +6,153 @@
 #include <vector>
 #include <stdexcept>
 
-struct ZifValue;
-struct ZifBlock;
-struct ZifArray;
-struct ZifTable;
+struct CodaValue;
+struct CodaBlock;
+struct CodaArray;
+struct CodaTable;
 
-struct ZifTable {
-	std::map<std::string, ZifValue> content;
+struct CodaTable {
+	std::map<std::string, CodaValue> content;
 
-	const ZifValue& operator[](const std::string& key) const {
+	const CodaValue& operator[](const std::string& key) const {
 		return content.at(key);
 	}
-	ZifValue& operator[](const std::string& key) {
+	CodaValue& operator[](const std::string& key) {
 		return content.at(key);
 	}
 };
 
-struct ZifBlock {
+struct CodaBlock {
     Variant<
-        std::map<std::string, Ptr<ZifValue>>,  // struct mode — nesting allowed
-        std::map<std::string, ZifValue>         // table mode — ZifValue wraps ZifTable
+        std::map<std::string, Ptr<CodaValue>>,  // struct mode — nesting allowed
+        std::map<std::string, CodaValue>         // table mode — CodaValue wraps CodaTable
     > content;
-    const ZifValue& operator[](const std::string& key) const;
+    const CodaValue& operator[](const std::string& key) const;
 };
 
-struct ZifArray {
+struct CodaArray {
     Variant<
-        std::map<std::string, ZifValue>,  // keyed table — ZifValue wraps ZifTable
-        std::vector<ZifValue>             // bare list or plain table rows
+        std::map<std::string, CodaValue>,  // keyed table — CodaValue wraps CodaTable
+        std::vector<CodaValue>             // bare list or plain table rows
     > content;
-    const ZifValue& operator[](const std::string& key) const;
-    const ZifValue& operator[](size_t i) const;
+    const CodaValue& operator[](const std::string& key) const;
+    const CodaValue& operator[](size_t i) const;
 };
 
-struct ZifValue {
+struct CodaValue {
     Variant<
         std::string,
-        ZifBlock,
-        ZifArray,
-        ZifTable
+        CodaBlock,
+        CodaArray,
+        CodaTable
     > content;
 
-	ZifValue() : content(std::string("")) {}
-	ZifValue(std::string str) : content(std::move(str)) {}
-	ZifValue(ZifBlock block)   : content(std::move(block)) {}
-	ZifValue(ZifArray arr)     : content(std::move(arr)) {}
-	ZifValue(ZifTable table)   : content(std::move(table)) {}
-	ZifValue(const char* str)  : content(std::string(str)) {}
+	CodaValue() : content(std::string("")) {}
+	CodaValue(std::string str) : content(std::move(str)) {}
+	CodaValue(CodaBlock block)   : content(std::move(block)) {}
+	CodaValue(CodaArray arr)     : content(std::move(arr)) {}
+	CodaValue(CodaTable table)   : content(std::move(table)) {}
+	CodaValue(const char* str)  : content(std::string(str)) {}
 
-	ZifValue& operator=(std::string str) {
+	CodaValue& operator=(std::string str) {
 		content = std::move(str);
 		return *this;
 	}
 
-	ZifValue& operator=(ZifBlock block) {
+	CodaValue& operator=(CodaBlock block) {
 		content = std::move(block);
 		return *this;
 	}
 
-	ZifValue& operator=(ZifArray arr) {
+	CodaValue& operator=(CodaArray arr) {
 		content = std::move(arr);
 		return *this;
 	}
 
-	ZifValue& operator=(ZifTable table) {
+	CodaValue& operator=(CodaTable table) {
 		content = std::move(table);
 		return *this;
 	}
 
-	ZifValue& operator=(const char* str) {
+	CodaValue& operator=(const char* str) {
 		content = std::string(str);
 		return *this;
 	}
 
-    const ZifValue& operator[](const std::string& key) const {
+    const CodaValue& operator[](const std::string& key) const {
         return content.visit(overloaded{
-            [&](const ZifBlock& b) -> const ZifValue& { return b[key]; },
-            [&](const ZifArray& a) -> const ZifValue& { return a[key]; },
-			[&](const ZifTable& t) -> const ZifValue& { return t[key]; },
-            [](const auto&) -> const ZifValue& {
+            [&](const CodaBlock& b) -> const CodaValue& { return b[key]; },
+            [&](const CodaArray& a) -> const CodaValue& { return a[key]; },
+			[&](const CodaTable& t) -> const CodaValue& { return t[key]; },
+            [](const auto&) -> const CodaValue& {
                 throw std::runtime_error("type does not support string indexing");
             }
         });
     }
-    const ZifValue& operator[](size_t i) const {
+    const CodaValue& operator[](size_t i) const {
         return content.visit(overloaded{
-            [&](const ZifArray& a) -> const ZifValue& { return a[i]; },
-            [](const auto&) -> const ZifValue& {
+            [&](const CodaArray& a) -> const CodaValue& { return a[i]; },
+            [](const auto&) -> const CodaValue& {
                 throw std::runtime_error("type does not support integer indexing");
             }
         });
     }
 
-	ZifValue& operator[](const std::string& key) {
-		return const_cast<ZifValue&>(static_cast<const ZifValue&>(*this)[key]);
+	CodaValue& operator[](const std::string& key) {
+		return const_cast<CodaValue&>(static_cast<const CodaValue&>(*this)[key]);
 	}
 
-	ZifValue& operator[](size_t i) {
-		return const_cast<ZifValue&>(static_cast<const ZifValue&>(*this)[i]);
+	CodaValue& operator[](size_t i) {
+		return const_cast<CodaValue&>(static_cast<const CodaValue&>(*this)[i]);
 	}
 
     const std::string& asString() const { return std::get<std::string>(content.value); }
-    const ZifBlock&    asBlock()  const { return std::get<ZifBlock>(content.value); }
-    const ZifArray&    asArray()  const { return std::get<ZifArray>(content.value); }
-    const ZifTable&    asTable()  const { return std::get<ZifTable>(content.value); }
+    const CodaBlock&    asBlock()  const { return std::get<CodaBlock>(content.value); }
+    const CodaArray&    asArray()  const { return std::get<CodaArray>(content.value); }
+    const CodaTable&    asTable()  const { return std::get<CodaTable>(content.value); }
 
 	bool isContainer() const {
-		return std::holds_alternative<ZifBlock>(content.value) ||
-			std::holds_alternative<ZifArray>(content.value);
+		return std::holds_alternative<CodaBlock>(content.value) ||
+			std::holds_alternative<CodaArray>(content.value);
 	}
 };
 
-inline const ZifValue& ZifBlock::operator[](const std::string& key) const {
+inline const CodaValue& CodaBlock::operator[](const std::string& key) const {
     return content.visit(overloaded{
-        [&](const std::map<std::string, Ptr<ZifValue>>& m) -> const ZifValue& {
+        [&](const std::map<std::string, Ptr<CodaValue>>& m) -> const CodaValue& {
             return *m.at(key);
         },
-        [&](const std::map<std::string, ZifValue>& m) -> const ZifValue& {
+        [&](const std::map<std::string, CodaValue>& m) -> const CodaValue& {
             return m.at(key);
         }
     });
 }
 
-inline const ZifValue& ZifArray::operator[](const std::string& key) const {
+inline const CodaValue& CodaArray::operator[](const std::string& key) const {
     return content.visit(overloaded{
-        [&](const std::map<std::string, ZifValue>& m) -> const ZifValue& {
+        [&](const std::map<std::string, CodaValue>& m) -> const CodaValue& {
             return m.at(key);
         },
-        [](const auto&) -> const ZifValue& {
+        [](const auto&) -> const CodaValue& {
             throw std::runtime_error("not a keyed table");
         }
     });
 }
 
-inline const ZifValue& ZifArray::operator[](size_t i) const {
+inline const CodaValue& CodaArray::operator[](size_t i) const {
     return content.visit(overloaded{
-        [&](const std::vector<ZifValue>& v) -> const ZifValue& {
+        [&](const std::vector<CodaValue>& v) -> const CodaValue& {
             return v.at(i);
         },
-        [](const auto&) -> const ZifValue& {
+        [](const auto&) -> const CodaValue& {
             throw std::runtime_error("not a list");
         }
     });
 }
 
-struct ZifFile {
-    std::map<std::string, Ptr<ZifValue>> statements;
-    const ZifValue& operator[](const std::string& key) const { return *statements.at(key); }
-    ZifValue&       operator[](const std::string& key)       { return *statements.at(key); }
+struct CodaFile {
+    std::map<std::string, Ptr<CodaValue>> statements;
+    const CodaValue& operator[](const std::string& key) const { return *statements.at(key); }
+    CodaValue&       operator[](const std::string& key)       { return *statements.at(key); }
     bool has(const std::string& key) const { return statements.count(key) > 0; }
 };

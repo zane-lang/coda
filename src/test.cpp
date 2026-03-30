@@ -1,10 +1,10 @@
-#include "zif.hpp"
+#include "coda.hpp"
 #include <cassert>
 #include <iostream>
 
 int main() {
-	Zif zif("test.zif");
-	std::cout << (zif["test"][0]["link"].asString());
-	zif.save("test.zif");
+	Coda coda("test.code");
+	std::cout << (coda["test"][0]["link"].asString());
+	coda.save("test.coda");
 	return 0;
 }

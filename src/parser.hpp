@@ -21,7 +21,7 @@ class Lexer {
     std::string src;
     size_t      pos = 0;
 
-    char peek()    { return pos < src.size() ? src[pos] : '\0'; }
+    char peek() { return pos < src.size() ? src[pos] : '\0'; }
     char advance() { return src[pos++]; }
 
     void skipHorizontal() {
@@ -111,8 +111,8 @@ public:
         lookahead = lexer.next();
     }
 
-    ZifFile parseFile() {
-        ZifFile file;
+    CodaFile parseFile() {
+        CodaFile file;
         skipNewlines();
         while (current.type != TokenType::Eof) {
             std::string key      = expect(TokenType::Ident).value;
@@ -123,20 +123,20 @@ public:
     }
 
 private:
-    Ptr<ZifValue> parseValue() {
+    Ptr<CodaValue> parseValue() {
         if (current.type == TokenType::LBrace)
-            return makePtr<ZifValue>(ZifValue{parseBlock()});
+            return makePtr<CodaValue>(CodaValue{parseBlock()});
         if (current.type == TokenType::LBracket)
-            return makePtr<ZifValue>(ZifValue{parseArray()});
+            return makePtr<CodaValue>(CodaValue{parseArray()});
         std::string val = current.value;
         advance();
-        return makePtr<ZifValue>(ZifValue{val});
+        return makePtr<CodaValue>(CodaValue{val});
     }
 
-    ZifBlock parseBlock() {
+    CodaBlock parseBlock() {
         expect(TokenType::LBrace);
         skipNewlines();
-        ZifBlock block;
+        CodaBlock block;
 
         if (current.type == TokenType::Key) {
             // table mode — no nesting allowed
@@ -146,22 +146,22 @@ private:
                 fields.push_back(advance().value);
             skipNewlines();
 
-            std::map<std::string, ZifValue> table;
+            std::map<std::string, CodaValue> table;
             while (current.type != TokenType::RBrace && current.type != TokenType::Eof) {
                 auto row = collectFlatRow();
                 skipNewlines();
                 if (row.empty()) continue;
                 std::string rowKey = row[0];
-                ZifTable entry;
+                CodaTable entry;
                 for (size_t i = 0; i < fields.size() && (i + 1) < row.size(); i++)
                     entry.content[fields[i]] = row[i + 1];
-                table[rowKey] = ZifValue{std::move(entry)};
+                table[rowKey] = CodaValue{std::move(entry)};
             }
             block.content = std::move(table);
 
         } else {
             // struct mode — nesting allowed
-            std::map<std::string, Ptr<ZifValue>> children;
+            std::map<std::string, Ptr<CodaValue>> children;
             while (current.type != TokenType::RBrace && current.type != TokenType::Eof) {
                 if (current.type == TokenType::Newline) { advance(); continue; }
                 std::string key = expect(TokenType::Ident).value;
@@ -175,10 +175,10 @@ private:
         return block;
     }
 
-    ZifArray parseArray() {
+    CodaArray parseArray() {
         expect(TokenType::LBracket);
         skipNewlines();
-        ZifArray array;
+        CodaArray array;
 
         if (current.type == TokenType::Key) {
             // keyed table — no nesting allowed
@@ -188,23 +188,23 @@ private:
                 fields.push_back(advance().value);
             skipNewlines();
 
-            std::map<std::string, ZifValue> table;
+            std::map<std::string, CodaValue> table;
             while (current.type != TokenType::RBracket && current.type != TokenType::Eof) {
                 auto row = collectFlatRow();
                 skipNewlines();
                 if (row.empty()) continue;
                 std::string rowKey = row[0];
-                ZifTable entry;
+                CodaTable entry;
                 for (size_t i = 0; i < fields.size() && (i + 1) < row.size(); i++)
                     entry.content[fields[i]] = row[i + 1];
-                table[rowKey] = ZifValue{std::move(entry)};
+                table[rowKey] = CodaValue{std::move(entry)};
             }
             array.content = std::move(table);
 
         } else if (current.type == TokenType::LBrace
                 || current.type == TokenType::LBracket) {
             // starts with a nested value — bare list, nesting allowed
-            std::vector<ZifValue> list;
+            std::vector<CodaValue> list;
             while (current.type != TokenType::RBracket && current.type != TokenType::Eof) {
                 skipNewlines();
                 if (current.type == TokenType::RBracket) break;
@@ -220,23 +220,23 @@ private:
 
             if (firstRow.size() > 1) {
                 // plain table — firstRow is the header, no nesting allowed
-                std::vector<ZifValue> rows;
+                std::vector<CodaValue> rows;
                 while (current.type != TokenType::RBracket && current.type != TokenType::Eof) {
                     auto row = collectFlatRow();
                     skipNewlines();
                     if (row.empty()) continue;
-                    ZifTable entry;
+                    CodaTable entry;
                     for (size_t i = 0; i < firstRow.size() && i < row.size(); i++)
                         entry.content[firstRow[i]] = row[i];
-                    rows.push_back(ZifValue{std::move(entry)});
+                    rows.push_back(CodaValue{std::move(entry)});
                 }
                 array.content = std::move(rows);
 
             } else {
                 // bare list — nesting allowed for subsequent elements
-                std::vector<ZifValue> list;
+                std::vector<CodaValue> list;
                 if (!firstRow.empty())
-                    list.push_back(ZifValue{firstRow[0]});
+                    list.push_back(CodaValue { firstRow [0]});
                 while (current.type != TokenType::RBracket && current.type != TokenType::Eof) {
                     skipNewlines();
                     if (current.type == TokenType::RBracket) break;
