@@ -12,10 +12,14 @@ struct ZifArray;
 struct ZifTable;
 
 struct ZifTable {
-    std::map<std::string, std::string> content;
-    const std::string& operator[](const std::string& key) const {
-        return content.at(key);
-    }
+	std::map<std::string, ZifValue> content;
+
+	const ZifValue& operator[](const std::string& key) const {
+		return content.at(key);
+	}
+	ZifValue& operator[](const std::string& key) {
+		return content.at(key);
+	}
 };
 
 struct ZifBlock {
@@ -79,6 +83,7 @@ struct ZifValue {
         return content.visit(overloaded{
             [&](const ZifBlock& b) -> const ZifValue& { return b[key]; },
             [&](const ZifArray& a) -> const ZifValue& { return a[key]; },
+			[&](const ZifTable& t) -> const ZifValue& { return t[key]; },
             [](const auto&) -> const ZifValue& {
                 throw std::runtime_error("type does not support string indexing");
             }
@@ -105,6 +110,11 @@ struct ZifValue {
     const ZifBlock&    asBlock()  const { return std::get<ZifBlock>(content.value); }
     const ZifArray&    asArray()  const { return std::get<ZifArray>(content.value); }
     const ZifTable&    asTable()  const { return std::get<ZifTable>(content.value); }
+
+	bool isContainer() const {
+		return std::holds_alternative<ZifBlock>(content.value) ||
+			std::holds_alternative<ZifArray>(content.value);
+	}
 };
 
 inline const ZifValue& ZifBlock::operator[](const std::string& key) const {

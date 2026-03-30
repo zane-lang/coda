@@ -22,7 +22,7 @@ class Zif {
 	static std::string serializeTableRow(const ZifTable& t, const std::vector<std::string>& fields) {
 		std::string out;
 		for (size_t i = 0; i < fields.size(); ++i) {
-			out += serializeToken(t.content.at(fields[i]));
+			out += serializeToken(t.content.at(fields[i]).asString()); // <- Add .asString()
 			if (i < fields.size() - 1) out += " ";
 		}
 		return out;
@@ -42,7 +42,7 @@ class Zif {
 			[](const ZifTable& t) {
 				std::string out;
 				for (auto it = t.content.begin(); it != t.content.end(); ++it) {
-					out += serializeToken(it->second);
+					out += serializeToken(it->second.asString()); // <- Add .asString()
 					if (std::next(it) != t.content.end()) out += " ";
 				}
 				return out;
@@ -54,10 +54,7 @@ class Zif {
 		std::string out = "{\n";
 		out += block.content.visit(overloaded{
 			[&](const std::map<std::string, Ptr<ZifValue>>& children) {
-				std::string inner;
-				for (const auto& [k, v] : children)
-					inner += pad(indent + 1) + k + " " + serializeValue(*v, indent + 1) + "\n";
-				return inner;
+				return serializeSortedMap(children, indent + 1);
 			},
 			[&](const std::map<std::string, ZifValue>& table) {
 				std::string inner;
@@ -68,12 +65,45 @@ class Zif {
 				inner += "\n";
 				for (const auto& [rowKey, rowVal] : table) {
 					inner += pad(indent + 1) + serializeToken(rowKey) + " "
-						   + serializeTableRow(rowVal.asTable(), fields) + "\n";
+						+ serializeTableRow(rowVal.asTable(), fields) + "\n";
 				}
 				return inner;
 			}
 		});
 		out += pad(indent) + "}";
+		return out;
+	}
+
+	template<typename T>
+	std::string serializeSortedMap(const std::map<std::string, T>& m, int indent) const {
+		std::vector<std::string> scalars;
+		std::vector<std::string> containers;
+
+		for (const auto& [k, v] : m) {
+			if constexpr (std::is_same_v<T, Ptr<ZifValue>>) {
+				if (v->isContainer()) containers.push_back(k);
+				else scalars.push_back(k);
+			} else {
+				if (v.isContainer()) containers.push_back(k);
+				else scalars.push_back(k);
+			}
+		}
+
+		std::string out;
+		for (const auto& k : scalars) {
+			if constexpr (std::is_same_v<T, Ptr<ZifValue>>) 
+				out += pad(indent) + k + " " + serializeValue(*m.at(k), indent) + "\n";
+			else 
+				out += pad(indent) + k + " " + serializeValue(m.at(k), indent) + "\n";
+		}
+
+		for (const auto& k : containers) {
+			out += "\n"; // Padding above container
+			if constexpr (std::is_same_v<T, Ptr<ZifValue>>) 
+				out += pad(indent) + k + " " + serializeValue(*m.at(k), indent) + "\n";
+			else 
+				out += pad(indent) + k + " " + serializeValue(m.at(k), indent) + "\n";
+		}
 		return out;
 	}
 
@@ -89,7 +119,7 @@ class Zif {
 				inner += "\n";
 				for (const auto& [rowKey, rowVal] : table) {
 					inner += pad(indent + 1) + serializeToken(rowKey) + " "
-						   + serializeTableRow(rowVal.asTable(), fields) + "\n";
+						+ serializeTableRow(rowVal.asTable(), fields) + "\n";
 				}
 				return inner;
 			},
@@ -99,13 +129,18 @@ class Zif {
 				if (std::get_if<ZifTable>(&list[0].content.value)) {
 					auto fields = fieldsOf(list[0].asTable());
 					inner += pad(indent + 1);
-					for (const auto& f : fields) inner += f + " ";
+
+					for (size_t i = 0; i < fields.size(); ++i) {
+						inner += fields[i];
+						if (i < fields.size() - 1) inner += " ";
+					}
+
 					inner += "\n";
 					for (const auto& row : list)
-						inner += pad(indent + 1) + serializeTableRow(row.asTable(), fields) + "\n";
+					inner += pad(indent + 1) + serializeTableRow(row.asTable(), fields) + "\n";
 				} else {
 					for (const auto& v : list)
-						inner += pad(indent + 1) + serializeValue(v, indent + 1) + "\n";
+					inner += pad(indent + 1) + serializeValue(v, indent + 1) + "\n";
 				}
 				return inner;
 			}
@@ -132,19 +167,14 @@ public:
 	void save(const std::string& path) const {
 		std::ofstream f(path);
 		if (!f) throw std::runtime_error("could not open: " + path);
-		for (const auto& [k, v] : file.statements)
-			f << k << " " << serializeValue(*v, 0) << "\n";
+		f << serializeSortedMap(file.statements, 0);
 	}
 
 	void save(const std::string& path, std::string indentUnit) {
 		this->indentUnit = indentUnit;
-
-		std::ofstream f(path);
-		if (!f) throw std::runtime_error("could not open: " + path);
-		for (const auto& [k, v] : file.statements)
-			f << k << " " << serializeValue(*v, 0) << "\n";
+		save(path);
 	}
 
 	const ZifValue& operator[](const std::string& key) const { return file[key]; }
-	ZifValue&	   operator[](const std::string& key)	   { return file[key]; }
+	ZifValue& operator[](const std::string& key)	   { return file[key]; }
 };
