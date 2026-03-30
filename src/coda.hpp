@@ -53,24 +53,7 @@ class Coda {
 
 	std::string serializeBlock(const CodaBlock& block, int indent) const {
 		std::string out = "{\n";
-		out += block.content.visit(overloaded{
-			[&](const std::map<std::string, Ptr<CodaValue>>& children) {
-				return serializeSortedMap(children, indent + 1);
-			},
-			[&](const std::map<std::string, CodaValue>& table) {
-				std::string inner;
-				if (table.empty()) return inner;
-				auto fields = fieldsOf(table.begin()->second.asTable());
-				inner += pad(indent + 1) + "key";
-				for (const auto& f : fields) inner += " " + f;
-				inner += "\n";
-				for (const auto& [rowKey, rowVal] : table) {
-					inner += pad(indent + 1) + serializeToken(rowKey) + " "
-						+ serializeTableRow(rowVal.asTable(), fields) + "\n";
-				}
-				return inner;
-			}
-		});
+		out += serializeSortedMap(block.content, indent + 1);
 		out += pad(indent) + "}";
 		return out;
 	}

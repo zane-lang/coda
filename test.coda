@@ -22,9 +22,3 @@ targets [
 	x86_64-windows
 	aarch64-macos
 ]
-
-test [
-	link version
-	github.com/zane-lang/http 2.1.0
-	github.com/zane-lang/plot 4.0.3
-]

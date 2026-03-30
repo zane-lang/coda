@@ -138,38 +138,16 @@ private:
 		skipNewlines();
 		CodaBlock block;
 
-		if (current.type == TokenType::Key) {
-			// table mode — no nesting allowed
-			advance();
-			std::vector<std::string> fields;
-			while (current.type == TokenType::Ident || current.type == TokenType::String)
-				fields.push_back(advance().value);
+		std::map<std::string, Ptr<CodaValue>> children;
+		while (current.type != TokenType::RBrace && current.type != TokenType::Eof) {
+			if (current.type == TokenType::Newline) { advance(); continue; }
+			if (current.type == TokenType::Key)
+				throw std::runtime_error("key header not allowed in block — use [] for tables");
+			std::string key = expect(TokenType::Ident).value;
+			children[key]   = parseValue();
 			skipNewlines();
-
-			std::map<std::string, CodaValue> table;
-			while (current.type != TokenType::RBrace && current.type != TokenType::Eof) {
-				auto row = collectFlatRow();
-				skipNewlines();
-				if (row.empty()) continue;
-				std::string rowKey = row[0];
-				CodaTable entry;
-				for (size_t i = 0; i < fields.size() && (i + 1) < row.size(); i++)
-					entry.content[fields[i]] = row[i + 1];
-				table[rowKey] = CodaValue{std::move(entry)};
-			}
-			block.content = std::move(table);
-
-		} else {
-			// struct mode — nesting allowed
-			std::map<std::string, Ptr<CodaValue>> children;
-			while (current.type != TokenType::RBrace && current.type != TokenType::Eof) {
-				if (current.type == TokenType::Newline) { advance(); continue; }
-				std::string key = expect(TokenType::Ident).value;
-				children[key]   = parseValue();
-				skipNewlines();
-			}
-			block.content = std::move(children);
 		}
+		block.content = std::move(children);
 
 		expect(TokenType::RBrace);
 		return block;
