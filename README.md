@@ -63,7 +63,7 @@ Coda is whitespace-sensitive. Every leaf value is a string — there are no bool
 ```coda
 name myproject
 type executable
-author "Alber Einstein"
+author "Albert Einstein"
 ```
 
 Coda has three structural constructs: **blocks** `{}`, **arrays** `[]`, and **tables**. Tables are not a separate syntax — they emerge from a header row inside an array.
