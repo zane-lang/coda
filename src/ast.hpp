@@ -1,54 +1,107 @@
 #pragma once
-
 #include "types.hpp"
 #include "zane_ptr.hpp"
-
 #include <map>
 #include <string>
 #include <vector>
+#include <stdexcept>
 
 struct ZifValue;
-
-struct ZifFile {
-	std::map<std::string, Ptr<ZifValue>> statements;
-};
+struct ZifBlock;
+struct ZifArray;
+struct ZifTable;
 
 struct ZifTable {
-	std::map<std::string, std::string> content;
+    std::map<std::string, std::string> content;
+    const std::string& operator[](const std::string& key) const {
+        return content.at(key);
+    }
 };
 
-
-// {} — either struct-like children or a keyed table
 struct ZifBlock {
-	Variant<
-	std::map<std::string, Ptr<ZifValue>>,
-	std::map<std::string, ZifTable>
-	> content;
+    Variant<
+        std::map<std::string, Ptr<ZifValue>>,  // struct mode — nesting allowed
+        std::map<std::string, ZifValue>         // table mode — ZifValue wraps ZifTable
+    > content;
+    const ZifValue& operator[](const std::string& key) const;
 };
 
-// [] — keyed table, plain table, or bare list
 struct ZifArray {
-	Variant<
-	std::map<std::string, ZifTable>,
-	std::vector<std::string>,
-	std::vector<ZifTable>
-	> content;
+    Variant<
+        std::map<std::string, ZifValue>,  // keyed table — ZifValue wraps ZifTable
+        std::vector<ZifValue>             // bare list or plain table rows
+    > content;
+    const ZifValue& operator[](const std::string& key) const;
+    const ZifValue& operator[](size_t i) const;
 };
 
 struct ZifValue {
-	Variant<
-		std::string,
-		ZifBlock,
-		ZifArray
-	> content;
+    Variant<
+        std::string,
+        ZifBlock,
+        ZifArray,
+        ZifTable
+    > content;
 
-    const std::string& asString() const {
-        return std::get<std::string>(content.value);
+    const ZifValue& operator[](const std::string& key) const {
+        return content.visit(overloaded{
+            [&](const ZifBlock& b) -> const ZifValue& { return b[key]; },
+            [&](const ZifArray& a) -> const ZifValue& { return a[key]; },
+            [](const auto&) -> const ZifValue& {
+                throw std::runtime_error("type does not support string indexing");
+            }
+        });
     }
-    const ZifBlock& asBlock() const {
-        return std::get<ZifBlock>(content.value);
+    const ZifValue& operator[](size_t i) const {
+        return content.visit(overloaded{
+            [&](const ZifArray& a) -> const ZifValue& { return a[i]; },
+            [](const auto&) -> const ZifValue& {
+                throw std::runtime_error("type does not support integer indexing");
+            }
+        });
     }
-    const ZifArray& asArray() const {
-        return std::get<ZifArray>(content.value);
-    }
+    const std::string& asString() const { return std::get<std::string>(content.value); }
+    const ZifBlock&    asBlock()  const { return std::get<ZifBlock>(content.value); }
+    const ZifArray&    asArray()  const { return std::get<ZifArray>(content.value); }
+    const ZifTable&    asTable()  const { return std::get<ZifTable>(content.value); }
+};
+
+inline const ZifValue& ZifBlock::operator[](const std::string& key) const {
+    return content.visit(overloaded{
+        [&](const std::map<std::string, Ptr<ZifValue>>& m) -> const ZifValue& {
+            return *m.at(key);
+        },
+        [&](const std::map<std::string, ZifValue>& m) -> const ZifValue& {
+            return m.at(key);
+        }
+    });
+}
+
+inline const ZifValue& ZifArray::operator[](const std::string& key) const {
+    return content.visit(overloaded{
+        [&](const std::map<std::string, ZifValue>& m) -> const ZifValue& {
+            return m.at(key);
+        },
+        [](const auto&) -> const ZifValue& {
+            throw std::runtime_error("not a keyed table");
+        }
+    });
+}
+
+inline const ZifValue& ZifArray::operator[](size_t i) const {
+    return content.visit(overloaded{
+        [&](const std::vector<ZifValue>& v) -> const ZifValue& {
+            return v.at(i);
+        },
+        [](const auto&) -> const ZifValue& {
+            throw std::runtime_error("not a list");
+        }
+    });
+}
+
+struct ZifFile {
+    std::map<std::string, Ptr<ZifValue>> statements;
+    const ZifValue& operator[](const std::string& key) const { return *statements.at(key); }
+    ZifValue&       operator[](const std::string& key)       { return *statements.at(key); }
+    bool has(const std::string& key) const { return statements.count(key) > 0; }
 };

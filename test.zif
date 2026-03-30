@@ -1,24 +1,20 @@
-name myproject
-type executable
-
-deps [
-    key link version
-    plot github.com/zane-lang/plot 4.0.3
-    http github.com/zane-lang/http 2.1.0
-]
-
 compiler {
     debug false
     optimize true
 }
-
+deps [
+    key link version
+    http github.com/zane-lang/http 2.1.0
+    plot github.com/zane-lang/plot 4.0.3
+]
+meta {
+    author "The Lazy Cat"
+    description "a test project"
+}
+name myproject
 targets [
     x86_64-linux
     x86_64-windows
     aarch64-macos
 ]
-
-meta {
-    author "The Lazy Cat"
-    description "a test project"
-}
+type executable

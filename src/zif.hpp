@@ -1,252 +1,136 @@
 #pragma once
 #include "ast.hpp"
-#include <stdexcept>
-#include <string>
-#include <vector>
-#include <map>
+#include "parser.hpp"
+#include <fstream>
+#include <sstream>
 
-enum class TokenType {
-	Ident,
-	String,
-	Key,
-	LBrace,
-	RBrace,
-	LBracket,
-	RBracket,
-	Newline,
-	Eof
-};
+class Zif {
+    static std::string pad(int indent) {
+        return std::string(indent * 4, ' ');
+    }
 
-struct Token {
-	TokenType   type;
-	std::string value;
-};
+    static std::string serializeToken(const std::string& s) {
+        if (s.empty() || s.find(' ') != std::string::npos || s.find('\n') != std::string::npos)
+            return '"' + s + '"';
+        return s;
+    }
 
-class Lexer {
-	std::string src;
-	size_t      pos = 0;
+    static std::string serializeTableRow(const ZifTable& t, const std::vector<std::string>& fields) {
+        std::string out;
+        for (size_t i = 0; i < fields.size(); ++i) {
+            out += serializeToken(t.content.at(fields[i]));
+            if (i < fields.size() - 1) out += " ";
+        }
+        return out;
+    }
 
-	char peek()    { return pos < src.size() ? src[pos] : '\0'; }
-	char advance() { return src[pos++]; }
+    static std::vector<std::string> fieldsOf(const ZifTable& t) {
+        std::vector<std::string> fields;
+        for (const auto& [k, _] : t.content) fields.push_back(k);
+        return fields;
+    }
 
-	void skipHorizontal() {
-		while (pos < src.size() && (src[pos] == ' ' || src[pos] == '\t'))
-			pos++;
-	}
+    static std::string serializeValue(const ZifValue& val, int indent) {
+        return val.content.visit(overloaded{
+            [](const std::string& s) { return serializeToken(s); },
+            [&](const ZifBlock& b)   { return serializeBlock(b, indent); },
+            [&](const ZifArray& a)   { return serializeArray(a, indent); },
+            [](const ZifTable& t) {
+                std::string out;
+                for (auto it = t.content.begin(); it != t.content.end(); ++it) {
+                    out += serializeToken(it->second);
+                    if (std::next(it) != t.content.end()) out += " ";
+                }
+                return out;
+            }
+        });
+    }
+
+    static std::string serializeBlock(const ZifBlock& block, int indent) {
+        std::string out = "{\n";
+        out += block.content.visit(overloaded{
+            [&](const std::map<std::string, Ptr<ZifValue>>& children) {
+                std::string inner;
+                for (const auto& [k, v] : children)
+                    inner += pad(indent + 1) + k + " " + serializeValue(*v, indent + 1) + "\n";
+                return inner;
+            },
+            [&](const std::map<std::string, ZifValue>& table) {
+                std::string inner;
+                if (table.empty()) return inner;
+                auto fields = fieldsOf(table.begin()->second.asTable());
+                inner += pad(indent + 1) + "key";
+                for (const auto& f : fields) inner += " " + f;
+                inner += "\n";
+                for (const auto& [rowKey, rowVal] : table) {
+                    inner += pad(indent + 1) + serializeToken(rowKey) + " "
+                           + serializeTableRow(rowVal.asTable(), fields) + "\n";
+                }
+                return inner;
+            }
+        });
+        out += pad(indent) + "}";
+        return out;
+    }
+
+    static std::string serializeArray(const ZifArray& array, int indent) {
+        std::string out = "[\n";
+        out += array.content.visit(overloaded{
+            [&](const std::map<std::string, ZifValue>& table) {
+                std::string inner;
+                if (table.empty()) return inner;
+                auto fields = fieldsOf(table.begin()->second.asTable());
+                inner += pad(indent + 1) + "key";
+                for (const auto& f : fields) inner += " " + f;
+                inner += "\n";
+                for (const auto& [rowKey, rowVal] : table) {
+                    inner += pad(indent + 1) + serializeToken(rowKey) + " "
+                           + serializeTableRow(rowVal.asTable(), fields) + "\n";
+                }
+                return inner;
+            },
+            [&](const std::vector<ZifValue>& list) {
+                std::string inner;
+                if (list.empty()) return inner;
+                
+                // Plain table check: is first element a Table?
+                if (std::get_if<ZifTable>(&list[0].content.value)) {
+                    auto fields = fieldsOf(list[0].asTable());
+                    inner += pad(indent + 1);
+                    for (const auto& f : fields) inner += f + " ";
+                    inner += "\n";
+                    for (const auto& row : list)
+                        inner += pad(indent + 1) + serializeTableRow(row.asTable(), fields) + "\n";
+                } else {
+                    for (const auto& v : list)
+                        inner += pad(indent + 1) + serializeValue(v, indent + 1) + "\n";
+                }
+                return inner;
+            }
+        });
+        out += pad(indent) + "]";
+        return out;
+    }
 
 public:
-	Lexer(std::string src) : src(std::move(src)) {}
+    ZifFile file;
 
-	Token next() {
-		skipHorizontal();
-		if (pos >= src.size()) return {TokenType::Eof, ""};
+    Zif() = default;
+    Zif(const std::string& path) {
+        std::ifstream f(path);
+        if (!f) throw std::runtime_error("could not open: " + path);
+        std::ostringstream ss;
+        ss << f.rdbuf();
+        file = Parser(ss.str()).parseFile();
+    }
 
-		char c = peek();
+    void save(const std::string& path) const {
+        std::ofstream f(path);
+        if (!f) throw std::runtime_error("could not open: " + path);
+        for (const auto& [k, v] : file.statements)
+            f << k << " " << serializeValue(*v, 0) << "\n";
+    }
 
-		if (c == '\n' || c == '\r') {
-			while (pos < src.size() && (src[pos] == '\n' || src[pos] == '\r'))
-				pos++;
-			return {TokenType::Newline, ""};
-		}
-
-		if (c == '{') { advance(); return {TokenType::LBrace,   "{"}; }
-		if (c == '}') { advance(); return {TokenType::RBrace,   "}"}; }
-		if (c == '[') { advance(); return {TokenType::LBracket, "["}; }
-		if (c == ']') { advance(); return {TokenType::RBracket, "]"}; }
-
-		if (c == '"') {
-			advance();
-			std::string val;
-			while (peek() != '"' && pos < src.size()) val += advance();
-			advance();
-			return {TokenType::String, val};
-		}
-
-		std::string val;
-		while (pos < src.size()
-			&& !std::isspace(peek())
-			&& peek() != '{' && peek() != '}'
-			&& peek() != '[' && peek() != ']'
-			&& peek() != '"') {
-			val += advance();
-		}
-		if (val == "key") return {TokenType::Key, val};
-		return {TokenType::Ident, val};
-	}
-};
-
-class Parser {
-	Lexer lexer;
-	Token current;
-	Token lookahead;
-
-	Token advance() {
-		Token t   = current;
-		current   = lookahead;
-		lookahead = lexer.next();
-		return t;
-	}
-
-	Token expect(TokenType type) {
-		if (current.type != type)
-			throw std::runtime_error("unexpected token: '" + current.value + "'");
-		return advance();
-	}
-
-	void skipNewlines() {
-		while (current.type == TokenType::Newline) advance();
-	}
-
-	// collect tokens on the current line into a row
-	std::vector<std::string> collectRow() {
-		std::vector<std::string> row;
-		while (current.type != TokenType::Newline
-			&& current.type != TokenType::RBracket
-			&& current.type != TokenType::RBrace
-			&& current.type != TokenType::Eof) {
-			row.push_back(advance().value);
-		}
-		return row;
-	}
-
-public:
-	Parser(std::string src) : lexer(std::move(src)) {
-		current   = lexer.next();
-		lookahead = lexer.next();
-	}
-
-	ZifFile parseFile() {
-		ZifFile file;
-		skipNewlines();
-		while (current.type != TokenType::Eof) {
-			std::string key        = expect(TokenType::Ident).value;
-			Ptr<ZifValue> value    = parseValue();
-			file.statements[key]   = std::move(value);
-			skipNewlines();
-		}
-		return file;
-	}
-
-private:
-	Ptr<ZifValue> parseValue() {
-		skipNewlines();
-		if (current.type == TokenType::LBrace)
-			return makePtr<ZifValue>(ZifValue{parseBlock()});
-		if (current.type == TokenType::LBracket)
-			return makePtr<ZifValue>(ZifValue{parseArray()});
-		std::string val = current.value;
-		advance();
-		return makePtr<ZifValue>(ZifValue{val});
-	}
-
-	ZifBlock parseBlock() {
-		expect(TokenType::LBrace);
-		skipNewlines();
-		ZifBlock block;
-
-		if (current.type == TokenType::Key) {
-			// keyed table mode
-			advance(); // consume "key"
-			std::vector<std::string> fields;
-			while (current.type == TokenType::Ident
-				|| current.type == TokenType::String) {
-				fields.push_back(advance().value);
-			}
-			skipNewlines();
-
-			std::map<std::string, ZifTable> table;
-			while (current.type != TokenType::RBrace
-				&& current.type != TokenType::Eof) {
-				std::vector<std::string> row = collectRow();
-				if (row.empty()) { skipNewlines(); continue; }
-				// first value is the key, rest map to fields
-				std::string rowKey = row[0];
-				ZifTable entry;
-				for (size_t i = 0; i < fields.size() && (i + 1) < row.size(); i++)
-					entry.content[fields[i]] = row[i + 1];
-				table[rowKey] = std::move(entry);
-				skipNewlines();
-			}
-			block.content = std::move(table);
-
-		} else {
-			// struct mode: named children
-			std::map<std::string, Ptr<ZifValue>> children;
-			while (current.type != TokenType::RBrace
-				&& current.type != TokenType::Eof) {
-				std::string key     = expect(TokenType::Ident).value;
-				Ptr<ZifValue> value = parseValue();
-				children[key]       = std::move(value);
-				skipNewlines();
-			}
-			block.content = std::move(children);
-		}
-
-		expect(TokenType::RBrace);
-		return block;
-	}
-
-	ZifArray parseArray() {
-		expect(TokenType::LBracket);
-		skipNewlines();
-		ZifArray array;
-
-		if (current.type == TokenType::Key) {
-			// keyed table
-			advance();
-			std::vector<std::string> fields;
-			while (current.type == TokenType::Ident
-				|| current.type == TokenType::String) {
-				fields.push_back(advance().value);
-			}
-			skipNewlines();
-
-			std::map<std::string, ZifTable> table;
-			while (current.type != TokenType::RBracket
-				&& current.type != TokenType::Eof) {
-				std::vector<std::string> row = collectRow();
-				if (row.empty()) { skipNewlines(); continue; }
-				std::string rowKey = row[0];
-				ZifTable entry;
-				for (size_t i = 0; i < fields.size() && (i + 1) < row.size(); i++)
-					entry.content[fields[i]] = row[i + 1];
-				table[rowKey] = std::move(entry);
-				skipNewlines();
-			}
-			array.content = std::move(table);
-
-		} else {
-			// peek at first row to decide: list or plain table
-			std::vector<std::vector<std::string>> rows;
-			while (current.type != TokenType::RBracket
-				&& current.type != TokenType::Eof) {
-				std::vector<std::string> row = collectRow();
-				if (!row.empty()) rows.push_back(std::move(row));
-				skipNewlines();
-			}
-
-			bool isTable = !rows.empty() && rows[0].size() > 1;
-			if (isTable) {
-				// first row is the header
-				std::vector<std::string> fields = rows[0];
-				std::vector<ZifTable> table;
-				for (size_t i = 1; i < rows.size(); i++) {
-					ZifTable entry;
-					for (size_t j = 0; j < fields.size() && j < rows[i].size(); j++)
-						entry.content[fields[j]] = rows[i][j];
-					table.push_back(std::move(entry));
-				}
-				array.content = std::move(table);
-			} else {
-				// bare list
-				std::vector<std::string> list;
-				for (auto& row : rows)
-				if (!row.empty()) list.push_back(row[0]);
-				array.content = std::move(list);
-			}
-		}
-
-		expect(TokenType::RBracket);
-		return array;
-	}
+    const ZifValue& operator[](const std::string& key) const { return file[key]; }
+    ZifValue&       operator[](const std::string& key)       { return file[key]; }
 };
