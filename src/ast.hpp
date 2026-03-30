@@ -43,6 +43,38 @@ struct ZifValue {
         ZifTable
     > content;
 
+	ZifValue() : content(std::string("")) {}
+	ZifValue(std::string str) : content(std::move(str)) {}
+	ZifValue(ZifBlock block)   : content(std::move(block)) {}
+	ZifValue(ZifArray arr)     : content(std::move(arr)) {}
+	ZifValue(ZifTable table)   : content(std::move(table)) {}
+	ZifValue(const char* str)  : content(std::string(str)) {}
+
+	ZifValue& operator=(std::string str) {
+		content = std::move(str);
+		return *this;
+	}
+
+	ZifValue& operator=(ZifBlock block) {
+		content = std::move(block);
+		return *this;
+	}
+
+	ZifValue& operator=(ZifArray arr) {
+		content = std::move(arr);
+		return *this;
+	}
+
+	ZifValue& operator=(ZifTable table) {
+		content = std::move(table);
+		return *this;
+	}
+
+	ZifValue& operator=(const char* str) {
+		content = std::string(str);
+		return *this;
+	}
+
     const ZifValue& operator[](const std::string& key) const {
         return content.visit(overloaded{
             [&](const ZifBlock& b) -> const ZifValue& { return b[key]; },
@@ -60,6 +92,15 @@ struct ZifValue {
             }
         });
     }
+
+	ZifValue& operator[](const std::string& key) {
+		return const_cast<ZifValue&>(static_cast<const ZifValue&>(*this)[key]);
+	}
+
+	ZifValue& operator[](size_t i) {
+		return const_cast<ZifValue&>(static_cast<const ZifValue&>(*this)[i]);
+	}
+
     const std::string& asString() const { return std::get<std::string>(content.value); }
     const ZifBlock&    asBlock()  const { return std::get<ZifBlock>(content.value); }
     const ZifArray&    asArray()  const { return std::get<ZifArray>(content.value); }
