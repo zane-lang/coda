@@ -37,8 +37,18 @@ struct ZifArray {
 
 struct ZifValue {
 	Variant<
-	std::string,
-	ZifBlock,
-	ZifArray
+		std::string,
+		ZifBlock,
+		ZifArray
 	> content;
+
+    const std::string& asString() const {
+        return std::get<std::string>(content.value);
+    }
+    const ZifBlock& asBlock() const {
+        return std::get<ZifBlock>(content.value);
+    }
+    const ZifArray& asArray() const {
+        return std::get<ZifArray>(content.value);
+    }
 };
