@@ -1,15 +1,32 @@
 #pragma once
 #include "ast.hpp"
+#include "console.hpp"
+
 #include <stdexcept>
 #include <string>
 #include <vector>
 #include <map>
 
 enum class TokenType {
-	Ident, String, Key,
+	Ident, String, Key, Comment,
 	LBrace, RBrace,
 	LBracket, RBracket,
 	Newline, Eof
+};
+
+const std::map<TokenType, std::string> tokenToString = {
+	{ TokenType::Ident, "Ident" },
+	{ TokenType::String, "String" },
+	{ TokenType::Key, "Key" },
+	{ TokenType::Comment, "Comment" },
+
+	{ TokenType::LBrace, "LBrace" },
+	{ TokenType::RBrace, "RBrace" },
+	{ TokenType::LBracket, "LBracket" },
+	{ TokenType::RBracket, "RBracket" },
+
+	{ TokenType::Newline, "Newline" },
+	{ TokenType::Eof, "Eof" }
 };
 
 struct Token {
@@ -60,6 +77,12 @@ public:
 			&& peek() != '"') {
 			val += advance();
 		}
+
+		if (c == '#') {
+			while (peek() != '\n' && peek() != '\r') val += advance();
+			return {TokenType::Comment, val};
+		}
+
 		if (val == "key") return {TokenType::Key, val};
 		return {TokenType::Ident, val};
 	}
@@ -78,13 +101,25 @@ class Parser {
 	}
 
 	Token expect(TokenType type) {
-		if (current.type != type)
-			throw std::runtime_error("unexpected token: '" + current.value + "'");
+		if (current.type != type) {
+			PRINT("Got token " + tokenToString.at(current.type) + ", expected " + tokenToString.at(type));
+			throw "";
+		}
 		return advance();
 	}
 
 	void skipNewlines() {
-		while (current.type == TokenType::Newline) advance();
+		while (true) {
+			if (current.type == TokenType::Newline) {
+				advance();
+			}
+			else if (current.type == TokenType::Comment) {
+				advance();
+			}
+			else {
+				break;
+			}
+		}
 	}
 
 	bool isLineEnd() {
@@ -115,8 +150,6 @@ public:
 		CodaFile file;
 		skipNewlines();
 		while (current.type != TokenType::Eof) {
-			if (current.type == TokenType::Newline) { advance(); continue; }
-
 			std::string key = expect(TokenType::Ident).value;
 			file.statements[key] = parseValue();
 
@@ -188,7 +221,8 @@ private:
 			expect(TokenType::RBracket);
 			return CodaValue{std::move(table)};
 
-		} else if (current.type == TokenType::LBrace
+		}
+		else if (current.type == TokenType::LBrace
 				|| current.type == TokenType::LBracket) {
 			// starts with a nested value — bare list, nesting allowed
 			CodaArray array;
@@ -204,7 +238,8 @@ private:
 			expect(TokenType::RBracket);
 			return CodaValue{std::move(array)};
 
-		} else {
+		}
+		else {
 			// peek at first line to decide: plain table or bare list
 			auto firstRow = collectFlatRow();
 			skipNewlines();
@@ -227,7 +262,8 @@ private:
 				expect(TokenType::RBracket);
 				return CodaValue{std::move(array)};
 
-			} else {
+			}
+			else {
 				// bare list — nesting allowed for subsequent elements
 				CodaArray array;
 				std::vector<CodaValue> list;

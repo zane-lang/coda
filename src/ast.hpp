@@ -69,6 +69,7 @@ struct CodaValue {
 		CodaArray,
 		CodaTable
 	> content;
+	std::string comment;
 
 	CodaValue() : content(std::string("")) {}
 	CodaValue(std::string str)  : content(std::move(str)) {}

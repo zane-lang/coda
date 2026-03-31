@@ -1,6 +1,7 @@
 name myproject
 type executable
 
+# hello
 compiler {
 	debug "hi h"
 	optimize true
