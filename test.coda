@@ -4,7 +4,7 @@ type executable
 
 # this is a comment
 # this is another line
-compiler {
+compiler {()
 	debug true
 	optimize true
 }

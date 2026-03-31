@@ -1,11 +1,27 @@
 #pragma once
 #include "ast.hpp"
-#include "helpers/console.hpp"
 
+#include <exception>
+#include <map>
 #include <set>
+#include <sstream>
 #include <string>
 #include <vector>
-#include <map>
+
+// ─── Source location ────────────────────────────────────────────────────────
+
+namespace coda {
+
+struct SourceLoc {
+	int    line      = 1;
+	int    col       = 1;
+	size_t lineStart = 0;
+	size_t offset    = 0;
+};
+
+} // namespace coda
+
+using coda::SourceLoc;
 
 // ─── Token types ────────────────────────────────────────────────────────────
 
@@ -31,19 +47,78 @@ inline const std::map<TokenType, std::string> tokenToString = {
 	{ TokenType::Error,    "error"       },
 };
 
-// ─── Source location ────────────────────────────────────────────────────────
-
-struct SourceLoc {
-	int    line      = 1;
-	int    col       = 1;
-	size_t lineStart = 0;
-};
+// ─── Token ──────────────────────────────────────────────────────────────────
 
 struct Token {
 	TokenType   type;
 	std::string value;
 	SourceLoc   loc;
 };
+
+// ─── Error infrastructure ───────────────────────────────────────────────────
+
+namespace coda {
+
+enum class ParseErrorCode {
+	// Structural
+	UnexpectedToken,
+	UnexpectedEOF,
+
+	// Semantic / validation
+	DuplicateKey,
+	DuplicateField,
+	RaggedRow,
+
+	// String / lexer level
+	InvalidEscape,
+	UnterminatedString,
+
+	// Block / table structure
+	NestedBlock,
+	ContentAfterBrace,
+	KeyInBlock,
+};
+
+struct ParseError : std::exception {
+	ParseErrorCode code;
+	SourceLoc      loc;
+	std::string    message;
+	std::string    filename;
+	std::string    sourceLine;
+	std::string    formatted;
+
+	ParseError(ParseErrorCode code,
+	           SourceLoc      loc,
+	           std::string    message,
+	           std::string    filename,
+	           std::string    sourceLine)
+		: code(code)
+		, loc(loc)
+		, message(std::move(message))
+		, filename(std::move(filename))
+		, sourceLine(std::move(sourceLine))
+	{
+		std::ostringstream os;
+		if (!this->filename.empty())
+			os << this->filename << ":";
+		os << this->loc.line << ":" << this->loc.col
+		   << ": error: " << this->message << "\n";
+
+		if (!this->sourceLine.empty()) {
+			os << "  " << this->sourceLine << "\n  ";
+			for (int i = 0; i < this->loc.col - 1 && i < (int)this->sourceLine.size(); ++i)
+				os << (this->sourceLine[i] == '\t' ? '\t' : ' ');
+			os << "^";
+		}
+		formatted = os.str();
+	}
+
+	const char* what() const noexcept override {
+		return formatted.c_str();
+	}
+};
+
+} // namespace coda
 
 // ─── Lexer ──────────────────────────────────────────────────────────────────
 
@@ -67,7 +142,7 @@ class Lexer {
 	}
 
 	SourceLoc loc() const {
-		return { line_, static_cast<int>(pos - lineStart) + 1, lineStart };
+		return { line_, static_cast<int>(pos - lineStart) + 1, lineStart, pos };
 	}
 
 	bool isIdentChar(char c) const {
@@ -107,6 +182,9 @@ public:
 			advance();
 			std::string val;
 			while (pos < src.size() && peek() != '"') {
+				if (peek() == '\n' || peek() == '\r')
+					return { TokenType::Error, "unterminated string", tokenLoc };
+
 				if (peek() == '\\' && pos + 1 < src.size()) {
 					advance();
 					char esc = advance();
@@ -116,26 +194,30 @@ public:
 						case 'r':  val += '\r'; break;
 						case '"':  val += '"';  break;
 						case '\\': val += '\\'; break;
-						default:   val += '\\'; val += esc;
+						default:
+							return { TokenType::Error,
+							         std::string("invalid escape '\\") + esc + "'",
+							         tokenLoc };
 					}
 				} else {
 					val += advance();
 				}
 			}
-			if (pos < src.size()) advance();
+			if (pos >= src.size())
+				return { TokenType::Error, "unterminated string", tokenLoc };
+			advance(); // closing "
 			return { TokenType::String, val, tokenLoc };
 		}
 
 		if (c == '#') {
-			advance(); // skip '#'
-			if (pos < src.size() && peek() == ' ') advance(); // skip optional space
+			advance();
+			if (pos < src.size() && peek() == ' ') advance();
 			std::string val;
 			while (pos < src.size() && peek() != '\n' && peek() != '\r')
 				val += advance();
 			return { TokenType::Comment, val, tokenLoc };
 		}
 
-		// Must be a valid identifier character
 		if (!isIdentChar(c)) {
 			std::string bad(1, advance());
 			return { TokenType::Error, bad, tokenLoc };
@@ -156,16 +238,30 @@ class Parser {
 	// ── members ─────────────────────────────────────────────────────────
 
 	std::string source;
+	std::string filename;
 	Lexer       lexer;
 	Token       current;
 	Token       lookahead;
 	std::string pendingComment;
 
+	std::vector<coda::ParseError> errors_;
+
 	// ── token helpers ───────────────────────────────────────────────────
 
 	Token advance() {
-		if (current.type == TokenType::Error)
-			error("unexpected character '" + current.value + "'", current.loc);
+		if (current.type == TokenType::Error) {
+			coda::ParseErrorCode code;
+			if (current.value.find("unterminated") != std::string::npos)
+				code = coda::ParseErrorCode::UnterminatedString;
+			else if (current.value.find("escape") != std::string::npos)
+				code = coda::ParseErrorCode::InvalidEscape;
+			else
+				code = coda::ParseErrorCode::UnexpectedToken;
+
+			fatalError(code,
+			           current.value,
+			           current.loc);
+		}
 		Token t   = current;
 		current   = lookahead;
 		lookahead = lexer.next();
@@ -173,15 +269,30 @@ class Parser {
 	}
 
 	Token expect(TokenType type) {
+		if (current.type == TokenType::Eof && type != TokenType::Eof)
+			fatalError(coda::ParseErrorCode::UnexpectedEOF,
+			           "expected " + tokenToString.at(type)
+			           + ", got " + tokenToString.at(current.type),
+			           current.loc);
 		if (current.type != type)
-			error("expected " + tokenToString.at(type)
-			    + ", got " + tokenToString.at(current.type));
+			fatalError(coda::ParseErrorCode::UnexpectedToken,
+			           "expected " + tokenToString.at(type)
+			           + ", got " + tokenToString.at(current.type),
+			           current.loc);
 		return advance();
 	}
 
 	Token expectKey() {
+		if (current.type == TokenType::Eof)
+			fatalError(coda::ParseErrorCode::UnexpectedEOF,
+			           "expected key (identifier or string), got "
+			           + tokenToString.at(current.type),
+			           current.loc);
 		if (current.type != TokenType::Ident && current.type != TokenType::String)
-			error("expected key (identifier or string), got " + tokenToString.at(current.type));
+			fatalError(coda::ParseErrorCode::UnexpectedToken,
+			           "expected key (identifier or string), got "
+			           + tokenToString.at(current.type),
+			           current.loc);
 		return advance();
 	}
 
@@ -199,14 +310,16 @@ class Parser {
 	}
 
 	void expectLineEnd() {
-		if (current.type == TokenType::Comment) {
-			advance(); // discard trailing comment on { or [ line
-		}
+		if (current.type == TokenType::Comment)
+			advance();
+
 		if (current.type != TokenType::Newline
 		 && current.type != TokenType::Eof
 		 && current.type != TokenType::RBrace
 		 && current.type != TokenType::RBracket)
-			error("unexpected content — must be on new line");
+			fatalError(coda::ParseErrorCode::ContentAfterBrace,
+			           "unexpected content — must be on new line",
+			           current.loc);
 		skipNewlines();
 	}
 
@@ -225,23 +338,33 @@ class Parser {
 		return source.substr(start, end - start);
 	}
 
-	[[noreturn]] void error(const std::string& msg, const SourceLoc& loc) {
+	void recordError(coda::ParseErrorCode code,
+	                 const std::string& msg,
+	                 const SourceLoc& loc)
+	{
 		std::string srcLine = extractLine(loc.lineStart);
-
-		std::string pointer;
-		for (int i = 0; i < loc.col - 1 && i < (int)srcLine.size(); ++i)
-			pointer += (srcLine[i] == '\t') ? '\t' : ' ';
-		pointer += '^';
-
-		PRINT("error (line " + std::to_string(loc.line)
-			+ ", col " + std::to_string(loc.col) + "): " + msg
-			+ "\n" + srcLine
-			+ "\n" + pointer);
-		throw "";
+		errors_.emplace_back(code, loc, msg, filename, srcLine);
 	}
 
-	[[noreturn]] void error(const std::string& msg) {
-		error(msg, current.loc);
+	[[noreturn]]
+	void fatalError(coda::ParseErrorCode code,
+	                const std::string& msg,
+	                const SourceLoc& loc)
+	{
+		recordError(code, msg, loc);
+		throw errors_.back();
+	}
+
+	void synchronize() {
+		while (current.type != TokenType::Newline
+		    && current.type != TokenType::Eof
+		    && current.type != TokenType::RBrace
+		    && current.type != TokenType::RBracket)
+		{
+			current   = lookahead;
+			lookahead = lexer.next();
+		}
+		skipNewlines();
 	}
 
 	// ── comment handling ────────────────────────────────────────────────
@@ -261,17 +384,21 @@ class Parser {
 
 	void insertChecked(OrderedMap<std::string, CodaValue>& map,
 	                   const std::string& key, CodaValue value,
-	                   const SourceLoc& loc) {
+	                   const SourceLoc& loc)
+	{
 		auto [it, inserted] = map.insert(key, std::move(value));
 		if (!inserted)
-			error("duplicate key '" + key + "'", loc);
+			fatalError(coda::ParseErrorCode::DuplicateKey,
+			           "duplicate key '" + key + "'", loc);
 	}
 
 	void checkUniqueFields(const std::vector<Token>& fieldToks) {
 		std::set<std::string> seen;
 		for (const auto& tok : fieldToks)
 			if (!seen.insert(tok.value).second)
-				error("duplicate field '" + tok.value + "' in table header", tok.loc);
+				fatalError(coda::ParseErrorCode::DuplicateField,
+				           "duplicate field '" + tok.value + "' in table header",
+				           tok.loc);
 	}
 
 	// ── row collection ──────────────────────────────────────────────────
@@ -280,7 +407,9 @@ class Parser {
 		std::vector<Token> row;
 		while (!isLineEnd()) {
 			if (current.type == TokenType::LBrace || current.type == TokenType::LBracket)
-				error("nested blocks not allowed in tabular context");
+				fatalError(coda::ParseErrorCode::NestedBlock,
+				           "nested blocks not allowed in tabular context",
+				           current.loc);
 			row.push_back(advance());
 		}
 		return row;
@@ -293,8 +422,8 @@ class Parser {
 
 		CodaValue v;
 		if (current.type == TokenType::LBrace)        v = parseBlock();
-		else if (current.type == TokenType::LBracket) v = parseArray();
-		else                                          v = advance().value;
+		else if (current.type == TokenType::LBracket)  v = parseArray();
+		else                                           v = advance().value;
 
 		v.comment = std::move(comment);
 		return v;
@@ -307,7 +436,9 @@ class Parser {
 		CodaBlock block;
 		while (current.type != TokenType::RBrace && current.type != TokenType::Eof) {
 			if (current.type == TokenType::Key)
-				error("'key' header not allowed inside block — use [] for tables");
+				fatalError(coda::ParseErrorCode::KeyInBlock,
+				           "'key' header not allowed inside block — use [] for tables",
+				           current.loc);
 
 			Token keyTok  = expectKey();
 			CodaValue val = parseValue();
@@ -426,8 +557,9 @@ class Parser {
 public:
 	// ── constructor ─────────────────────────────────────────────────────
 
-	Parser(std::string src)
+	Parser(std::string src, std::string filename = "")
 		: source(std::move(src))
+		, filename(std::move(filename))
 		, lexer(source)
 		, current(lexer.next())
 		, lookahead(lexer.next())
@@ -446,4 +578,7 @@ public:
 		}
 		return file;
 	}
-};;
+
+	const std::vector<coda::ParseError>& errors() const { return errors_; }
+	bool hasErrors() const { return !errors_.empty(); }
+};
