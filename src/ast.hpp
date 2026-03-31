@@ -1,8 +1,9 @@
 #pragma once
 #include "types.hpp"
-#include <map>
+#include "ordered_map.hpp"
 #include <string>
 #include <vector>
+#include <functional>
 #include <stdexcept>
 
 struct CodaValue;
@@ -26,7 +27,6 @@ inline std::string serializeToken(const std::string& s) {
 	return s;
 }
 
-// Emit a (possibly multi-line) comment block, each line prefixed with "# ".
 inline std::string serializeComment(const std::string& comment, int indent, const std::string& unit) {
 	if (comment.empty()) return "";
 	std::string out;
@@ -49,7 +49,7 @@ inline std::string serializeComment(const std::string& comment, int indent, cons
 // ─── node types ─────────────────────────────────────────────────────────────
 
 struct CodaTable {
-	std::map<std::string, CodaValue> content;
+	OrderedMap<std::string, CodaValue> content;
 
 	const CodaValue& operator[](const std::string& key) const { return content.at(key); }
 	CodaValue&       operator[](const std::string& key)       { return content.at(key); }
@@ -59,18 +59,12 @@ struct CodaTable {
 	auto end()   const { return content.end(); }
 	auto end()         { return content.end(); }
 
-	// Serializes a single plain-table row (values only, space-separated).
 	std::string serializeRow(const std::vector<std::string>& fields, const std::string& unit) const;
-
-	// Full bracket serialization (used by CodaValue::serialize).
-	// Called with the knowledge of whether this is a keyed table or a plain-table row —
-	// determined by the caller (CodaArray / CodaValue).
-	// This overload is for keyed tables standing alone as a value.
 	std::string serialize(int indent, const std::string& unit) const;
 };
 
 struct CodaBlock {
-	std::map<std::string, CodaValue> content;
+	OrderedMap<std::string, CodaValue> content;
 
 	const CodaValue& operator[](const std::string& key) const { return content.at(key); }
 	CodaValue&       operator[](const std::string& key)       { return content.at(key); }
@@ -211,8 +205,6 @@ struct CodaValue {
 		throw std::runtime_error("CodaValue: Expected Table");
 	}
 
-	// Serialize just the value part (no key, no leading comment).
-	// Used when embedding a value inside a parent container's serialization.
 	std::string serializeInline(int indent, const std::string& unit) const {
 		return content.match(
 			[](const std::string& s) -> std::string {
@@ -223,59 +215,112 @@ struct CodaValue {
 			[&](const CodaTable&  t) -> std::string { return t.serialize(indent, unit); }
 		);
 	}
+
+	/// Recursively sort all fields: scalars first (alphabetical),
+	/// then containers (alphabetical). Array element order is preserved.
+	void order();
+
+	/// Recursively sort all fields by a weight function.
+	/// Higher weight → closer to the top. Equal weight → alphabetical.
+	/// Array element order is preserved; their children are still sorted.
+	void order(const std::function<float(const std::string&)>& weightFn);
 };
 
 // ─── CodaFile ────────────────────────────────────────────────────────────────
 
 struct CodaFile {
-	std::map<std::string, CodaValue> statements;
+	OrderedMap<std::string, CodaValue> statements;
 
 	const CodaValue& operator[](const std::string& key) const { return statements.at(key); }
 	CodaValue&       operator[](const std::string& key)       { return statements.at(key); }
 
 	bool has(const std::string& key) const { return statements.count(key) > 0; }
 
+	/// Recursively sort all fields: scalars first (alphabetical),
+	/// then containers (alphabetical). Array element order is preserved.
+	void order();
+
+	/// Recursively sort all fields by a weight function.
+	/// Higher weight → closer to the top. Equal weight → alphabetical.
+	/// Array element order is preserved; their children are still sorted.
+	void order(const std::function<float(const std::string&)>& weightFn);
+
 	std::string serialize(const std::string& unit = "\t") const;
 };
 
-// ─── method bodies (need full CodaValue definition) ─────────────────────────
+// ─── method bodies ──────────────────────────────────────────────────────────
 
-// Helper: serialize a map of key→CodaValue pairs, scalars first then containers.
-// Emits comments stored on each CodaValue before its key line.
-inline std::string serializeSortedMap(
-		const std::map<std::string, CodaValue>& m,
+inline std::string serializeMap(
+		const OrderedMap<std::string, CodaValue>& m,
 		int indent,
 		const std::string& unit) {
 
-	std::vector<const std::string*> scalars, containers;
-	for (const auto& [k, v] : m) {
-		if (v.isContainer()) containers.push_back(&k);
-		else                 scalars.push_back(&k);
-	}
-
 	std::string out;
-
-	for (const auto* kp : scalars) {
-		const CodaValue& v = m.at(*kp);
+	for (const auto& [k, v] : m) {
+		if (v.isContainer() && !out.empty())
+			out += "\n";
 		out += coda_detail::serializeComment(v.comment, indent, unit);
-		out += coda_detail::pad(indent, unit) + *kp + " " + v.serializeInline(indent, unit) + "\n";
+		out += coda_detail::pad(indent, unit) + k + " "
+		     + v.serializeInline(indent, unit) + "\n";
 	}
-
-	for (const auto* kp : containers) {
-		const CodaValue& v = m.at(*kp);
-		out += "\n";
-		out += coda_detail::serializeComment(v.comment, indent, unit);
-		out += coda_detail::pad(indent, unit) + *kp + " " + v.serializeInline(indent, unit) + "\n";
-	}
-
 	return out;
+}
+
+// ── default order helpers ───────────────────────────────────────────────────
+
+inline void orderMap(OrderedMap<std::string, CodaValue>& m) {
+	for (auto& [k, v] : m)
+		v.order();
+	m.sort([](const CodaValue& v) { return v.isContainer(); });
+}
+
+inline void CodaValue::order() {
+	content.match(
+		[](std::string&) {},
+		[](CodaBlock& b) { orderMap(b.content); },
+		[](CodaArray& a) {
+			for (auto& v : a.content)
+				v.order();
+		},
+		[](CodaTable& t) { orderMap(t.content); }
+	);
+}
+
+inline void CodaFile::order() {
+	orderMap(statements);
+}
+
+// ── weighted order helpers ──────────────────────────────────────────────────
+
+inline void orderMapWeighted(
+		OrderedMap<std::string, CodaValue>& m,
+		const std::function<float(const std::string&)>& weightFn) {
+	for (auto& [k, v] : m)
+		v.order(weightFn);
+	m.sortByWeight(weightFn);
+}
+
+inline void CodaValue::order(const std::function<float(const std::string&)>& weightFn) {
+	content.match(
+		[](std::string&) {},
+		[&](CodaBlock& b) { orderMapWeighted(b.content, weightFn); },
+		[&](CodaArray& a) {
+			for (auto& v : a.content)
+				v.order(weightFn);
+		},
+		[&](CodaTable& t) { orderMapWeighted(t.content, weightFn); }
+	);
+}
+
+inline void CodaFile::order(const std::function<float(const std::string&)>& weightFn) {
+	orderMapWeighted(statements, weightFn);
 }
 
 // ── CodaBlock ────────────────────────────────────────────────────────────────
 
 inline std::string CodaBlock::serialize(int indent, const std::string& unit) const {
 	std::string out = "{\n";
-	out += serializeSortedMap(content, indent + 1, unit);
+	out += serializeMap(content, indent + 1, unit);
 	out += coda_detail::pad(indent, unit) + "}";
 	return out;
 }
@@ -310,7 +355,6 @@ inline std::string CodaTable::serialize(int indent, const std::string& unit) con
 	if (content.empty()) return "[]";
 
 	if (isKeyedTable(*this)) {
-		// Keyed table — emit "key field1 field2 ..." header then one row per entry.
 		auto fields = fieldsOf(*this);
 		std::string out = "[\n";
 		out += coda_detail::pad(indent + 1, unit) + "key";
@@ -330,7 +374,6 @@ inline std::string CodaTable::serialize(int indent, const std::string& unit) con
 		return out;
 	}
 
-	// Plain-table row (inline, space-separated scalar values).
 	std::string out;
 	for (auto it = content.begin(); it != content.end(); ++it) {
 		out += it->second.serializeInline(0, unit);
@@ -347,24 +390,20 @@ inline std::string CodaArray::serialize(int indent, const std::string& unit) con
 	std::string out = "[\n";
 
 	if (std::holds_alternative<CodaTable>(content[0].content.value)) {
-		// Plain table — first element provides the header.
 		const CodaTable& firstRow = content[0].asTable();
 		std::vector<std::string> fields;
 		for (const auto& [k, _] : firstRow.content) fields.push_back(k);
 
-		// Header line.
 		out += coda_detail::pad(indent + 1, unit);
 		for (size_t i = 0; i < fields.size(); ++i)
 			out += fields[i] + (i < fields.size() - 1 ? " " : "");
 		out += "\n";
 
-		// Data rows.
 		for (const auto& rowVal : content) {
 			out += coda_detail::serializeComment(rowVal.comment, indent + 1, unit);
 			out += coda_detail::pad(indent + 1, unit) + rowVal.asTable().serializeRow(fields, unit) + "\n";
 		}
 	} else {
-		// Bare list — one element per line, nesting supported.
 		for (const auto& v : content) {
 			out += coda_detail::serializeComment(v.comment, indent + 1, unit);
 			out += coda_detail::pad(indent + 1, unit) + v.serializeInline(indent + 1, unit) + "\n";
@@ -378,5 +417,5 @@ inline std::string CodaArray::serialize(int indent, const std::string& unit) con
 // ── CodaFile ─────────────────────────────────────────────────────────────────
 
 inline std::string CodaFile::serialize(const std::string& unit) const {
-	return serializeSortedMap(statements, 0, unit);
+	return serializeMap(statements, 0, unit);
 }

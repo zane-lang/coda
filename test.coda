@@ -6,6 +6,7 @@ compiler {
 	debug "hi h"
 	optimize true
 }
+compiler 3
 
 deps [
 	key link version
