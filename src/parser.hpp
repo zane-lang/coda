@@ -198,11 +198,9 @@ class Parser {
 		}
 	}
 
-	// Expect newline (or comment+newline) after { or [
 	void expectLineEnd() {
 		if (current.type == TokenType::Comment) {
-			if (!pendingComment.empty()) pendingComment += '\n';
-			pendingComment += advance().value;
+			advance(); // discard trailing comment on { or [ line
 		}
 		if (current.type != TokenType::Newline
 		 && current.type != TokenType::Eof
@@ -246,15 +244,16 @@ class Parser {
 		error(msg, current.loc);
 	}
 
-	// ── value construction ──────────────────────────────────────────────
+	// ── comment handling ────────────────────────────────────────────────
 
-	template<typename T>
-	CodaValue makeValue(T&& content) {
-		CodaValue v{ std::forward<T>(content) };
-		if (!pendingComment.empty()) {
-			v.comment = std::move(pendingComment);
-			pendingComment.clear();
-		}
+	std::string takeComment() {
+		std::string c = std::move(pendingComment);
+		pendingComment.clear();
+		return c;
+	}
+
+	CodaValue withComment(CodaValue v) {
+		v.comment = takeComment();
 		return v;
 	}
 
@@ -290,8 +289,7 @@ class Parser {
 	// ── value parsing ───────────────────────────────────────────────────
 
 	CodaValue parseValue() {
-		std::string comment = std::move(pendingComment);
-		pendingComment.clear();
+		std::string comment = takeComment();
 
 		CodaValue v;
 		if (current.type == TokenType::LBrace)        v = parseBlock();
@@ -343,6 +341,7 @@ class Parser {
 
 		CodaTable table;
 		while (current.type != TokenType::RBracket && current.type != TokenType::Eof) {
+			std::string comment = takeComment();
 			auto row = collectFlatRow();
 			skipNewlines();
 			if (row.empty()) continue;
@@ -351,12 +350,13 @@ class Parser {
 			for (size_t i = 0; i < fieldToks.size() && (i + 1) < row.size(); ++i)
 				entry.content[fieldToks[i].value] = CodaValue(row[i + 1].value);
 
-			insertChecked(table.content, row[0].value,
-			              makeValue(std::move(entry)), row[0].loc);
+			CodaValue entryVal{std::move(entry)};
+			entryVal.comment = std::move(comment);
+			insertChecked(table.content, row[0].value, std::move(entryVal), row[0].loc);
 		}
 
 		expect(TokenType::RBracket);
-		return makeValue(std::move(table));
+		return CodaValue{std::move(table)};
 	}
 
 	CodaValue parseNestedList() {
@@ -369,22 +369,24 @@ class Parser {
 		}
 
 		expect(TokenType::RBracket);
-		return makeValue(std::move(array));
+		return CodaValue{std::move(array)};
 	}
 
 	CodaValue parseAutoList() {
+		std::string firstComment = takeComment();
 		auto firstRow = collectFlatRow();
 		skipNewlines();
 
-		if (firstRow.size() > 1) return parsePlainTable(std::move(firstRow));
-		return parseBareList(std::move(firstRow));
+		if (firstRow.size() > 1) return parsePlainTable(std::move(firstRow), std::move(firstComment));
+		return parseBareList(std::move(firstRow), std::move(firstComment));
 	}
 
-	CodaValue parsePlainTable(std::vector<Token> header) {
+	CodaValue parsePlainTable(std::vector<Token> header, std::string firstComment) {
 		checkUniqueFields(header);
 
 		CodaArray array;
 		while (current.type != TokenType::RBracket && current.type != TokenType::Eof) {
+			std::string comment = takeComment();
 			auto row = collectFlatRow();
 			skipNewlines();
 			if (row.empty()) continue;
@@ -393,17 +395,22 @@ class Parser {
 			for (size_t i = 0; i < header.size() && i < row.size(); ++i)
 				entry.content[header[i].value] = CodaValue(row[i].value);
 
-			array.content.push_back(makeValue(std::move(entry)));
+			CodaValue entryVal{std::move(entry)};
+			entryVal.comment = std::move(comment);
+			array.content.push_back(std::move(entryVal));
 		}
 
 		expect(TokenType::RBracket);
-		return makeValue(std::move(array));
+		return CodaValue{std::move(array)};
 	}
 
-	CodaValue parseBareList(std::vector<Token> firstRow) {
+	CodaValue parseBareList(std::vector<Token> firstRow, std::string firstComment) {
 		CodaArray array;
-		if (!firstRow.empty())
-			array.content.push_back(makeValue(std::string(firstRow[0].value)));
+		if (!firstRow.empty()) {
+			CodaValue firstVal{firstRow[0].value};
+			firstVal.comment = std::move(firstComment);
+			array.content.push_back(std::move(firstVal));
+		}
 
 		while (current.type != TokenType::RBracket && current.type != TokenType::Eof) {
 			skipNewlines();
@@ -413,7 +420,7 @@ class Parser {
 		}
 
 		expect(TokenType::RBracket);
-		return makeValue(std::move(array));
+		return CodaValue{std::move(array)};
 	}
 
 public:
@@ -439,4 +446,4 @@ public:
 		}
 		return file;
 	}
-};
+};;

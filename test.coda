@@ -4,7 +4,9 @@ type executable
 test "hello\nworld"
 
 # hello
-compiler {
+# bye is a red fox
+# hi hello
+"compiler" {
 	ö ba
 	debug "hi h"
 	optimize true
@@ -12,7 +14,7 @@ compiler {
 
 deps [
 	key link version
-	"http" github.com/zane-lang/http 2.1.0
+	"ht tp" github.com/zane-lang/http 2.1.0
 	plot github.com/zane-lang/plot 4.0.3
 ]
 
