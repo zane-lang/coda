@@ -354,8 +354,8 @@ inline void orderMapWeighted(
 struct CodaTable {
 	detail::OrderedMap<std::string, CodaValue> content;
 
-	const CodaValue& operator[](const std::string& key) const { return content.at(key); }
-	CodaValue&       operator[](const std::string& key)       { return content.at(key); }
+	const CodaValue& operator[](const std::string& key) const;
+	CodaValue&       operator[](const std::string& key);
 
 	auto begin() const { return content.begin(); }
 	auto begin()       { return content.begin(); }
@@ -369,8 +369,8 @@ struct CodaTable {
 struct CodaBlock {
 	detail::OrderedMap<std::string, CodaValue> content;
 
-	const CodaValue& operator[](const std::string& key) const { return content.at(key); }
-	CodaValue&       operator[](const std::string& key)       { return content.at(key); }
+	const CodaValue& operator[](const std::string& key) const;
+	CodaValue&       operator[](const std::string& key);
 
 	auto begin() const { return content.begin(); }
 	auto begin()       { return content.begin(); }
@@ -383,8 +383,8 @@ struct CodaBlock {
 struct CodaArray {
 	std::vector<CodaValue> content;
 
-	const CodaValue& operator[](size_t i) const { return content.at(i); }
-	CodaValue&       operator[](size_t i)       { return content.at(i); }
+	const CodaValue& operator[](size_t i) const;
+	CodaValue&       operator[](size_t i);
 
 	auto begin() const { return content.begin(); }
 	auto begin()       { return content.begin(); }
@@ -416,7 +416,7 @@ struct CodaValue {
 	CodaValue& operator=(CodaBlock    block) { content = std::move(block); return *this; }
 	CodaValue& operator=(CodaArray    arr)   { content = std::move(arr);   return *this; }
 	CodaValue& operator=(CodaTable    table) { content = std::move(table); return *this; }
-	CodaValue& operator=(const char*  str)   { content = std::string(str); return *this; }
+	CodaValue& operator=(const char* str)   { content = std::string(str); return *this; }
 
 	const CodaValue& operator[](const std::string& key) const {
 		return content.match(
@@ -468,8 +468,8 @@ struct CodaValue {
 
 	bool isContainer() const {
 		return std::holds_alternative<CodaBlock>(content.value) ||
-		       std::holds_alternative<CodaArray>(content.value) ||
-		       std::holds_alternative<CodaTable>(content.value);
+			std::holds_alternative<CodaArray>(content.value) ||
+			std::holds_alternative<CodaTable>(content.value);
 	}
 
 	operator std::string() const {
@@ -554,7 +554,7 @@ inline std::string serializeMap(
 			out += "\n";
 		out += serializeComment(v.comment, indent, unit);
 		out += pad(indent, unit) + k + " "
-		     + v.serializeInline(indent, unit) + "\n";
+			+ v.serializeInline(indent, unit) + "\n";
 	}
 	return out;
 }
@@ -616,6 +616,9 @@ inline void CodaValue::order(const std::function<float(const std::string&)>& wei
 
 // ─── CodaBlock method bodies ──────────────────────────────────────────────────
 
+inline const CodaValue& CodaBlock::operator[](const std::string& key) const { return content.at(key); }
+inline CodaValue&       CodaBlock::operator[](const std::string& key)       { return content.at(key); }
+
 inline std::string CodaBlock::serialize(int indent, const std::string& unit) const {
 	std::string out = "{\n";
 	out += detail::serializeMap(content, indent + 1, unit);
@@ -624,6 +627,9 @@ inline std::string CodaBlock::serialize(int indent, const std::string& unit) con
 }
 
 // ─── CodaTable method bodies ──────────────────────────────────────────────────
+
+inline const CodaValue& CodaTable::operator[](const std::string& key) const { return content.at(key); }
+inline CodaValue&       CodaTable::operator[](const std::string& key)       { return content.at(key); }
 
 inline std::string CodaTable::serializeRow(
 		const std::vector<std::string>& fields) const {
@@ -667,6 +673,9 @@ inline std::string CodaTable::serialize(int indent, const std::string& unit) con
 }
 
 // ─── CodaArray method bodies ──────────────────────────────────────────────────
+
+inline const CodaValue& CodaArray::operator[](size_t i) const { return content.at(i); }
+inline CodaValue&       CodaArray::operator[](size_t i)       { return content.at(i); }
 
 inline std::string CodaArray::serialize(int indent, const std::string& unit) const {
 	if (content.empty()) return "[]";
