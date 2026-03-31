@@ -748,6 +748,7 @@ enum class ParseErrorCode {
 	DuplicateKey,
 	DuplicateField,
 	RaggedRow,
+	CommentBeforeHeader,
 
 	// String / lexer level
 	InvalidEscape,
@@ -799,7 +800,7 @@ struct ParseError : std::exception {
 };
 
 namespace detail {
-	
+
 // ─── Token types ────────────────────────────────────────────────────────────
 
 enum class TokenType {
@@ -1092,6 +1093,16 @@ class Parser {
 		return v;
 	}
 
+	// ── comment-before-header check ─────────────────────────────────────
+
+	void checkNoOrphanComment() {
+		if (!pendingComment.empty())
+			fatalError(coda::ParseErrorCode::CommentBeforeHeader,
+			           "comments are not allowed before a table header — "
+			           "place the comment before the array",
+			           current.loc);
+	}
+
 	// ── duplicate-key guards ────────────────────────────────────────────
 
 	void insertChecked(OrderedMap<std::string, CodaValue>& map,
@@ -1168,8 +1179,12 @@ class Parser {
 		expect(TokenType::LBracket);
 		expectLineEnd();
 
-		if (current.type == TokenType::Key)                                           return parseKeyedTable();
-		if (current.type == TokenType::LBrace || current.type == TokenType::LBracket) return parseNestedList();
+		if (current.type == TokenType::Key) {
+			checkNoOrphanComment();
+			return parseKeyedTable();
+		}
+		if (current.type == TokenType::LBrace || current.type == TokenType::LBracket)
+			return parseNestedList();
 		return parseAutoList();
 	}
 
@@ -1188,6 +1203,13 @@ class Parser {
 			auto row = collectFlatRow();
 			skipNewlines();
 			if (row.empty()) continue;
+
+			if (row.size() - 1 < fieldToks.size())
+				fatalError(
+					coda::ParseErrorCode::RaggedRow,
+					"row '" + row[0].value + "' has " + std::to_string(row.size() - 1) + " value(s), expected " + std::to_string(fieldToks.size()),
+					row[0].loc
+				);
 
 			CodaTable entry;
 			for (size_t i = 0; i < fieldToks.size() && (i + 1) < row.size(); ++i)
@@ -1220,11 +1242,15 @@ class Parser {
 		auto firstRow = collectFlatRow();
 		skipNewlines();
 
-		if (firstRow.size() > 1) return parsePlainTable(std::move(firstRow), std::move(firstComment));
+		if (firstRow.size() > 1) {
+			// Table header detected — comment has no node to attach to
+			checkNoOrphanComment();
+			return parsePlainTable(std::move(firstRow));
+		}
 		return parseBareList(std::move(firstRow), std::move(firstComment));
 	}
 
-	CodaValue parsePlainTable(std::vector<Token> header, std::string firstComment) {
+	CodaValue parsePlainTable(std::vector<Token> header) {
 		checkUniqueFields(header);
 
 		CodaArray array;
@@ -1233,6 +1259,13 @@ class Parser {
 			auto row = collectFlatRow();
 			skipNewlines();
 			if (row.empty()) continue;
+
+			if (row.size() < header.size())
+				fatalError(
+					coda::ParseErrorCode::RaggedRow,
+					"row has " + std::to_string(row.size()) + " value(s), expected " + std::to_string(header.size()),
+					row[0].loc
+				);
 
 			CodaTable entry;
 			for (size_t i = 0; i < header.size() && i < row.size(); ++i)

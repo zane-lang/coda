@@ -119,6 +119,43 @@ compiler {
 }
 ```
 
+Comments may appear before array elements in bare lists, and before rows
+in keyed tables. A comment directly before a plain table header is an error —
+comments only attach to fields below, meaning there is no node to attach it to. Place the comment before the array instead.
+
+```coda
+# Legal — comment is on the array itself
+# points data
+points [
+    x y z
+    1 2 3
+]
+
+# Illegal — nothing to attach the comment to
+points [
+    # this will error
+    x y z
+    1 2 3
+]
+```
+
+The same restriction applies to keyed tables:
+
+```coda
+# Legal
+deps [
+    key link version
+    plot github.com/zane-lang/plot 4.0.3
+]
+
+# Illegal
+deps [
+    # this will also error
+    key link version
+    plot github.com/zane-lang/plot 4.0.3
+]
+```
+
 ---
 
 ## Blocks `{}`
