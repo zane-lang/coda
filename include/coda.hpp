@@ -1243,8 +1243,11 @@ class Parser {
 		skipNewlines();
 
 		if (firstRow.size() > 1) {
-			// Table header detected — comment has no node to attach to
-			checkNoOrphanComment();
+			if (!firstComment.empty())
+				fatalError(coda::ParseErrorCode::CommentBeforeHeader,
+			   "comments are not allowed before a table header — "
+			   "place the comment before the array",
+			   current.loc);
 			return parsePlainTable(std::move(firstRow));
 		}
 		return parseBareList(std::move(firstRow), std::move(firstComment));
