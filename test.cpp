@@ -4,8 +4,8 @@
 int main() {
     Coda coda("test.coda");
 
-    std::cout << "\n--- serialized ---\n";
-    std::cout << coda.file.serialize();
+	coda.order();
+	coda.save("test.coda");
 
     return 0;
 }

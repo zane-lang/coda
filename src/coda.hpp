@@ -8,10 +8,9 @@
 
 class Coda {
 	std::string indentUnit = "\t";
-
-public:
 	CodaFile file;
 
+public:
 	Coda() = default;
 	Coda(const std::string& path) {
 		std::ifstream f(path);

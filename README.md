@@ -279,10 +279,10 @@ Fields can be sorted for consistent output:
 
 ```cpp
 // Alphabetical, scalars before containers
-coda.file.order();
+coda.order();
 
 // Custom weight function (higher weight = earlier)
-coda.file.order([](const std::string& key) -> float {
+coda.order([](const std::string& key) -> float {
     if (key == "name") return 100;
     if (key == "type") return 90;
     return 0;

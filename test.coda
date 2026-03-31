@@ -1,7 +1,6 @@
 name myproject
-type executable
-
 test "hello\nworld"
+type executable
 
 # this is a comment
 # this is another line
