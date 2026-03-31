@@ -4,7 +4,8 @@ type executable
 test "hello\nworld"
 
 # hello
-"compiler name" {
+compiler {
+	ö ba
 	debug "hi h"
 	optimize true
 }

@@ -13,7 +13,8 @@ enum class TokenType {
 	Ident, String, Key, Comment,
 	LBrace, RBrace,
 	LBracket, RBracket,
-	Newline, Eof
+	Newline, Eof,
+	Error
 };
 
 inline const std::map<TokenType, std::string> tokenToString = {
@@ -27,6 +28,7 @@ inline const std::map<TokenType, std::string> tokenToString = {
 	{ TokenType::RBracket, "']'"         },
 	{ TokenType::Newline,  "newline"     },
 	{ TokenType::Eof,      "end of file" },
+	{ TokenType::Error,    "error"       },
 };
 
 // ─── Source location ────────────────────────────────────────────────────────
@@ -68,6 +70,17 @@ class Lexer {
 		return { line_, static_cast<int>(pos - lineStart) + 1, lineStart };
 	}
 
+	bool isIdentChar(char c) const {
+		if (std::isspace(static_cast<unsigned char>(c))) return false;
+		switch (c) {
+			case '{': case '}':
+			case '[': case ']':
+			case '"': case '#':
+				return false;
+		}
+		return true;
+	}
+
 public:
 	Lexer(const std::string& src) : src(src) {}
 
@@ -95,7 +108,7 @@ public:
 			std::string val;
 			while (pos < src.size() && peek() != '"') {
 				if (peek() == '\\' && pos + 1 < src.size()) {
-					advance(); // consume backslash
+					advance();
 					char esc = advance();
 					switch (esc) {
 						case 'n':  val += '\n'; break;
@@ -103,7 +116,7 @@ public:
 						case 'r':  val += '\r'; break;
 						case '"':  val += '"';  break;
 						case '\\': val += '\\'; break;
-						default:   val += '\\'; val += esc; // preserve unknown escapes
+						default:   val += '\\'; val += esc;
 					}
 				} else {
 					val += advance();
@@ -114,21 +127,23 @@ public:
 		}
 
 		if (c == '#') {
+			advance(); // skip '#'
+			if (pos < src.size() && peek() == ' ') advance(); // skip optional space
 			std::string val;
 			while (pos < src.size() && peek() != '\n' && peek() != '\r')
 				val += advance();
 			return { TokenType::Comment, val, tokenLoc };
 		}
 
-		std::string val;
-		while (pos < src.size()
-			&& !std::isspace(peek())
-			&& peek() != '{' && peek() != '}'
-			&& peek() != '[' && peek() != ']'
-			&& peek() != '"')
-		{
-			val += advance();
+		// Must be a valid identifier character
+		if (!isIdentChar(c)) {
+			std::string bad(1, advance());
+			return { TokenType::Error, bad, tokenLoc };
 		}
+
+		std::string val;
+		while (pos < src.size() && isIdentChar(peek()))
+			val += advance();
 
 		if (val == "key") return { TokenType::Key, val, tokenLoc };
 		return { TokenType::Ident, val, tokenLoc };
@@ -149,6 +164,8 @@ class Parser {
 	// ── token helpers ───────────────────────────────────────────────────
 
 	Token advance() {
+		if (current.type == TokenType::Error)
+			error("unexpected character '" + current.value + "'", current.loc);
 		Token t   = current;
 		current   = lookahead;
 		lookahead = lexer.next();
@@ -179,6 +196,20 @@ class Parser {
 				break;
 			}
 		}
+	}
+
+	// Expect newline (or comment+newline) after { or [
+	void expectLineEnd() {
+		if (current.type == TokenType::Comment) {
+			if (!pendingComment.empty()) pendingComment += '\n';
+			pendingComment += advance().value;
+		}
+		if (current.type != TokenType::Newline
+		 && current.type != TokenType::Eof
+		 && current.type != TokenType::RBrace
+		 && current.type != TokenType::RBracket)
+			error("unexpected content — must be on new line");
+		skipNewlines();
 	}
 
 	bool isLineEnd() const {
@@ -259,14 +290,21 @@ class Parser {
 	// ── value parsing ───────────────────────────────────────────────────
 
 	CodaValue parseValue() {
-		if (current.type == TokenType::LBrace)   return makeValue(parseBlock());
-		if (current.type == TokenType::LBracket) return parseArray();
-		return makeValue(std::string(advance().value));
+		std::string comment = std::move(pendingComment);
+		pendingComment.clear();
+
+		CodaValue v;
+		if (current.type == TokenType::LBrace)        v = parseBlock();
+		else if (current.type == TokenType::LBracket) v = parseArray();
+		else                                          v = advance().value;
+
+		v.comment = std::move(comment);
+		return v;
 	}
 
 	CodaBlock parseBlock() {
 		expect(TokenType::LBrace);
-		skipNewlines();
+		expectLineEnd();
 
 		CodaBlock block;
 		while (current.type != TokenType::RBrace && current.type != TokenType::Eof) {
@@ -287,7 +325,7 @@ class Parser {
 
 	CodaValue parseArray() {
 		expect(TokenType::LBracket);
-		skipNewlines();
+		expectLineEnd();
 
 		if (current.type == TokenType::Key)                                           return parseKeyedTable();
 		if (current.type == TokenType::LBrace || current.type == TokenType::LBracket) return parseNestedList();
