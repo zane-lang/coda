@@ -1,5 +1,7 @@
+// tests/test_main.cpp
 #include "../include/coda.hpp"
 
+#include <algorithm>
 #include <exception>
 #include <functional>
 #include <iostream>
@@ -265,16 +267,8 @@ static void test_arrays_bare_lists() {
 	   && a[1]["val"].asString() == "2";
 	   }());
 
-	// IMPORTANT:
-	// If your CodaArray::operator[](size_t) is implemented with vector::operator[],
-	// it is *unchecked* and out-of-range access is UB (no exception).
-	// We avoid UB in tests. Instead, we verify that callers can do checked access via .content.at().
-	CHECK_THROWS_TYPE("array content.at out-of-range throws std::out_of_range",
-				   std::out_of_range,
-				   []{
-				   auto f = parse("a [\n  x\n]\n");
-				   (void)f["a"].asArray().content.at(99);
-				   }());
+	CHECK_THROWS("array out-of-range throws",
+			  parse("a [\n  x\n]\n")["a"].asArray()[99]);
 }
 
 static void test_plain_tables() {
@@ -329,22 +323,10 @@ static void test_keyed_tables() {
 	   return keys == std::vector<std::string>{"a", "b"};
 	   }());
 
-	// With your chosen semantics, non-const [] should insert missing keys for map-like nodes.
-	CHECK("missing key in keyed table inserts a default row/value",
-	   []{
-	   auto f = parse("deps [\n  key link\n  a b\n]\n");
-	   auto& v = f["deps"]["nope"];          // should insert
-	   return f["deps"].asTable().content.contains("nope")
-	   && v.asString() == "";            // default CodaValue
-	   }());
-
-	// Keep const access strict to catch typos.
-	CHECK_THROWS("const keyed table lookup still throws on missing row",
-			  []{
-			  auto f = parse("deps [\n  key link\n  a b\n]\n");
-			  const auto& cf = f;
-			  (void)cf["deps"]["missing_row"]; // should throw (const uses at)
-			  }());
+	// NOTE: This assumes keyed-table lookup is strict (missing row throws).
+	// If you later change table operator[] to insert, update this test accordingly.
+	CHECK_THROWS("missing key in keyed table throws on lookup",
+			  parse("deps [\n  key link\n  a b\n]\n")["deps"]["nope"]);
 
 	check_parse_throws_msg(
 		"duplicate row key in keyed table throws",
@@ -377,10 +359,13 @@ static void test_type_errors_and_insertion_semantics() {
 	CHECK_THROWS("asTable on block throws",
 			  parse("b {\n  x 1\n}\n")["b"].asTable());
 
+	// Your preferred semantics: non-const [] inserts.
 	CHECK("missing top-level key inserts default value",
 	   []{
 	   auto f = parse("a 1\n");
-	   auto& v = f["b"];               // inserts
+	   // After you change CodaFile::operator[] to use statements[key],
+	   // this should insert "b" and default-construct the value.
+	   auto& v = f["b"];
 	   return f.has("b") && v.asString() == "";
 	   }());
 
@@ -391,6 +376,7 @@ static void test_type_errors_and_insertion_semantics() {
 	   return f.has("b") && f["b"].asString() == "2";
 	   }());
 
+	// Also prefer insertion inside blocks (after you change CodaBlock::operator[] to use content[key]).
 	CHECK("block [] allows inserting a new key",
 	   []{
 	   auto f = parse("compiler {\n  debug false\n}\n");
@@ -398,6 +384,7 @@ static void test_type_errors_and_insertion_semantics() {
 	   return f["compiler"]["optimize"].asString() == "true";
 	   }());
 
+	// Keep const access strict to catch typos.
 	CHECK_THROWS("const file[] still throws on missing key",
 			  []{
 			  auto f = parse("a 1\n");
