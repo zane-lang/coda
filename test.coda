@@ -1,16 +1,17 @@
 name myproject
 type executable
 
+test "hello\nworld"
+
 # hello
-compiler {
+"compiler name" {
 	debug "hi h"
 	optimize true
 }
-compiler 3
 
 deps [
 	key link version
-	http github.com/zane-lang/http 2.1.0
+	"http" github.com/zane-lang/http 2.1.0
 	plot github.com/zane-lang/plot 4.0.3
 ]
 

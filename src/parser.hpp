@@ -93,8 +93,22 @@ public:
 		if (c == '"') {
 			advance();
 			std::string val;
-			while (pos < src.size() && peek() != '"')
-				val += advance();
+			while (pos < src.size() && peek() != '"') {
+				if (peek() == '\\' && pos + 1 < src.size()) {
+					advance(); // consume backslash
+					char esc = advance();
+					switch (esc) {
+						case 'n':  val += '\n'; break;
+						case 't':  val += '\t'; break;
+						case 'r':  val += '\r'; break;
+						case '"':  val += '"';  break;
+						case '\\': val += '\\'; break;
+						default:   val += '\\'; val += esc; // preserve unknown escapes
+					}
+				} else {
+					val += advance();
+				}
+			}
 			if (pos < src.size()) advance();
 			return { TokenType::String, val, tokenLoc };
 		}
@@ -235,6 +249,13 @@ class Parser {
 		return row;
 	}
 
+	// Add helper method in Parser
+	Token expectKey() {
+		if (current.type != TokenType::Ident && current.type != TokenType::String)
+			error("expected key (identifier or string), got " + tokenToString.at(current.type));
+		return advance();
+	}
+
 public:
 	Parser(std::string src)
 		: source(std::move(src))
@@ -247,7 +268,7 @@ public:
 		CodaFile file;
 		skipNewlines();
 		while (current.type != TokenType::Eof) {
-			Token keyTok  = expect(TokenType::Ident);
+			Token keyTok = expectKey();
 			CodaValue val = parseValue();
 			insertChecked(file.statements, keyTok.value, std::move(val), keyTok.loc);
 			skipNewlines();
@@ -275,7 +296,7 @@ private:
 			if (current.type == TokenType::Key)
 				error("'key' header not allowed inside block — use [] for tables");
 
-			Token keyTok  = expect(TokenType::Ident);
+			Token keyTok = expectKey();
 			CodaValue val = parseValue();
 			insertChecked(block.content, keyTok.value, std::move(val), keyTok.loc);
 			skipNewlines();

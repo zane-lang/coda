@@ -22,9 +22,27 @@ inline std::string pad(int level, const std::string& unit) {
 }
 
 inline std::string serializeToken(const std::string& s) {
-	if (s.empty() || s.find(' ') != std::string::npos || s.find('\n') != std::string::npos)
-		return '"' + s + '"';
-	return s;
+	bool needsQuotes = s.empty() 
+		|| s.find(' ') != std::string::npos
+		|| s.find('\n') != std::string::npos
+		|| s.find('\t') != std::string::npos
+		|| s.find('"') != std::string::npos;
+
+	if (!needsQuotes) return s;
+
+	std::string out = "\"";
+	for (char c : s) {
+		switch (c) {
+			case '\n': out += "\\n";  break;
+			case '\t': out += "\\t";  break;
+			case '\r': out += "\\r";  break;
+			case '"':  out += "\\\""; break;
+			case '\\': out += "\\\\"; break;
+			default:   out += c;
+		}
+	}
+	out += '"';
+	return out;
 }
 
 inline std::string serializeComment(const std::string& comment, int indent, const std::string& unit) {
