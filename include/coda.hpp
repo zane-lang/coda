@@ -529,7 +529,7 @@ struct CodaFile {
 	detail::OrderedMap<std::string, CodaValue> statements;
 
 	const CodaValue& operator[](const std::string& key) const { return statements.at(key); }
-	CodaValue&       operator[](const std::string& key)       { return statements.at(key); }
+	CodaValue&       operator[](const std::string& key) { return statements[key]; }
 
 	bool has(const std::string& key) const { return statements.count(key) > 0; }
 
@@ -617,7 +617,7 @@ inline void CodaValue::order(const std::function<float(const std::string&)>& wei
 // ─── CodaBlock method bodies ──────────────────────────────────────────────────
 
 inline const CodaValue& CodaBlock::operator[](const std::string& key) const { return content.at(key); }
-inline CodaValue&       CodaBlock::operator[](const std::string& key)       { return content.at(key); }
+inline CodaValue&       CodaBlock::operator[](const std::string& key)       { return content[key]; }
 
 inline std::string CodaBlock::serialize(int indent, const std::string& unit) const {
 	std::string out = "{\n";
@@ -629,7 +629,7 @@ inline std::string CodaBlock::serialize(int indent, const std::string& unit) con
 // ─── CodaTable method bodies ──────────────────────────────────────────────────
 
 inline const CodaValue& CodaTable::operator[](const std::string& key) const { return content.at(key); }
-inline CodaValue&       CodaTable::operator[](const std::string& key)       { return content.at(key); }
+inline CodaValue&       CodaTable::operator[](const std::string& key)       { return content[key]; }
 
 inline std::string CodaTable::serializeRow(
 		const std::vector<std::string>& fields) const {
@@ -675,7 +675,7 @@ inline std::string CodaTable::serialize(int indent, const std::string& unit) con
 // ─── CodaArray method bodies ──────────────────────────────────────────────────
 
 inline const CodaValue& CodaArray::operator[](size_t i) const { return content.at(i); }
-inline CodaValue&       CodaArray::operator[](size_t i)       { return content.at(i); }
+inline CodaValue&       CodaArray::operator[](size_t i) { return content[i]; }
 
 inline std::string CodaArray::serialize(int indent, const std::string& unit) const {
 	if (content.empty()) return "[]";
