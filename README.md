@@ -26,7 +26,7 @@ meta {
 }
 ```
 
-A configuration format designed to be written by tooling and read by humans. The name comes from music — a coda is the concluding passage that ties a composition together. A `.coda` file is the single, definitive statement of how a project is configured.
+A compact configuration format designed to be easily read- and writeable. The name comes from music — a coda is the concluding passage that ties a composition together. A `.coda` file is the single, definitive statement of how a project is configured.
 
 Coda aims to be as simple as possible while supporting full data structures. The above file in JSON:
 
@@ -58,7 +58,7 @@ Coda aims to be as simple as possible while supporting full data structures. The
 
 ## Overview
 
-Coda is whitespace-sensitive. Every leaf value is a string — there are no booleans, numbers, or nulls. Type interpretation is left to the consumer. Quotes are optional unless a value contains spaces.
+Coda is whitespace-sensitive. Every leaf value is a string — there are no booleans, numbers, or nulls. Type interpretation is left to the consumer. Quotes are optional unless a value contains spaces or special characters.
 
 ```coda
 name myproject
@@ -67,6 +67,57 @@ author "Albert Einstein"
 ```
 
 Coda has three structural constructs: **blocks** `{}`, **arrays** `[]`, and **tables**. Tables are not a separate syntax — they emerge from a header row inside an array.
+
+---
+
+## Strings and Escapes
+
+Unquoted strings can contain any characters except whitespace and syntax characters (`{}[]"#`).
+
+```coda
+url https://example.com/path?query=1
+email user@domain.com
+```
+
+Quoted strings support escape sequences:
+
+| Escape | Character |
+|--------|-----------|
+| `\n` | newline |
+| `\t` | tab |
+| `\r` | carriage return |
+| `\"` | double quote |
+| `\\` | backslash |
+
+```coda
+message "hello\nworld"
+path "C:\\Users\\name"
+quote "He said \"hello\""
+```
+
+Keys can also be quoted strings:
+
+```coda
+"key with spaces" value
+"weird-key!" "weird value"
+```
+
+---
+
+## Comments
+
+Comments start with `#` and extend to the end of the line. They are preserved and attached to the following node.
+
+```coda
+# Project configuration
+name myproject
+
+compiler {
+    # Enable optimizations for release
+    optimize true
+    debug false
+}
+```
 
 ---
 
@@ -92,6 +143,18 @@ project {
         aarch64-macos
     ]
 }
+```
+
+Content must begin on a new line after `{`:
+
+```coda
+# Legal
+compiler {
+    debug false
+}
+
+# Illegal
+compiler { debug false }
 ```
 
 ---
@@ -136,6 +199,8 @@ deps [
 ]
 ```
 
+You can access the plot link via `coda["deps"]["plot"]["link"]`.
+
 ---
 
 ## Nesting rules
@@ -173,4 +238,53 @@ deps [
 
 ---
 
-This repo contains a C++ library for parsing, querying, and serializing Coda files.
+## C++ Library
+
+This repo contains a header-only C++ library for parsing, querying, and serializing Coda files.
+
+### Usage
+
+```cpp
+#include "include/coda.hpp"
+
+int main() {
+    Coda coda("project.coda");
+
+    // Access values
+    std::string name = coda["name"].asString();
+    std::string debug = coda["compiler"]["debug"].asString();
+    std::string plotLink = coda["deps"]["plot"]["link"].asString();
+
+    // Iterate arrays
+    for (const auto& target : coda["compiler"]["targets"].asArray()) {
+        std::cout << target.asString() << "\n";
+    }
+
+    // Iterate blocks
+    for (const auto& [key, value] : coda["compiler"].asBlock()) {
+        std::cout << key << ": " << value.asString() << "\n";
+    }
+
+    // Modify and save
+    coda["name"] = "newproject";
+    coda.save("project.coda");
+
+    return 0;
+}
+```
+
+### Sorting
+
+Fields can be sorted for consistent output:
+
+```cpp
+// Alphabetical, scalars before containers
+coda.file.order();
+
+// Custom weight function (higher weight = earlier)
+coda.file.order([](const std::string& key) -> float {
+    if (key == "name") return 100;
+    if (key == "type") return 90;
+    return 0;
+});
+```

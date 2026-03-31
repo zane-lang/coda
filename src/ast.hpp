@@ -1,6 +1,6 @@
 #pragma once
-#include "types.hpp"
-#include "ordered_map.hpp"
+#include "helpers/types.hpp"
+#include "helpers/ordered_map.hpp"
 #include <string>
 #include <vector>
 #include <functional>

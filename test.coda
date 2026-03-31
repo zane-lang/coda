@@ -3,12 +3,10 @@ type executable
 
 test "hello\nworld"
 
-# hello
-# bye is a red fox
-# hi hello
-"compiler" {
-	ö ba
-	debug "hi h"
+# this is a comment
+# this is another line
+compiler {
+	debug true
 	optimize true
 }
 

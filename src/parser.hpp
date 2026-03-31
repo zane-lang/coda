@@ -1,6 +1,6 @@
 #pragma once
 #include "ast.hpp"
-#include "console.hpp"
+#include "helpers/console.hpp"
 
 #include <set>
 #include <string>
