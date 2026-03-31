@@ -138,7 +138,9 @@ public:
 // ─── Parser ─────────────────────────────────────────────────────────────────
 
 class Parser {
-	std::string source;          // must be declared before lexer
+	// ── members ─────────────────────────────────────────────────────────
+
+	std::string source;
 	Lexer       lexer;
 	Token       current;
 	Token       lookahead;
@@ -153,38 +155,16 @@ class Parser {
 		return t;
 	}
 
-	// ── diagnostics ─────────────────────────────────────────────────────
-
-	std::string extractLine(size_t start) const {
-		size_t end = source.find_first_of("\r\n", start);
-		if (end == std::string::npos) end = source.size();
-		return source.substr(start, end - start);
-	}
-
-	[[noreturn]] void error(const std::string& msg, const SourceLoc& loc) {
-		std::string srcLine = extractLine(loc.lineStart);
-
-		// mirror whitespace characters so ^ aligns regardless of tab width
-		std::string pointer;
-		for (int i = 0; i < loc.col - 1 && i < (int)srcLine.size(); ++i)
-			pointer += (srcLine[i] == '\t') ? '\t' : ' ';
-		pointer += '^';
-
-		PRINT("error (line " + std::to_string(loc.line)
-			+ ", col " + std::to_string(loc.col) + "): " + msg
-			+ "\n" + srcLine
-			+ "\n" + pointer);
-		throw "";
-	}
-
-	[[noreturn]] void error(const std::string& msg) {
-		error(msg, current.loc);
-	}
-
 	Token expect(TokenType type) {
 		if (current.type != type)
 			error("expected " + tokenToString.at(type)
 			    + ", got " + tokenToString.at(current.type));
+		return advance();
+	}
+
+	Token expectKey() {
+		if (current.type != TokenType::Ident && current.type != TokenType::String)
+			error("expected key (identifier or string), got " + tokenToString.at(current.type));
 		return advance();
 	}
 
@@ -208,7 +188,34 @@ class Parser {
 		    || current.type == TokenType::Eof;
 	}
 
-	// ── value construction (drains pending comment) ─────────────────────
+	// ── diagnostics ─────────────────────────────────────────────────────
+
+	std::string extractLine(size_t start) const {
+		size_t end = source.find_first_of("\r\n", start);
+		if (end == std::string::npos) end = source.size();
+		return source.substr(start, end - start);
+	}
+
+	[[noreturn]] void error(const std::string& msg, const SourceLoc& loc) {
+		std::string srcLine = extractLine(loc.lineStart);
+
+		std::string pointer;
+		for (int i = 0; i < loc.col - 1 && i < (int)srcLine.size(); ++i)
+			pointer += (srcLine[i] == '\t') ? '\t' : ' ';
+		pointer += '^';
+
+		PRINT("error (line " + std::to_string(loc.line)
+			+ ", col " + std::to_string(loc.col) + "): " + msg
+			+ "\n" + srcLine
+			+ "\n" + pointer);
+		throw "";
+	}
+
+	[[noreturn]] void error(const std::string& msg) {
+		error(msg, current.loc);
+	}
+
+	// ── value construction ──────────────────────────────────────────────
 
 	template<typename T>
 	CodaValue makeValue(T&& content) {
@@ -223,8 +230,8 @@ class Parser {
 	// ── duplicate-key guards ────────────────────────────────────────────
 
 	void insertChecked(OrderedMap<std::string, CodaValue>& map,
-					const std::string& key, CodaValue value,
-					const SourceLoc& loc) {
+	                   const std::string& key, CodaValue value,
+	                   const SourceLoc& loc) {
 		auto [it, inserted] = map.insert(key, std::move(value));
 		if (!inserted)
 			error("duplicate key '" + key + "'", loc);
@@ -237,7 +244,7 @@ class Parser {
 				error("duplicate field '" + tok.value + "' in table header", tok.loc);
 	}
 
-	// ── flat row collection (tabular contexts, no nesting) ──────────────
+	// ── row collection ──────────────────────────────────────────────────
 
 	std::vector<Token> collectFlatRow() {
 		std::vector<Token> row;
@@ -249,43 +256,13 @@ class Parser {
 		return row;
 	}
 
-	// Add helper method in Parser
-	Token expectKey() {
-		if (current.type != TokenType::Ident && current.type != TokenType::String)
-			error("expected key (identifier or string), got " + tokenToString.at(current.type));
-		return advance();
-	}
-
-public:
-	Parser(std::string src)
-		: source(std::move(src))
-		, lexer(source)
-		, current(lexer.next())
-		, lookahead(lexer.next())
-	{}
-
-	CodaFile parseFile() {
-		CodaFile file;
-		skipNewlines();
-		while (current.type != TokenType::Eof) {
-			Token keyTok = expectKey();
-			CodaValue val = parseValue();
-			insertChecked(file.statements, keyTok.value, std::move(val), keyTok.loc);
-			skipNewlines();
-		}
-		return file;
-	}
-
-private:
-	// ── value dispatch ──────────────────────────────────────────────────
+	// ── value parsing ───────────────────────────────────────────────────
 
 	CodaValue parseValue() {
 		if (current.type == TokenType::LBrace)   return makeValue(parseBlock());
 		if (current.type == TokenType::LBracket) return parseArray();
 		return makeValue(std::string(advance().value));
 	}
-
-	// ── block: { key value ... } ────────────────────────────────────────
 
 	CodaBlock parseBlock() {
 		expect(TokenType::LBrace);
@@ -296,7 +273,7 @@ private:
 			if (current.type == TokenType::Key)
 				error("'key' header not allowed inside block — use [] for tables");
 
-			Token keyTok = expectKey();
+			Token keyTok  = expectKey();
 			CodaValue val = parseValue();
 			insertChecked(block.content, keyTok.value, std::move(val), keyTok.loc);
 			skipNewlines();
@@ -306,18 +283,17 @@ private:
 		return block;
 	}
 
-	// ── array / table: [ ... ] ──────────────────────────────────────────
+	// ── array / table parsing ───────────────────────────────────────────
 
 	CodaValue parseArray() {
 		expect(TokenType::LBracket);
 		skipNewlines();
 
-		if (current.type == TokenType::Key)                                          return parseKeyedTable();
+		if (current.type == TokenType::Key)                                           return parseKeyedTable();
 		if (current.type == TokenType::LBrace || current.type == TokenType::LBracket) return parseNestedList();
 		return parseAutoList();
 	}
 
-	// [ key field1 field2 ... \n  rowKey v1 v2 ... ]
 	CodaValue parseKeyedTable() {
 		advance(); // consume 'key'
 
@@ -345,7 +321,6 @@ private:
 		return makeValue(std::move(table));
 	}
 
-	// [ {…} {…} … ]  or  [ […] […] … ]
 	CodaValue parseNestedList() {
 		CodaArray array;
 		while (current.type != TokenType::RBracket && current.type != TokenType::Eof) {
@@ -359,7 +334,6 @@ private:
 		return makeValue(std::move(array));
 	}
 
-	// peek first line to decide: plain table (multi-word header) or bare list
 	CodaValue parseAutoList() {
 		auto firstRow = collectFlatRow();
 		skipNewlines();
@@ -368,7 +342,6 @@ private:
 		return parseBareList(std::move(firstRow));
 	}
 
-	// [ h1 h2 … \n  v1 v2 … \n  … ]
 	CodaValue parsePlainTable(std::vector<Token> header) {
 		checkUniqueFields(header);
 
@@ -389,7 +362,6 @@ private:
 		return makeValue(std::move(array));
 	}
 
-	// [ item1 \n item2 \n … ]
 	CodaValue parseBareList(std::vector<Token> firstRow) {
 		CodaArray array;
 		if (!firstRow.empty())
@@ -404,5 +376,29 @@ private:
 
 		expect(TokenType::RBracket);
 		return makeValue(std::move(array));
+	}
+
+public:
+	// ── constructor ─────────────────────────────────────────────────────
+
+	Parser(std::string src)
+		: source(std::move(src))
+		, lexer(source)
+		, current(lexer.next())
+		, lookahead(lexer.next())
+	{}
+
+	// ── public interface ────────────────────────────────────────────────
+
+	CodaFile parseFile() {
+		CodaFile file;
+		skipNewlines();
+		while (current.type != TokenType::Eof) {
+			Token keyTok  = expectKey();
+			CodaValue val = parseValue();
+			insertChecked(file.statements, keyTok.value, std::move(val), keyTok.loc);
+			skipNewlines();
+		}
+		return file;
 	}
 };
