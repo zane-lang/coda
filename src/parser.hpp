@@ -8,8 +8,6 @@
 #include <string>
 #include <vector>
 
-// ─── Source location ────────────────────────────────────────────────────────
-
 namespace coda {
 
 struct SourceLoc {
@@ -18,46 +16,6 @@ struct SourceLoc {
 	size_t lineStart = 0;
 	size_t offset    = 0;
 };
-
-} // namespace coda
-
-using coda::SourceLoc;
-
-// ─── Token types ────────────────────────────────────────────────────────────
-
-enum class TokenType {
-	Ident, String, Key, Comment,
-	LBrace, RBrace,
-	LBracket, RBracket,
-	Newline, Eof,
-	Error
-};
-
-inline const std::map<TokenType, std::string> tokenToString = {
-	{ TokenType::Ident,    "identifier"  },
-	{ TokenType::String,   "string"      },
-	{ TokenType::Key,      "'key'"       },
-	{ TokenType::Comment,  "comment"     },
-	{ TokenType::LBrace,   "'{'"         },
-	{ TokenType::RBrace,   "'}'"         },
-	{ TokenType::LBracket, "'['"         },
-	{ TokenType::RBracket, "']'"         },
-	{ TokenType::Newline,  "newline"     },
-	{ TokenType::Eof,      "end of file" },
-	{ TokenType::Error,    "error"       },
-};
-
-// ─── Token ──────────────────────────────────────────────────────────────────
-
-struct Token {
-	TokenType   type;
-	std::string value;
-	SourceLoc   loc;
-};
-
-// ─── Error infrastructure ───────────────────────────────────────────────────
-
-namespace coda {
 
 enum class ParseErrorCode {
 	// Structural
@@ -118,7 +76,40 @@ struct ParseError : std::exception {
 	}
 };
 
-} // namespace coda
+namespace detail {
+	
+// ─── Token types ────────────────────────────────────────────────────────────
+
+enum class TokenType {
+	Ident, String, Key, Comment,
+	LBrace, RBrace,
+	LBracket, RBracket,
+	Newline, Eof,
+	Error
+};
+
+inline const std::map<TokenType, std::string> tokenToString = {
+	{ TokenType::Ident,    "identifier"  },
+	{ TokenType::String,   "string"      },
+	{ TokenType::Key,      "'key'"       },
+	{ TokenType::Comment,  "comment"     },
+	{ TokenType::LBrace,   "'{'"         },
+	{ TokenType::RBrace,   "'}'"         },
+	{ TokenType::LBracket, "'['"         },
+	{ TokenType::RBracket, "']'"         },
+	{ TokenType::Newline,  "newline"     },
+	{ TokenType::Eof,      "end of file" },
+	{ TokenType::Error,    "error"       },
+};
+
+// ─── Token ──────────────────────────────────────────────────────────────────
+
+struct Token {
+	TokenType   type;
+	std::string value;
+	SourceLoc   loc;
+};
+
 
 // ─── Lexer ──────────────────────────────────────────────────────────────────
 
@@ -582,3 +573,7 @@ public:
 	const std::vector<coda::ParseError>& errors() const { return errors_; }
 	bool hasErrors() const { return !errors_.empty(); }
 };
+
+} // namespace detail
+
+} // namespace coda

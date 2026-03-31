@@ -8,7 +8,7 @@
 
 class Coda {
 	std::string indentUnit = "\t";
-	CodaFile file;
+	coda::CodaFile file;
 
 public:
 	Coda() = default;
@@ -17,7 +17,7 @@ public:
 		if (!f) throw std::runtime_error("could not open: " + path);
 		std::ostringstream ss;
 		ss << f.rdbuf();
-		file = Parser(ss.str()).parseFile();
+		file = coda::detail::Parser(ss.str()).parseFile();
 	}
 
 	void useTabs()              { indentUnit = "\t"; }
@@ -52,6 +52,6 @@ public:
 		save(path);
 	}
 
-	const CodaValue& operator[](const std::string& key) const { return file[key]; }
-	CodaValue&       operator[](const std::string& key)       { return file[key]; }
+	const coda::CodaValue& operator[](const std::string& key) const { return file[key]; }
+	coda::CodaValue&       operator[](const std::string& key) { return file[key]; }
 };

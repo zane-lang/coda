@@ -2,6 +2,8 @@
 
 #include <variant>
 
+namespace coda {
+
 // Helper for overloading lambdas
 template<typename... Ts>
 struct overloaded : Ts... {
@@ -131,3 +133,5 @@ struct WrappingVariant {
 		loadVariantAt<0>(idx, value, ar);
 	}
 };
+
+} // namespace coda

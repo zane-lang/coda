@@ -2,7 +2,7 @@
 #include <iostream>
 
 int main() {
-    Coda coda("test.coda");
+	Coda coda("test.coda");
 
 	coda.order();
 	coda.save("test.coda");

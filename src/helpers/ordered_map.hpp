@@ -7,6 +7,9 @@
 #include <algorithm>
 #include <functional>
 
+namespace coda {
+namespace detail {
+
 /// A map that preserves insertion order.
 /// Iteration follows the order elements were inserted.
 /// Key lookup is O(1) via an internal hash map.
@@ -128,3 +131,6 @@ private:
 			index[entries[i].first] = i;
 	}
 };
+
+} // namespace detail
+} // namespace coda
