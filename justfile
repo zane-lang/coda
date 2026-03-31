@@ -3,9 +3,5 @@ test:
 	clang++ -std=c++20 -I. tests/test_main.cpp -o build/tests
 	./build/tests
 
-run:
-	clang++ test.cpp -o build/main
-	./build/main
-
 generate:
 	quom src/coda.hpp include/coda.hpp
