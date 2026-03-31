@@ -92,6 +92,7 @@ class Parser {
 	Lexer lexer;
 	Token current;
 	Token lookahead;
+	std::string pendingComment;
 
 	Token advance() {
 		Token t   = current;
@@ -112,11 +113,10 @@ class Parser {
 		while (true) {
 			if (current.type == TokenType::Newline) {
 				advance();
-			}
-			else if (current.type == TokenType::Comment) {
-				advance();
-			}
-			else {
+			} else if (current.type == TokenType::Comment) {
+				if (!pendingComment.empty()) pendingComment += '\n';
+				pendingComment += advance().value;
+			} else {
 				break;
 			}
 		}
@@ -129,7 +129,7 @@ class Parser {
 			|| current.type == TokenType::Eof;
 	}
 
-	// collect flat string tokens on current line — used in tabular contexts
+	// Collect flat string tokens on current line — used in tabular contexts.
 	std::vector<std::string> collectFlatRow() {
 		std::vector<std::string> row;
 		while (!isLineEnd()) {
@@ -138,6 +138,17 @@ class Parser {
 			row.push_back(advance().value);
 		}
 		return row;
+	}
+
+	// Central point for all CodaValue construction — always drains pendingComment.
+	template<typename T>
+	CodaValue makeValue(T&& content) {
+		CodaValue v{std::forward<T>(content)};
+		if (!pendingComment.empty()) {
+			v.comment = std::move(pendingComment);
+			pendingComment.clear();
+		}
+		return v;
 	}
 
 public:
@@ -152,7 +163,6 @@ public:
 		while (current.type != TokenType::Eof) {
 			std::string key = expect(TokenType::Ident).value;
 			file.statements[key] = parseValue();
-
 			skipNewlines();
 		}
 		return file;
@@ -161,13 +171,13 @@ public:
 private:
 	CodaValue parseValue() {
 		if (current.type == TokenType::LBrace)
-			return CodaValue{parseBlock()};
+			return makeValue(parseBlock());
 		if (current.type == TokenType::LBracket)
 			return parseArray();
 
 		std::string val = current.value;
 		advance();
-		return CodaValue { val };
+		return makeValue(std::move(val));
 	}
 
 	CodaBlock parseBlock() {
@@ -175,7 +185,7 @@ private:
 		skipNewlines();
 		CodaBlock block;
 
-		std::map<std::string, CodaValue> children; 
+		std::map<std::string, CodaValue> children;
 
 		while (current.type != TokenType::RBrace && current.type != TokenType::Eof) {
 			if (current.type == TokenType::Newline) { advance(); continue; }
@@ -183,9 +193,7 @@ private:
 				throw std::runtime_error("key header not allowed in block — use [] for tables");
 
 			std::string key = expect(TokenType::Ident).value;
-
-			children[key] = parseValue(); 
-
+			children[key] = parseValue();
 			skipNewlines();
 		}
 		block.content = std::move(children);
@@ -194,12 +202,13 @@ private:
 		return block;
 	}
 
+	// Returns CodaValue because the bracket syntax can produce either a CodaArray or CodaTable.
 	CodaValue parseArray() {
 		expect(TokenType::LBracket);
 		skipNewlines();
 
 		if (current.type == TokenType::Key) {
-			// keyed table — no nesting allowed
+			// Keyed table — no nesting allowed.
 			advance();
 			std::vector<std::string> fields;
 			while (current.type == TokenType::Ident || current.type == TokenType::String)
@@ -215,16 +224,15 @@ private:
 				CodaTable entry;
 				for (size_t i = 0; i < fields.size() && (i + 1) < row.size(); i++)
 					entry.content[fields[i]] = row[i + 1];
-				table.content[rowKey] = CodaValue{std::move(entry)};
+				table.content[rowKey] = makeValue(std::move(entry));
 			}
-			
-			expect(TokenType::RBracket);
-			return CodaValue{std::move(table)};
 
-		}
-		else if (current.type == TokenType::LBrace
+			expect(TokenType::RBracket);
+			return makeValue(std::move(table));
+
+		} else if (current.type == TokenType::LBrace
 				|| current.type == TokenType::LBracket) {
-			// starts with a nested value — bare list, nesting allowed
+			// Starts with a nested value — bare list, nesting allowed.
 			CodaArray array;
 			std::vector<CodaValue> list;
 			while (current.type != TokenType::RBracket && current.type != TokenType::Eof) {
@@ -234,18 +242,17 @@ private:
 				skipNewlines();
 			}
 			array.content = std::move(list);
-			
-			expect(TokenType::RBracket);
-			return CodaValue{std::move(array)};
 
-		}
-		else {
-			// peek at first line to decide: plain table or bare list
+			expect(TokenType::RBracket);
+			return makeValue(std::move(array));
+
+		} else {
+			// Peek at first line to decide: plain table or bare list.
 			auto firstRow = collectFlatRow();
 			skipNewlines();
 
 			if (firstRow.size() > 1) {
-				// plain table — firstRow is the header, no nesting allowed
+				// Plain table — firstRow is the header, no nesting allowed.
 				CodaArray array;
 				std::vector<CodaValue> rows;
 				while (current.type != TokenType::RBracket && current.type != TokenType::Eof) {
@@ -255,20 +262,19 @@ private:
 					CodaTable entry;
 					for (size_t i = 0; i < firstRow.size() && i < row.size(); i++)
 						entry.content[firstRow[i]] = row[i];
-					rows.push_back(CodaValue{std::move(entry)});
+					rows.push_back(makeValue(std::move(entry)));
 				}
 				array.content = std::move(rows);
-				
-				expect(TokenType::RBracket);
-				return CodaValue{std::move(array)};
 
-			}
-			else {
-				// bare list — nesting allowed for subsequent elements
+				expect(TokenType::RBracket);
+				return makeValue(std::move(array));
+
+			} else {
+				// Bare list — nesting allowed for subsequent elements.
 				CodaArray array;
 				std::vector<CodaValue> list;
 				if (!firstRow.empty())
-					list.push_back(CodaValue { firstRow [0]});
+					list.push_back(makeValue(std::string{firstRow[0]}));
 				while (current.type != TokenType::RBracket && current.type != TokenType::Eof) {
 					skipNewlines();
 					if (current.type == TokenType::RBracket) break;
@@ -276,9 +282,9 @@ private:
 					skipNewlines();
 				}
 				array.content = std::move(list);
-				
+
 				expect(TokenType::RBracket);
-				return CodaValue{std::move(array)};
+				return makeValue(std::move(array));
 			}
 		}
 	}
