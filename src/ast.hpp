@@ -130,6 +130,7 @@ struct CodaBlock {
 
 struct CodaArray {
 	std::vector<CodaValue> content;
+	std::string headerComment;
 
 	const CodaValue& operator[](size_t i) const;
 	CodaValue&       operator[](size_t i);
@@ -454,6 +455,7 @@ inline std::string CodaArray::serialize(int indent, const std::string& unit) con
 		std::vector<std::string> fields;
 		for (const auto& [k, _] : firstRow.content) fields.push_back(k);
 
+		out += detail::serializeComment(headerComment, indent + 1, unit);
 		out += detail::pad(indent + 1, unit);
 		for (size_t i = 0; i < fields.size(); ++i)
 			out += detail::serializeToken(fields[i]) + (i < fields.size() - 1 ? " " : "");

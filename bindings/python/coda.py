@@ -206,11 +206,19 @@ _lib.coda_doc_root.restype = c_uint32
 _lib.coda_node_kind.argtypes = [c_void_p, c_uint32]
 _lib.coda_node_kind.restype = c_uint32
 
-_lib.coda_node_comment.argtypes = [c_void_p, c_uint32]
-_lib.coda_node_comment.restype = CodaStr
+# comment
+_lib.coda_node_comment_get.argtypes = [c_void_p, c_uint32]
+_lib.coda_node_comment_get.restype = CodaStr
 
-_lib.coda_node_set_comment.argtypes = [c_void_p, c_uint32, c_char_p, c_size_t]
-_lib.coda_node_set_comment.restype = c_uint32
+_lib.coda_node_comment_set.argtypes = [c_void_p, c_uint32, c_char_p, c_size_t]
+_lib.coda_node_comment_set.restype = c_uint32
+
+# header comment
+_lib.coda_node_header_comment_get.argtypes = [c_void_p, c_uint32]
+_lib.coda_node_header_comment_get.restype = CodaStr
+
+_lib.coda_node_header_comment_set.argtypes = [c_void_p, c_uint32, c_char_p, c_size_t]
+_lib.coda_node_header_comment_set.restype = c_uint32
 
 # String nodes
 _lib.coda_string_get.argtypes = [c_void_p, c_uint32]
@@ -405,18 +413,39 @@ class Coda:
 	def comment(self) -> str:
 		"""Get the comment attached to this node."""
 		self._check_valid()
-		result = _lib.coda_node_comment(self._doc._ptr, self._node_id)
+		result = _lib.coda_node_comment_get(self._doc._ptr, self._node_id)
 		return result.to_python()
 
 	@comment.setter
 	def comment(self, value: str):
 		"""Set the comment for this node."""
 		self._check_valid()
-		value_bytes = value.encode('utf-8')
-		status = _lib.coda_node_set_comment(self._doc._ptr, self._node_id, value_bytes, len(value_bytes))
+		value_bytes = value.encode("utf-8")
+		status = _lib.coda_node_comment_set(self._doc._ptr, self._node_id, value_bytes, len(value_bytes))
 		if status != CODA_OK:
 			raise CodaException("Failed to set comment")
 
+	@property
+	def header_comment(self) -> str:
+		"""
+		Header comment for table-like containers.
+
+		- For a plain table: comment block directly before the header row inside the array.
+		- For a keyed table: comment block directly before the `key ...` header line.
+		"""
+		self._check_valid()
+		result = _lib.coda_node_header_comment_get(self._doc._ptr, self._node_id)
+		return result.to_python()
+
+	@header_comment.setter
+	def header_comment(self, value: str):
+		self._check_valid()
+		value_bytes = value.encode("utf-8")
+		status = _lib.coda_node_header_comment_set(self._doc._ptr, self._node_id, value_bytes, len(value_bytes))
+		if status == CODA_BAD_KIND:
+			raise TypeError("header_comment is only valid on table-like container nodes")
+		if status != CODA_OK:
+			raise CodaException("Failed to set header_comment")
 
 class CodaTestRunner:
 	"""Executes catalog-driven tests against a CodaDoc."""
@@ -705,12 +734,11 @@ def run_catalog_tests(catalog_path: str) -> None:
 								"DuplicateKey": 2,
 								"DuplicateField": 3,
 								"RaggedRow": 4,
-								"CommentBeforeHeader": 5,
-								"InvalidEscape": 6,
-								"UnterminatedString": 7,
-								"NestedBlock": 8,
-								"ContentAfterBrace": 9,
-								"KeyInBlock": 10,
+								"InvalidEscape": 5,
+								"UnterminatedString": 6,
+								"NestedBlock": 7,
+								"ContentAfterBrace": 8,
+								"KeyInBlock": 9,
 							}
 							expected = code_map.get(test["code"].asString(), -1)
 							ok = int(e.code) == expected

@@ -347,7 +347,6 @@ inline int parse_error_code(const std::string& code) {
 	if (code == "DuplicateKey") return static_cast<int>(coda::ParseErrorCode::DuplicateKey);
 	if (code == "DuplicateField") return static_cast<int>(coda::ParseErrorCode::DuplicateField);
 	if (code == "RaggedRow") return static_cast<int>(coda::ParseErrorCode::RaggedRow);
-	if (code == "CommentBeforeHeader") return static_cast<int>(coda::ParseErrorCode::CommentBeforeHeader);
 	if (code == "InvalidEscape") return static_cast<int>(coda::ParseErrorCode::InvalidEscape);
 	if (code == "UnterminatedString") return static_cast<int>(coda::ParseErrorCode::UnterminatedString);
 	if (code == "NestedBlock") return static_cast<int>(coda::ParseErrorCode::NestedBlock);

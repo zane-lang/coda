@@ -400,6 +400,7 @@ struct CodaBlock {
 
 struct CodaArray {
 	std::vector<CodaValue> content;
+	std::string headerComment;
 
 	const CodaValue& operator[](size_t i) const;
 	CodaValue&       operator[](size_t i);
@@ -723,6 +724,7 @@ inline std::string CodaArray::serialize(int indent, const std::string& unit) con
 		std::vector<std::string> fields;
 		for (const auto& [k, _] : firstRow.content) fields.push_back(k);
 
+		out += detail::serializeComment(headerComment, indent + 1, unit);
 		out += detail::pad(indent + 1, unit);
 		for (size_t i = 0; i < fields.size(); ++i)
 			out += detail::serializeToken(fields[i]) + (i < fields.size() - 1 ? " " : "");
@@ -1206,7 +1208,7 @@ class Parser {
 
 		if (current.type == TokenType::Key) {
 			std::string headerComment = takeComment();
-			return parseKeyedTable(std::move(headerComment));
+				return parseKeyedTable(std::move(headerComment));
 		}
 		if (current.type == TokenType::LBrace || current.type == TokenType::LBracket)
 			return parseNestedList();
@@ -1269,15 +1271,15 @@ class Parser {
 		skipNewlines();
 
 		if (firstRow.size() > 1) {
-			return parsePlainTable(std::move(firstRow));
+			return parsePlainTable(std::move(firstRow), std::move(firstComment));
 		}
 		return parseBareList(std::move(firstRow), std::move(firstComment));
 	}
 
-	CodaValue parsePlainTable(std::vector<Token> header) {
+	CodaValue parsePlainTable(std::vector<Token> header, std::string headerComment) {
 		checkUniqueFields(header);
 		CodaArray array;
-
+		array.headerComment = std::move(headerComment);
 		while (current.type != TokenType::RBracket && current.type != TokenType::Eof) {
 			std::string comment = takeComment();
 			auto row = collectFlatRow();

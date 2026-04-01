@@ -16,6 +16,7 @@ deps [
 	http github.com/zane-lang/http 2.1.0
 ]
 
+# comp
 compiler {
 	debug false
 	optimize true
@@ -33,11 +34,4 @@ meta {
 """
 
 with CodaDoc.parse(text) as doc:
-	print(doc["name"].asString())
-	print(doc["compiler"]["debug"].asString())
-	# print(doc["deps"]["plot"]["link"].asString())
-	for target in doc["compiler"]["targets"].asArray():
-		print(target.asString())
-	for key, value in doc["meta"].asBlock():
-		print(f"{key}: {value.asString()}")
-	print(doc.serialize())
+	print(doc["deps"].header_comment)

@@ -26,7 +26,6 @@ enum class ParseErrorCode {
 	DuplicateKey,
 	DuplicateField,
 	RaggedRow,
-	CommentBeforeHeader,
 
 	// String / lexer level
 	InvalidEscape,
@@ -450,7 +449,7 @@ class Parser {
 
 		if (current.type == TokenType::Key) {
 			std::string headerComment = takeComment();
-			return parseKeyedTable(std::move(headerComment));
+				return parseKeyedTable(std::move(headerComment));
 		}
 		if (current.type == TokenType::LBrace || current.type == TokenType::LBracket)
 			return parseNestedList();
@@ -513,15 +512,15 @@ class Parser {
 		skipNewlines();
 
 		if (firstRow.size() > 1) {
-			return parsePlainTable(std::move(firstRow));
+			return parsePlainTable(std::move(firstRow), std::move(firstComment));
 		}
 		return parseBareList(std::move(firstRow), std::move(firstComment));
 	}
 
-	CodaValue parsePlainTable(std::vector<Token> header) {
+	CodaValue parsePlainTable(std::vector<Token> header, std::string headerComment) {
 		checkUniqueFields(header);
 		CodaArray array;
-
+		array.headerComment = std::move(headerComment);
 		while (current.type != TokenType::RBracket && current.type != TokenType::Eof) {
 			std::string comment = takeComment();
 			auto row = collectFlatRow();
