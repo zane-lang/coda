@@ -792,7 +792,7 @@ tests [
     }
     {
         suite "Type errors"
-        name "missing top-level key inserts default"
+        name "missing top-level key throws"
         src "a 1\n"
         checks [
             {
@@ -801,12 +801,7 @@ tests [
                 eq_bool true
             }
             {
-                op get_string
-                field b
-                eq ""
-            }
-            {
-                op has_key
+                op const_missing_key_throws
                 field b
                 eq_bool true
             }

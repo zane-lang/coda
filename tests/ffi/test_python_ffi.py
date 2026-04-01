@@ -10,7 +10,13 @@ import tempfile
 # Add the tests/ffi directory to the path so we can import coda_ffi
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-from coda_ffi import CodaDoc, CodaException, CodaParseError, get_abi_version
+from coda_ffi import (
+    CodaDoc,
+    CodaException,
+    CodaParseError,
+    get_abi_version,
+    run_catalog_tests,
+)
 
 
 def test_basic_parsing():
@@ -327,27 +333,11 @@ def test_get_with_default():
 
 
 def run_tests():
-    """Run all tests."""
+    """Run catalog-driven tests."""
     print("\nCoda Python FFI Tests")
     print("=====================\n")
-    
-    test_abi_version()
-    test_basic_parsing()
-    test_nested_blocks()
-    test_arrays()
-    test_block_iteration()
-    test_keyed_table()
-    test_quoted_strings()
-    test_serialization()
-    test_modification()
-    test_file_operations()
-    test_error_handling()
-    test_comments()
-    test_complex_document()
-    test_context_manager()
-    test_get_with_default()
-    
-    print("\n✓ All tests passed!\n")
+    catalog_path = os.path.join(os.path.dirname(__file__), "..", "catalog.coda")
+    run_catalog_tests(catalog_path)
 
 
 if __name__ == "__main__":
