@@ -1204,7 +1204,7 @@ class Parser {
 			skipNewlines();
 			if (row.empty()) continue;
 
-			if (row.size() - 1 < fieldToks.size())
+			if (row.size() - 1 != fieldToks.size())
 				fatalError(
 					coda::ParseErrorCode::RaggedRow,
 					"row '" + row[0].value + "' has " + std::to_string(row.size() - 1) + " value(s), expected " + std::to_string(fieldToks.size()),
@@ -1263,7 +1263,7 @@ class Parser {
 			skipNewlines();
 			if (row.empty()) continue;
 
-			if (row.size() < header.size())
+			if (row.size() != header.size())
 				fatalError(
 					coda::ParseErrorCode::RaggedRow,
 					"row has " + std::to_string(row.size()) + " value(s), expected " + std::to_string(header.size()),

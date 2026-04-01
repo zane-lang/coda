@@ -238,6 +238,8 @@ deps [
 
 You can access the plot link via `coda["deps"]["plot"]["link"]`.
 
+Rows must always contain as many elements as the header defines in both plain and keyed table.
+
 ---
 
 ## Nesting rules
