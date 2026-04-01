@@ -6,7 +6,6 @@ zig_cc  := `pwd` + "/scripts/zig-cc"
 zig_cxx := `pwd` + "/scripts/zig-cxx"
 zig_ar  := `pwd` + "/scripts/zig-ar"
 
-# pick your C++ standard
 flags       := "-O3 -std=c++20"
 flags_cross := "-O3 -std=c++20"
 
@@ -25,7 +24,7 @@ test-cpp:
 # Test the C FFI
 test-c-ffi:
 	mkdir -p build
-	# Build native static lib (not cross-compiled)
+	# Build native static lib (not cross-compiled) because of name collisions
 	clang++ -std=c++20 -c -fPIC -I. ffi/coda_ffi.cpp -o build/coda_ffi.o
 	ar rcs build/libcoda_ffi_native.a build/coda_ffi.o
 	# Build and run test
