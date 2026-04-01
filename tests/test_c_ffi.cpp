@@ -1,7 +1,6 @@
+#include "../ffi/coda_ffi.h"
 #include "test_macros.hpp"
 #include "test_runner.hpp"
-#include "test_data.hpp"
-#include "../ffi/coda_ffi.h"
 
 #include <cstdio>
 #include <cstring>
@@ -27,6 +26,10 @@ class FfiAdapter : public ParseAdapter {
 	coda_node_t root() { return coda_doc_root(doc_); }
 
 	coda_node_t get_node(const char* key) {
+		return coda_map_get(doc_, root(), key, std::strlen(key));
+	}
+
+	coda_node_t get_or_insert_node(const char* key) {
 		return coda_map_get_or_insert(doc_, root(), key, std::strlen(key));
 	}
 
@@ -217,7 +220,7 @@ public:
 	}
 
 	bool set_string(const char* key, const char* value) override {
-		coda_node_t node = get_node(key);
+		coda_node_t node = get_or_insert_node(key);
 		if (node == 0) {
 			node = coda_new_string(doc_, value, std::strlen(value));
 			return coda_map_set(doc_, root(), key, std::strlen(key), node) == CODA_OK;

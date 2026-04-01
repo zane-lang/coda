@@ -25,7 +25,11 @@ test:
 # Test the C FFI
 test-c-ffi:
 	mkdir -p build
-	clang++ -std=c++20 -I. tests/test_c_ffi.cpp -L./dist/x86_64-linux-gnu -lcoda_ffi -o build/test_c_ffi
+	# Build native static lib (not cross-compiled)
+	clang++ -std=c++20 -c -fPIC -I. ffi/coda_ffi.cpp -o build/coda_ffi.o
+	ar rcs build/libcoda_ffi_native.a build/coda_ffi.o
+	# Build and run test
+	clang++ -std=c++20 -I. tests/test_c_ffi.cpp build/libcoda_ffi_native.a -o build/test_c_ffi
 	./build/test_c_ffi
 
 # Test both FFI layers

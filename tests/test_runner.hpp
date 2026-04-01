@@ -4,7 +4,6 @@
 #include "test_utils.hpp"
 
 #include <exception>
-#include <iostream>
 #include <string>
 
 namespace test_framework {

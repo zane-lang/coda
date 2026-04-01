@@ -572,6 +572,7 @@ extern "C" CODA_FFI_EXPORT coda_node_t coda_map_get_or_insert(
 	auto* child_node = doc->get(child);
 	child_node->s.clear();
 
+	node = doc->get(m);
 	node->index[k] = node->entries.size();
 	node->entries.emplace_back(std::move(k), child);
 	return child;
