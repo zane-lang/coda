@@ -10,6 +10,7 @@ from ctypes import c_char_p, c_size_t, c_uint32, c_void_p, POINTER, Structure
 from typing import Iterator, Optional, Tuple
 import os
 import sys
+from typing import overload, Union
 
 
 # ------------------------- Find and load the library -------------------------
@@ -366,15 +367,42 @@ class Coda:
 		if self.kind != CODA_NODE_TABLE:
 			raise TypeError("node is not a table")
 		return self.asBlock()
-	
-	def __getitem__(self, key: str) -> 'Coda':
+
+	@overload
+	def __getitem__(self, key: str) -> "Coda": ...
+	@overload
+	def __getitem__(self, key: int) -> "Coda": ...
+
+	def __getitem__(self, key: Union[str, int]) -> "Coda":
 		"""Access a child node by key (for blocks/maps)."""
 		self._check_valid()
-		key_bytes = key.encode('utf-8')
-		child_id = _lib.coda_map_get(self._doc._ptr, self._node_id, key_bytes, len(key_bytes))
-		if child_id == 0:
-			raise KeyError(f"Key not found: {key}")
-		return Coda(self._doc, child_id)
+
+		# Map/block/table lookup: node["field"]
+		if isinstance(key, str):
+			key_bytes = key.encode("utf-8")
+			child_id = _lib.coda_map_get(self._doc._ptr, self._node_id, key_bytes, len(key_bytes))
+			if child_id == 0:
+				raise KeyError(f"Key not found: {key}")
+			return Coda(self._doc, child_id)
+
+		# Array lookup: node[0]
+		if isinstance(key, int):
+			if self.kind != CODA_NODE_ARRAY:
+				raise TypeError("integer indexing only valid on arrays")
+
+			n = _lib.coda_array_len(self._doc._ptr, self._node_id)
+			i = key
+			if i < 0:
+				i += n
+			if i < 0 or i >= n:
+				raise IndexError("array index out of range")
+
+			child_id = _lib.coda_array_get(self._doc._ptr, self._node_id, i)
+			if child_id == 0:
+				raise IndexError("array element missing")
+			return Coda(self._doc, child_id)
+
+		raise TypeError("key must be str (map) or int (array)")
 	
 	def __setitem__(self, key: str, value: str):
 		"""Set a child node value (for blocks/maps)."""

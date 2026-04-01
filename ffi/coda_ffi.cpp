@@ -129,6 +129,7 @@ static uint32_t intern_value(coda_doc& d, const coda::CodaValue& v) {
 		id = d.new_node(K::Array);
 		auto* n = d.get(id);
 		n->comment = v.comment;
+		n->header_comment = a.headerComment;
 		n->arr.reserve(a.content.size());
 		for (const auto& elem : a.content) {
 			uint32_t child_id = intern_value(d, elem);
@@ -142,6 +143,7 @@ static uint32_t intern_value(coda_doc& d, const coda::CodaValue& v) {
 	const auto& t = std::get<coda::CodaTable>(v.content.value);
 	id = d.new_node(K::Table);
 	d.get(id)->comment = v.comment;
+	d.get(id)->header_comment = t.headerComment;
 	for (const auto& kv : t.content) {
 		uint32_t child = intern_value(d, kv.second);
 		// Re-get pointer after each recursive call
@@ -175,6 +177,7 @@ static coda::CodaValue emit_value(const coda_doc& d, uint32_t id) {
 		}
 		case coda_doc::Kind::Array: {
 			coda::CodaArray a;
+			a.headerComment = n->header_comment;
 			a.content.reserve(n->arr.size());
 			for (uint32_t child : n->arr) {
 				a.content.push_back(emit_value(d, child));
@@ -185,6 +188,7 @@ static coda::CodaValue emit_value(const coda_doc& d, uint32_t id) {
 		}
 		case coda_doc::Kind::Table: {
 			coda::CodaTable t;
+			t.headerComment = n->header_comment;
 			for (const auto& [k, child] : n->entries) {
 				t.content[k] = emit_value(d, child);
 			}
@@ -518,7 +522,7 @@ coda_node_header_comment_set(coda_doc_t* doc, coda_node_t n, const char* s, size
 	auto* node = doc->get(n);
 	if (!node) return CODA_ERR;
 
-	if (node->kind != coda_doc::Kind::Table)
+	if (node->kind != coda_doc::Kind::Table && node->kind != coda_doc::Kind::Array)
 		return CODA_BAD_KIND;
 
 	try {

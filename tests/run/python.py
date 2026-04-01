@@ -34,4 +34,4 @@ meta {
 """
 
 with CodaDoc.parse(text) as doc:
-	print(doc["deps"].header_comment)
+	print(doc["deps"][0]["a"].asString())
