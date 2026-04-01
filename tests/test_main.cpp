@@ -370,15 +370,15 @@ static void test_plain_tables() {
 		{ "table", "row", "nested", "nesting", "block" }
 	);
 
-	check_parse_throws_msg(
-		"plain table: short row is a hard error",
-		"t [\n  x y z\n  1 2 3\n  4 5\n]\n",
-		{ "row", "2", "expected", "3" }
-	);
-
 	check_parse_throws_code(
 		"plain table: short row produces RaggedRow error code",
 		"t [\n  x y z\n  1 2 3\n  4 5\n]\n",
+		coda::ParseErrorCode::RaggedRow
+	);
+
+	check_parse_throws_code(
+		"plain table: long row produces RaggedRow error code",
+		"t [\n  x y z\n  1 2 3\n  4 5 3 5\n]\n",
 		coda::ParseErrorCode::RaggedRow
 	);
 
@@ -451,6 +451,12 @@ static void test_keyed_tables() {
 	check_parse_throws_code(
 		"keyed table: short row produces RaggedRow error code",
 		"deps [\n  key link version\n  plot github.com/plot 4.0.3\n  http github.com/http\n]\n",
+		coda::ParseErrorCode::RaggedRow
+	);
+
+	check_parse_throws_code(
+		"keyed table: long row produces RaggedRow error code",
+		"deps [\n  key link version\n  plot github.com/plot 4.0.3\n  http github.com/http 2.0.2 beta\n]\n",
 		coda::ParseErrorCode::RaggedRow
 	);
 
