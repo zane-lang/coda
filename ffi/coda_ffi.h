@@ -66,12 +66,11 @@ typedef enum coda_parse_error_code {
 	CODA_PARSE_DUPLICATE_KEY        = 2,
 	CODA_PARSE_DUPLICATE_FIELD      = 3,
 	CODA_PARSE_RAGGED_ROW           = 4,
-	CODA_PARSE_COMMENT_BEFORE_HEADER= 5,
-	CODA_PARSE_INVALID_ESCAPE       = 6,
-	CODA_PARSE_UNTERMINATED_STRING  = 7,
-	CODA_PARSE_NESTED_BLOCK         = 8,
-	CODA_PARSE_CONTENT_AFTER_BRACE  = 9,
-	CODA_PARSE_KEY_IN_BLOCK         = 10,
+	CODA_PARSE_INVALID_ESCAPE       = 5,
+	CODA_PARSE_UNTERMINATED_STRING  = 6,
+	CODA_PARSE_NESTED_BLOCK         = 7,
+	CODA_PARSE_CONTENT_AFTER_BRACE  = 8,
+	CODA_PARSE_KEY_IN_BLOCK         = 9,
 } coda_parse_error_code_t;
 
 CODA_FFI_EXPORT coda_str_t coda_parse_error_code_name(uint32_t code);
@@ -137,11 +136,22 @@ CODA_FFI_EXPORT coda_node_kind_t coda_node_kind(
 	const coda_doc_t* doc, coda_node_t n
 );
 
-CODA_FFI_EXPORT coda_str_t coda_node_comment(
+CODA_FFI_EXPORT coda_str_t coda_node_comment_get(
 	const coda_doc_t* doc, coda_node_t n
 );
 
-CODA_FFI_EXPORT coda_status_t coda_node_set_comment(
+CODA_FFI_EXPORT coda_status_t coda_node_comment_set(
+	coda_doc_t* doc, coda_node_t n,
+	const char* s, size_t len
+);
+
+// Header comment for table-like containers.
+// - For a plain table: the comment block directly before the header row inside the array.
+// - For a keyed table: the comment block directly before the `key ...` header line.
+// Returns empty string if none (or if doc/node is invalid).
+CODA_FFI_EXPORT coda_str_t coda_node_header_comment_get(const coda_doc_t* doc, coda_node_t n);
+
+CODA_FFI_EXPORT coda_status_t coda_node_header_comment_set(
 	coda_doc_t* doc, coda_node_t n,
 	const char* s, size_t len
 );

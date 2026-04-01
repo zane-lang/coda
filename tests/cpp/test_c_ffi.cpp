@@ -195,29 +195,29 @@ public:
 	}
 
 	std::string get_comment(const char* key) override {
-		return to_str(coda_node_comment(doc_, get_node(key)));
+		return to_str(coda_node_comment_get(doc_, get_node(key)));
 	}
 
 	std::string get_comment_path(const std::vector<std::string>& keys) override {
-		return to_str(coda_node_comment(doc_, resolve_path(keys)));
+		return to_str(coda_node_comment_get(doc_, resolve_path(keys)));
 	}
 
 	std::string get_array_element_comment(const char* key, size_t idx) override {
 		coda_node_t arr = get_node(key);
 		coda_node_t elem = coda_array_get(doc_, arr, idx);
-		return to_str(coda_node_comment(doc_, elem));
+		return to_str(coda_node_comment_get(doc_, elem));
 	}
 
 	std::string get_table_row_comment(const char* table, const char* row) override {
 		coda_node_t tbl = get_node(table);
 		coda_node_t r = coda_map_get(doc_, tbl, row, std::strlen(row));
-		return to_str(coda_node_comment(doc_, r));
+		return to_str(coda_node_comment_get(doc_, r));
 	}
 
 	std::string get_plain_table_row_comment(const char* table, size_t row) override {
 		coda_node_t tbl = get_node(table);
 		coda_node_t r = coda_array_get(doc_, tbl, row);
-		return to_str(coda_node_comment(doc_, r));
+		return to_str(coda_node_comment_get(doc_, r));
 	}
 
 	bool set_string(const char* key, const char* value) override {

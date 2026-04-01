@@ -784,7 +784,6 @@ enum class ParseErrorCode {
 	DuplicateKey,
 	DuplicateField,
 	RaggedRow,
-	CommentBeforeHeader,
 
 	// String / lexer level
 	InvalidEscape,

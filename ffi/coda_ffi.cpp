@@ -16,6 +16,7 @@ struct coda_doc {
 	struct Node {
 		Kind kind = Kind::Null;
 		std::string comment;
+		std::string header_comment;
 
 		// String
 		std::string s;
@@ -217,7 +218,6 @@ extern "C" CODA_FFI_EXPORT coda_str_t coda_parse_error_code_name(uint32_t code) 
 		case CODA_PARSE_DUPLICATE_KEY:         return { "DuplicateKey",         sizeof("DuplicateKey") - 1 };
 		case CODA_PARSE_DUPLICATE_FIELD:       return { "DuplicateField",       sizeof("DuplicateField") - 1 };
 		case CODA_PARSE_RAGGED_ROW:            return { "RaggedRow",            sizeof("RaggedRow") - 1 };
-		case CODA_PARSE_COMMENT_BEFORE_HEADER: return { "CommentBeforeHeader",  sizeof("CommentBeforeHeader") - 1 };
 		case CODA_PARSE_INVALID_ESCAPE:        return { "InvalidEscape",        sizeof("InvalidEscape") - 1 };
 		case CODA_PARSE_UNTERMINATED_STRING:   return { "UnterminatedString",   sizeof("UnterminatedString") - 1 };
 		case CODA_PARSE_NESTED_BLOCK:          return { "NestedBlock",          sizeof("NestedBlock") - 1 };
@@ -226,6 +226,8 @@ extern "C" CODA_FFI_EXPORT coda_str_t coda_parse_error_code_name(uint32_t code) 
 		default:                               return { "", 0 };
 	}
 }
+static_assert((uint32_t)coda::ParseErrorCode::UnexpectedToken == CODA_PARSE_UNEXPECTED_TOKEN);
+static_assert((uint32_t)coda::ParseErrorCode::KeyInBlock      == CODA_PARSE_KEY_IN_BLOCK);
 
 extern "C" CODA_FFI_EXPORT coda_doc_t* coda_doc_parse_fp(FILE* fp, const char* filename, coda_error_t* err) {
 	if (err) coda_error_clear(err);
@@ -477,7 +479,7 @@ extern "C" CODA_FFI_EXPORT coda_node_kind_t coda_node_kind(const coda_doc_t* doc
 	}
 }
 
-extern "C" CODA_FFI_EXPORT coda_str_t coda_node_comment(const coda_doc_t* doc, coda_node_t n) {
+extern "C" CODA_FFI_EXPORT coda_str_t coda_node_comment_get(const coda_doc_t* doc, coda_node_t n) {
 	static const std::string empty;
 	if (!doc) return view_of(empty);
 	const auto* node = doc->get(n);
@@ -485,7 +487,7 @@ extern "C" CODA_FFI_EXPORT coda_str_t coda_node_comment(const coda_doc_t* doc, c
 	return view_of(node->comment);
 }
 
-extern "C" CODA_FFI_EXPORT coda_status_t coda_node_set_comment(
+extern "C" CODA_FFI_EXPORT coda_status_t coda_node_comment_set(
 	coda_doc_t* doc, coda_node_t n, const char* s, size_t len
 ) {
 	if (!doc) return CODA_ERR;
@@ -493,6 +495,34 @@ extern "C" CODA_FFI_EXPORT coda_status_t coda_node_set_comment(
 	if (!node) return CODA_ERR;
 	try {
 		node->comment.assign(s ? s : "", len);
+		return CODA_OK;
+	} catch (...) {
+		return CODA_ERR;
+	}
+}
+
+extern "C" CODA_FFI_EXPORT coda_str_t
+coda_node_header_comment_get(const coda_doc_t* doc, coda_node_t n) {
+	static const std::string empty;
+	if (!doc) return view_of(empty);
+
+	const auto* node = doc->get(n);
+	if (!node) return view_of(empty);
+
+	return view_of(node->header_comment);
+}
+
+extern "C" CODA_FFI_EXPORT coda_status_t
+coda_node_header_comment_set(coda_doc_t* doc, coda_node_t n, const char* s, size_t len) {
+	if (!doc) return CODA_ERR;
+	auto* node = doc->get(n);
+	if (!node) return CODA_ERR;
+
+	if (node->kind != coda_doc::Kind::Table)
+		return CODA_BAD_KIND;
+
+	try {
+		node->header_comment.assign(s ? s : "", len);
 		return CODA_OK;
 	} catch (...) {
 		return CODA_ERR;
