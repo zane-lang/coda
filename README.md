@@ -1,56 +1,50 @@
 # Coda
 
 ```coda
-name example
-type executable
+# Release notes
+title "Coda 1.2"
+date 2026-04-01
+"release manager" "Terry Davis"
 
-deps [
-    key link version
-    plot github.com/zane-lang/plot 4.0.3
-    http github.com/zane-lang/http 2.1.0
+changes [
+	type desc
+	feat "HolyC-style map ordering"
+	feat "Script runner: once-a-boot"
+	fix "comment attachment in tables"
 ]
 
-compiler {
-    debug false
-    optimize true
-    targets [
-        x86_64-linux
-        x86_64-windows
-        aarch64-macos
-    ]
-}
+contributors [
+	key role handle
+	terry maintainer td
+]
 
-meta {
-    author "Albert Einstein"
-    description "a test project"
+notes {
+	summary "Blessed boot and brisk builds"
+	impact "No breaking changes"
 }
 ```
 
 A compact configuration format designed to be easily read- and writeable. The name comes from music — a coda is the concluding passage that ties a composition together. A `.coda` file is the single, definitive statement of how a project is configured.
 
-Coda aims to be as simple as possible while supporting full data structures. The above file in JSON:
+The above file in JSON:
 
 ```json
 {
-    "name": "example",
-    "type": "executable",
-    "deps": {
-        "plot": { "link": "github.com/zane-lang/plot", "version": "4.0.3" },
-        "http": { "link": "github.com/zane-lang/http", "version": "2.1.0" }
-    },
-    "compiler": {
-        "debug": "false",
-        "optimize": "true",
-        "targets": [
-            "x86_64-linux",
-            "x86_64-windows",
-            "aarch64-macos"
-        ]
-    },
-    "meta": {
-        "author": "Albert Einstein",
-        "description": "a test project"
-    }
+	"title": "Coda 1.2",
+	"date": "2026-04-01",
+	"release manager": "Terry Davis",
+	"changes": [
+		{ "type": "feat", "desc": "HolyC-style map ordering" },
+		{ "type": "feat", "desc": "Script runner: once-a-boot" },
+		{ "type": "fix", "desc": "comment attachment in tables" }
+	],
+	"contributors": {
+		"terry": { "role": "maintainer", "handle": "td" }
+	},
+	"notes": {
+		"summary": "Blessed boot and brisk builds",
+		"impact": "No breaking changes"
+	}
 }
 ```
 
@@ -58,7 +52,9 @@ Coda aims to be as simple as possible while supporting full data structures. The
 
 ## Overview
 
-Coda is whitespace-sensitive. Every leaf value is a string — there are no booleans, numbers, or nulls. Type interpretation is left to the consumer. Quotes are optional unless a value contains spaces or special characters.
+- Whitespace-sensitive, line-oriented.
+- Every leaf value is a string; interpretation is left to the consumer.
+- Quotes are optional unless a value contains whitespace or syntax characters (`{}[]"#`).
 
 ```coda
 name myproject
@@ -66,11 +62,11 @@ type executable
 author "Albert Einstein"
 ```
 
-Coda has three structural constructs: **blocks** `{}`, **arrays** `[]`, and **tables**. Tables are not a separate syntax — they emerge from a header row inside an array.
+Coda has three structural constructs: **blocks** `{}`, **arrays** `[]`, and **tables** (inferred from array headers).
 
 ---
 
-## Strings and Escapes
+## Strings and escapes
 
 Unquoted strings can contain any characters except whitespace and syntax characters (`{}[]"#`).
 
@@ -106,53 +102,49 @@ Keys can also be quoted strings:
 
 ## Comments
 
-Comments start with `#` and extend to the end of the line. They are preserved and attached to the following node.
+Comments start with `#` and extend to the end of the line. They are preserved and attach to the following node.
 
 ```coda
 # Project configuration
 name myproject
 
 compiler {
-    # Enable optimizations for release
-    optimize true
-    debug false
+	# Enable optimizations for release
+	optimize true
+	debug false
 }
 ```
 
-Comments may appear before array elements in bare lists, and before rows
-in keyed tables. A comment directly before a plain table header is an error —
-comments only attach to fields below, meaning there is no node to attach it to. Place the comment before the array instead.
+Comments may appear before array elements in bare lists, and before rows in keyed tables. A comment directly before a plain or keyed table header is an error — there is no node to attach it to. Place the comment on the array instead.
 
 ```coda
 # Legal — comment is on the array itself
 # points data
 points [
-    x y z
-    1 2 3
+	x y z
+	1 2 3
 ]
 
 # Illegal — nothing to attach the comment to
 points [
-    # this will error
-    x y z
-    1 2 3
+	# this will error
+	x y z
+	1 2 3
 ]
 ```
-
-The same restriction applies to keyed tables:
 
 ```coda
 # Legal
 deps [
-    key link version
-    plot github.com/zane-lang/plot 4.0.3
+	key link version
+	plot github.com/zane-lang/plot 4.0.3
 ]
 
 # Illegal
 deps [
-    # this will also error
-    key link version
-    plot github.com/zane-lang/plot 4.0.3
+	# this will also error
+	key link version
+	plot github.com/zane-lang/plot 4.0.3
 ]
 ```
 
@@ -164,8 +156,8 @@ A block is a set of named children. Every child has an explicit key. Nesting is 
 
 ```coda
 compiler {
-    debug false
-    optimize true
+	debug false
+	optimize true
 }
 ```
 
@@ -173,12 +165,12 @@ Blocks can contain arrays, and arrays can contain blocks (with restrictions cove
 
 ```coda
 project {
-    name myproject
-    targets [
-        x86_64-linux
-        x86_64-windows
-        aarch64-macos
-    ]
+	name myproject
+	targets [
+		x86_64-linux
+		x86_64-windows
+		aarch64-macos
+	]
 }
 ```
 
@@ -187,7 +179,7 @@ Content must begin on a new line after `{`:
 ```coda
 # Legal
 compiler {
-    debug false
+	debug false
 }
 
 # Illegal
@@ -206,9 +198,9 @@ One value per line. Nesting is allowed — elements can be blocks or other array
 
 ```coda
 targets [
-    x86_64-linux
-    x86_64-windows
-    aarch64-macos
+	x86_64-linux
+	x86_64-windows
+	aarch64-macos
 ]
 ```
 
@@ -218,9 +210,9 @@ When the first line has more than one token, it is treated as a header row. Subs
 
 ```coda
 points [
-    x y z
-    1 2 3
-    4 5 6
+	x y z
+	1 2 3
+	4 5 6
 ]
 ```
 
@@ -230,15 +222,15 @@ A `key` keyword at the start of the first line turns the array into a map. The f
 
 ```coda
 deps [
-    key link version
-    plot github.com/zane-lang/plot 4.0.3
-    http github.com/zane-lang/http 2.1.0
+	key link version
+	plot github.com/zane-lang/plot 4.0.3
+	http github.com/zane-lang/http 2.1.0
 ]
 ```
 
 You can access the plot link via `coda["deps"]["plot"]["link"]`.
 
-Rows must always contain as many elements as the header defines in both plain and keyed table.
+Rows must always contain as many elements as the header defines in both plain and keyed tables.
 
 ---
 
@@ -258,26 +250,48 @@ In a plain or keyed table, a cell's meaning comes entirely from its column posit
 **Legal:**
 ```coda
 project {
-    name myproject
-    compiler {
-        debug false
-    }
+	name myproject
+	compiler {
+		debug false
+	}
 }
 ```
 
 **Illegal:**
 ```coda
 deps [
-    key name config
-    http myhttp {
-        timeout 30
-    }
+	key name config
+	http myhttp {
+		timeout 30
+	}
 ]
 ```
 
 ---
 
-## C++ Library
+## Access semantics
+
+- Parsing never inserts defaults.
+- Const lookup on a missing key throws.
+- Non-const `operator[]` inserts an empty string node so you can assign to it later.
+- For keyed tables, non-const row access inserts an empty row; const access throws.
+
+---
+
+## Errors & semantics
+
+- Type errors throw: string-indexing a scalar, int-indexing a block, or calling `asArray`/`asBlock`/`asTable` on the wrong kind.
+- Array index out of range throws.
+- Inline blocks are illegal: content must start on a new line after `{`.
+- `key` is reserved in table headers; `"key"` is allowed as a normal key.
+- Comments attach to the following node, including array elements and table rows.
+- Ordering: `order()` sorts scalars before containers, then alphabetically; weighted order puts higher weights earlier.
+- Keyed table row iteration preserves insertion order.
+- Parse → serialize → parse → serialize is stable for core constructs.
+
+---
+
+## C++ library
 
 This repo contains a header-only C++ library for parsing, querying, and serializing Coda files.
 
@@ -287,28 +301,28 @@ This repo contains a header-only C++ library for parsing, querying, and serializ
 #include "include/coda.hpp"
 
 int main() {
-    Coda coda("project.coda");
+	Coda coda("project.coda");
 
-    // Access values
-    std::string name = coda["name"].asString();
-    std::string debug = coda["compiler"]["debug"].asString();
-    std::string plotLink = coda["deps"]["plot"]["link"].asString();
+	// Access values
+	std::string name = coda["name"].asString();
+	std::string debug = coda["compiler"]["debug"].asString();
+	std::string plotLink = coda["deps"]["plot"]["link"].asString();
 
-    // Iterate arrays
-    for (const auto& target : coda["compiler"]["targets"].asArray()) {
-        std::cout << target.asString() << "\n";
-    }
+	// Iterate arrays
+	for (const auto& target : coda["compiler"]["targets"].asArray()) {
+		std::cout << target.asString() << "\n";
+	}
 
-    // Iterate blocks
-    for (const auto& [key, value] : coda["compiler"].asBlock()) {
-        std::cout << key << ": " << value.asString() << "\n";
-    }
+	// Iterate blocks
+	for (const auto& [key, value] : coda["compiler"].asBlock()) {
+		std::cout << key << ": " << value.asString() << "\n";
+	}
 
-    // Modify and save
-    coda["name"] = "newproject";
-    coda.save("project.coda");
+	// Modify and save
+	coda["name"] = "newproject";
+	coda.save("project.coda");
 
-    return 0;
+	return 0;
 }
 ```
 
@@ -322,8 +336,8 @@ coda.order();
 
 // Custom weight function (higher weight = earlier)
 coda.order([](const std::string& key) -> float {
-    if (key == "name") return 100;
-    if (key == "type") return 90;
-    return 0;
+	if (key == "name") return 100;
+	if (key == "type") return 90;
+	return 0;
 });
 ```
