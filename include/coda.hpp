@@ -1331,7 +1331,7 @@ public:
 
 	// ── public interface ────────────────────────────────────────────────
 
-	CodaFile parseFile() {
+	CodaFile parse() {
 		CodaFile file;
 		skipNewlines();
 		while (current.type != TokenType::Eof) {
@@ -1367,7 +1367,13 @@ public:
 		if (!f) throw std::runtime_error("could not open: " + path);
 		std::ostringstream ss;
 		ss << f.rdbuf();
-		file = coda::detail::Parser(ss.str()).parseFile();
+		file = coda::detail::Parser(ss.str(), path).parse();
+	}
+
+	static Coda parse(std::string content, std::string filename = "") {
+		Coda coda;
+		coda.file = coda::detail::Parser(content, filename).parse();
+		return coda;
 	}
 
 	void useTabs()              { indentUnit = "\t"; }

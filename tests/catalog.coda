@@ -1,0 +1,1087 @@
+tests [
+    {
+        suite "Scalars & escapes"
+        name "unquoted string value"
+        src "name myproject\n"
+        checks [
+            {
+                op get_string
+                field name
+                eq myproject
+            }
+        ]
+    }
+    {
+        suite "Scalars & escapes"
+        name "quoted string with spaces"
+        src "author \"Albert Einstein\"\n"
+        checks [
+            {
+                op get_string
+                field author
+                eq "Albert Einstein"
+            }
+        ]
+    }
+    {
+        suite "Scalars & escapes"
+        name "URL as unquoted string"
+        src "url https://example.com/path?query=1\n"
+        checks [
+            {
+                op get_string
+                field url
+                eq https://example.com/path?query=1
+            }
+        ]
+    }
+    {
+        suite "Scalars & escapes"
+        name "email as unquoted string"
+        src "email user@domain.com\n"
+        checks [
+            {
+                op get_string
+                field email
+                eq user@domain.com
+            }
+        ]
+    }
+    {
+        suite "Scalars & escapes"
+        name "escape \\n"
+        src "msg \"hello\\nworld\"\n"
+        checks [
+            {
+                op get_string
+                field msg
+                eq "hello\nworld"
+            }
+        ]
+    }
+    {
+        suite "Scalars & escapes"
+        name "escape \\\\"
+        src "path \"C:\\\\Users\\\\name\"\n"
+        checks [
+            {
+                op get_string
+                field path
+                eq "C:\\Users\\name"
+            }
+        ]
+    }
+    {
+        suite "Scalars & escapes"
+        name "escape \\\""
+        src "q \"He said \\\"hello\\\"\"\n"
+        checks [
+            {
+                op get_string
+                field q
+                eq "He said \"hello\""
+            }
+        ]
+    }
+    {
+        suite "Scalars & escapes"
+        name "escape \\t"
+        src "tab \"a\\tb\"\n"
+        checks [
+            {
+                op get_string
+                field tab
+                eq "a\tb"
+            }
+        ]
+    }
+    {
+        suite "Scalars & escapes"
+        name "escape \\r"
+        src "cr \"a\\rb\"\n"
+        checks [
+            {
+                op get_string
+                field cr
+                eq "a\rb"
+            }
+        ]
+    }
+    {
+        suite "Scalars & escapes"
+        name "empty quoted string"
+        src "empty \"\"\n"
+        checks [
+            {
+                op get_string
+                field empty
+                eq ""
+            }
+        ]
+    }
+    {
+        suite "Scalars & escapes"
+        name "quoted key"
+        src "\"key with spaces\" value\n"
+        checks [
+            {
+                op get_string
+                field "key with spaces"
+                eq value
+            }
+        ]
+    }
+    {
+        suite "Scalars & escapes"
+        name "isContainer false for string"
+        src "x hello\n"
+        checks [
+            {
+                op is_container
+                field x
+                eq_bool false
+            }
+        ]
+    }
+
+    {
+        suite "Reserved word: key"
+        name "bare 'key' as key is illegal"
+        action parse_fail_msg
+        src "key value\n"
+        needles [
+            "expected key"
+            "got 'key'"
+            "'key'"
+        ]
+    }
+    {
+        suite "Reserved word: key"
+        name "quoted \"key\" can be used as a key"
+        src "\"key\" value\n"
+        checks [
+            {
+                op get_string
+                field key
+                eq value
+            }
+        ]
+    }
+
+    {
+        suite "Comments"
+        name "comment before key parses"
+        src "# Project configuration\nname myproject\n"
+        checks [
+            {
+                op get_string
+                field name
+                eq myproject
+            }
+        ]
+    }
+    {
+        suite "Comments"
+        name "comment attaches to following node"
+        src "# top comment\nname myproject\n"
+        checks [
+            {
+                op comment
+                field name
+                eq "top comment"
+            }
+        ]
+    }
+    {
+        suite "Comments"
+        name "inner comment attaches inside block"
+        src "compiler {\n  # Enable optimizations\n  optimize true\n  debug false\n}\n"
+        checks [
+            {
+                op comment_path
+                path [
+                    compiler
+                    optimize
+                ]
+                eq "Enable optimizations"
+            }
+        ]
+    }
+    {
+        suite "Comments"
+        name "comment followed by kv works"
+        src "# whole line comment\nk value\n"
+        checks [
+            {
+                op get_string
+                field k
+                eq value
+            }
+        ]
+    }
+    {
+        suite "Comments"
+        name "comment before bare list array is allowed"
+        src "# list comment\nitems [\n  one\n  two\n]\n"
+        checks [
+            {
+                op comment
+                field items
+                eq "list comment"
+            }
+            {
+                op array_len
+                field items
+                eq_int 2
+            }
+        ]
+    }
+    {
+        suite "Comments"
+        name "comment before array element is preserved"
+        src "items [\n  # first\n  one\n  two\n]\n"
+        checks [
+            {
+                op array_element_comment
+                field items
+                idx 0
+                eq first
+            }
+        ]
+    }
+    {
+        suite "Comments"
+        name "comment before plain table header is a hard error"
+        action parse_fail_msg
+        src "points [\n  # this should error\n  x y z\n  1 2 3\n]\n"
+        needles [
+            comment
+            header
+            before
+        ]
+    }
+    {
+        suite "Comments"
+        name "comment before plain table header → CommentBeforeHeader code"
+        action parse_fail_code
+        code CommentBeforeHeader
+        src "points [\n  # this should error\n  x y z\n  1 2 3\n]\n"
+    }
+    {
+        suite "Comments"
+        name "comment before keyed table header is a hard error"
+        action parse_fail_msg
+        src "deps [\n  # this should error\n  key link version\n  plot github.com/zane-lang/plot 4.0.3\n]\n"
+        needles [
+            comment
+            header
+            before
+        ]
+    }
+    {
+        suite "Comments"
+        name "comment before keyed table header → CommentBeforeHeader code"
+        action parse_fail_code
+        code CommentBeforeHeader
+        src "deps [\n  # this should error\n  key link version\n  plot github.com/zane-lang/plot 4.0.3\n]\n"
+    }
+    {
+        suite "Comments"
+        name "comment on plain table data row is preserved"
+        src "t [\n\tx y\n\t# row comment\n\t1 2\n]\n"
+        checks [
+            {
+                op plain_table_row_comment
+                table t
+                idx 0
+                eq "row comment"
+            }
+        ]
+    }
+    {
+        suite "Comments"
+        name "comment on keyed table data row is preserved"
+        src "t [\n\tkey x\n\t# row comment\n\ta 1\n]\n"
+        checks [
+            {
+                op table_row_comment
+                table t
+                row a
+                eq "row comment"
+            }
+        ]
+    }
+
+    {
+        suite "Blocks"
+        name "basic block values"
+        src "compiler {\n  debug false\n  optimize true\n}\n"
+        checks [
+            {
+                op get_string_path
+                path [
+                    compiler
+                    debug
+                ]
+                eq false
+            }
+            {
+                op get_string_path
+                path [
+                    compiler
+                    optimize
+                ]
+                eq true
+            }
+        ]
+    }
+    {
+        suite "Blocks"
+        name "nested blocks"
+        src "outer {\n  inner {\n    x 42\n  }\n}\n"
+        checks [
+            {
+                op get_string_path
+                path [
+                    outer
+                    inner
+                    x
+                ]
+                eq 42
+            }
+        ]
+    }
+    {
+        suite "Blocks"
+        name "isContainer true for block"
+        src "b {\n  a 1\n}\n"
+        checks [
+            {
+                op is_container
+                field b
+                eq_bool true
+            }
+        ]
+    }
+    {
+        suite "Blocks"
+        name "block has correct field count"
+        src "b {\n  x 1\n  y 2\n}\n"
+        checks [
+            {
+                op map_len
+                field b
+                eq_int 2
+            }
+        ]
+    }
+    {
+        suite "Blocks"
+        name "block iteration yields expected keys"
+        src "b {\n  x 1\n  y 2\n}\n"
+        checks [
+            {
+                op map_keys
+                field b
+                eq_list [
+                    x
+                    y
+                ]
+            }
+        ]
+    }
+    {
+        suite "Blocks"
+        name "inline block syntax is illegal"
+        action parse_fail_msg
+        src "compiler { debug false }\n"
+        needles [
+            "unexpected content"
+            "new line"
+            newline
+        ]
+    }
+    {
+        suite "Blocks"
+        name "unclosed block throws"
+        action parse_fail_msg
+        src "b {\n  x 1\n"
+        needles [
+            expected
+            "'}'"
+            "end of file"
+        ]
+    }
+    {
+        suite "Blocks"
+        name "'key' inside block is illegal"
+        action parse_fail_msg
+        src "b {\n  key link ver\n  a b c\n}\n"
+        needles [
+            "expected key"
+            "'key'"
+        ]
+    }
+
+    {
+        suite "Arrays: bare lists"
+        name "bare list size and indexing"
+        src "targets [\n  x86_64-linux\n  x86_64-windows\n  aarch64-macos\n]\n"
+        checks [
+            {
+                op array_len
+                field targets
+                eq_int 3
+            }
+            {
+                op array_element
+                field targets
+                idx 0
+                eq x86_64-linux
+            }
+            {
+                op array_element
+                field targets
+                idx 2
+                eq aarch64-macos
+            }
+        ]
+    }
+    {
+        suite "Arrays: bare lists"
+        name "empty array"
+        src "empty [\n]\n"
+        checks [
+            {
+                op array_len
+                field empty
+                eq_int 0
+            }
+        ]
+    }
+    {
+        suite "Arrays: bare lists"
+        name "isContainer true for array"
+        src "a [\n  x\n]\n"
+        checks [
+            {
+                op is_container
+                field a
+                eq_bool true
+            }
+        ]
+    }
+    {
+        suite "Arrays: bare lists"
+        name "nested blocks inside bare list"
+        src "items [\n  {\n    val 1\n  }\n  {\n    val 2\n  }\n]\n"
+        checks [
+            {
+                op array_block_count
+                field items
+                eq_int 2
+            }
+            {
+                op array_block_field
+                field items
+                idx 0
+                field_name val
+                eq 1
+            }
+            {
+                op array_block_field
+                field items
+                idx 1
+                field_name val
+                eq 2
+            }
+        ]
+    }
+    {
+        suite "Arrays: bare lists"
+        name "array out-of-range throws"
+        src "a [\n  x\n]\n"
+        checks [
+            {
+                op array_index_throws
+                field a
+                idx 99
+                eq_bool true
+            }
+        ]
+    }
+
+    {
+        suite "Plain tables"
+        name "plain table rows and cell access"
+        src "points [\n  x y z\n  1 2 3\n  4 5 6\n]\n"
+        checks [
+            {
+                op array_len
+                field points
+                eq_int 2
+            }
+            {
+                op plain_table_cell
+                table points
+                idx 0
+                col x
+                eq 1
+            }
+            {
+                op plain_table_cell
+                table points
+                idx 0
+                col z
+                eq 3
+            }
+            {
+                op plain_table_cell
+                table points
+                idx 1
+                col y
+                eq 5
+            }
+        ]
+    }
+    {
+        suite "Plain tables"
+        name "duplicate field names in header throws"
+        action parse_fail_msg
+        src "t [\n  a a\n  1 2\n]\n"
+        needles [
+            duplicate
+            field
+            header
+        ]
+    }
+    {
+        suite "Plain tables"
+        name "nesting inside plain table row is illegal"
+        action parse_fail_msg
+        src "t [\n  x y\n  1 {\n    a b\n  }\n]\n"
+        needles [
+            table
+            row
+            nested
+            nesting
+            block
+        ]
+    }
+    {
+        suite "Plain tables"
+        name "short row → RaggedRow code"
+        action parse_fail_code
+        code RaggedRow
+        src "points [\n  x y z\n  1 2\n]\n"
+    }
+    {
+        suite "Plain tables"
+        name "long row → RaggedRow code"
+        action parse_fail_code
+        code RaggedRow
+        src "points [\n  x y z\n  1 2 3 4\n]\n"
+    }
+    {
+        suite "Plain tables"
+        name "single-value row against multi-column header"
+        action parse_fail_msg
+        src "t [\n  x y\n  1\n]\n"
+        needles [
+            row
+            1
+            expected
+            2
+        ]
+    }
+
+    {
+        suite "Keyed tables"
+        name "lookup by row key"
+        src "deps [\n  key link version\n  plot github.com/zane-lang/plot 4.0.3\n  http github.com/zane-lang/http 2.1.0\n]\n"
+        checks [
+            {
+                op table_cell
+                table deps
+                row plot
+                col link
+                eq github.com/zane-lang/plot
+            }
+            {
+                op table_cell
+                table deps
+                row plot
+                col version
+                eq 4.0.3
+            }
+            {
+                op table_cell
+                table deps
+                row http
+                col version
+                eq 2.1.0
+            }
+        ]
+    }
+    {
+        suite "Keyed tables"
+        name "iterate keyed table preserves insertion order"
+        src "t [\n  key link\n  a http://a\n  b http://b\n]\n"
+        checks [
+            {
+                op table_row_keys
+                table t
+                eq_list [
+                    a
+                    b
+                ]
+            }
+        ]
+    }
+    {
+        suite "Keyed tables"
+        name "missing key inserts default row"
+        src "deps [\n  key link\n  a b\n]\n"
+        checks [
+            {
+                op table_row_missing_inserts
+                table deps
+                row nope
+                eq_bool true
+            }
+        ]
+    }
+    {
+        suite "Keyed tables"
+        name "const lookup on missing row throws"
+        src "deps [\n  key link\n  a b\n]\n"
+        checks [
+            {
+                op table_row_missing_throws
+                table deps
+                row missing_row
+                eq_bool true
+            }
+        ]
+    }
+    {
+        suite "Keyed tables"
+        name "duplicate row key throws"
+        action parse_fail_msg
+        src "deps [\n  key link version\n  plot github.com/zane-lang/plot 4.0.3\n  plot github.com/zane-lang/plot 5.0.0\n]\n"
+        needles [
+            duplicate
+            key
+        ]
+    }
+    {
+        suite "Keyed tables"
+        name "nesting inside keyed table rows is illegal"
+        action parse_fail_msg
+        src "t [\n  key v\n  a {\n    x 1\n  }\n]\n"
+        needles [
+            table
+            row
+            nested
+            nesting
+            block
+        ]
+    }
+    {
+        suite "Keyed tables"
+        name "row missing a field is a hard error"
+        action parse_fail_msg
+        src "deps [\n  key link version\n  plot github.com/zane-lang/plot\n]\n"
+        needles [
+            row
+            plot
+            1
+            expected
+            2
+        ]
+    }
+    {
+        suite "Keyed tables"
+        name "short row → RaggedRow code"
+        action parse_fail_code
+        code RaggedRow
+        src "deps [\n  key link version\n  plot github.com/zane-lang/plot\n]\n"
+    }
+    {
+        suite "Keyed tables"
+        name "long row → RaggedRow code"
+        action parse_fail_code
+        code RaggedRow
+        src "deps [\n  key link version\n  plot github.com/plot 4.0.3\n  http github.com/http 2.0.2 beta\n]\n"
+    }
+    {
+        suite "Keyed tables"
+        name "key-only row (zero values) is a hard error"
+        action parse_fail_msg
+        src "t [\n  key v\n  a 1\n  b\n]\n"
+        needles [
+            row
+            b
+            0
+            expected
+            1
+        ]
+    }
+
+    {
+        suite "Type errors"
+        name "string-indexing a scalar throws"
+        src "x hello\n"
+        checks [
+            {
+                op string_index_on_scalar_throws
+                field x
+                sub x
+                eq_bool true
+            }
+        ]
+    }
+    {
+        suite "Type errors"
+        name "int-indexing a block throws"
+        src "b {\n  a 1\n}\n"
+        checks [
+            {
+                op int_index_on_block_throws
+                field b
+                idx 0
+                eq_bool true
+            }
+        ]
+    }
+    {
+        suite "Type errors"
+        name "asArray on scalar throws"
+        src "x hello\n"
+        checks [
+            {
+                op as_array_on_scalar_throws
+                field x
+                eq_bool true
+            }
+        ]
+    }
+    {
+        suite "Type errors"
+        name "asBlock on array throws"
+        src "a [\n  x\n]\n"
+        checks [
+            {
+                op as_block_on_array_throws
+                field a
+                eq_bool true
+            }
+        ]
+    }
+    {
+        suite "Type errors"
+        name "asTable on block throws"
+        src "b {\n  a 1\n}\n"
+        checks [
+            {
+                op as_table_on_block_throws
+                field b
+                eq_bool true
+            }
+        ]
+    }
+    {
+        suite "Type errors"
+        name "missing top-level key inserts default"
+        src "a 1\n"
+        checks [
+            {
+                op has_key
+                field a
+                eq_bool true
+            }
+            {
+                op get_string
+                field b
+                eq ""
+            }
+            {
+                op has_key
+                field b
+                eq_bool true
+            }
+        ]
+    }
+    {
+        suite "Type errors"
+        name "top-level create-then-assign"
+        src "a 1\n"
+        checks [
+            {
+                op set_string
+                field b
+                value 2
+                eq_bool true
+            }
+            {
+                op get_string
+                field b
+                eq 2
+            }
+        ]
+    }
+    {
+        suite "Type errors"
+        name "block insert new key"
+        src "b {\n  a 1\n}\n"
+        checks [
+            {
+                op set_string_path
+                path [
+                    b
+                    y
+                ]
+                value 2
+                eq_bool true
+            }
+            {
+                op get_string_path
+                path [
+                    b
+                    y
+                ]
+                eq 2
+            }
+        ]
+    }
+    {
+        suite "Type errors"
+        name "const missing key throws"
+        src "a 1\n"
+        checks [
+            {
+                op const_missing_key_throws
+                field missing
+                eq_bool true
+            }
+        ]
+    }
+
+    {
+        suite Ordering
+        name "default order: scalars before containers, alphabetical"
+        src "b 2\naa {\n  x 1\n}\ncc 3\nz [\n  a\n]\n"
+        checks [
+            {
+                op order_default_contains_order
+                order [
+                    "b 2"
+                    "cc 3"
+                    "aa {"
+                    "z ["
+                ]
+            }
+        ]
+    }
+    {
+        suite Ordering
+        name "weighted order puts higher-weight keys earlier"
+        src "z 1\na 2\nmiddle 3\n"
+        checks [
+            {
+                op order_weighted_contains_order
+                order [
+                    "middle 3"
+                    "a 2"
+                    "z 1"
+                ]
+                weights [
+                    {
+                        field middle
+                        weight 100
+                    }
+                ]
+            }
+        ]
+    }
+    {
+        suite Ordering
+        name "serialize with 4 spaces"
+        src "b {\n  a 1\n}\n"
+        checks [
+            {
+                op serialize_contains
+                indent "    "
+                contains "    a 1"
+            }
+        ]
+    }
+
+    {
+        suite "Round-trip"
+        name "scalar round-trip stable"
+        action roundtrip
+        src "name example\ntype executable\n"
+    }
+    {
+        suite "Round-trip"
+        name "block round-trip stable"
+        action roundtrip
+        src "compiler {\n  debug false\n  optimize true\n}\n"
+    }
+    {
+        suite "Round-trip"
+        name "bare list round-trip stable"
+        action roundtrip
+        src "targets [\n  x86_64-linux\n  x86_64-windows\n  aarch64-macos\n]\n"
+    }
+    {
+        suite "Round-trip"
+        name "keyed table round-trip stable"
+        action roundtrip
+        src "deps [\n  key link version\n  plot github.com/zane-lang/plot 4.0.3\n  http github.com/zane-lang/http 2.1.0\n]\n"
+    }
+    {
+        suite "Round-trip"
+        name "plain table round-trip stable"
+        action roundtrip
+        src "points [\n  x y z\n  1 2 3\n  4 5 6\n]\n"
+    }
+    {
+        suite "Round-trip"
+        name "escape sequences round-trip stable"
+        action roundtrip
+        src "message \"hello\\nworld\"\npath \"C:\\\\Users\\\\name\"\nquote \"He said \\\"hello\\\"\"\ntab \"col1\\tcol2\"\n"
+    }
+    {
+        suite "Round-trip"
+        name "CodaFile::has works"
+        src "a 1\n"
+        checks [
+            {
+                op has_key
+                field a
+                eq_bool true
+            }
+            {
+                op has_key
+                field b
+                eq_bool false
+            }
+        ]
+    }
+
+    {
+        suite Mutation
+        name "assign string to existing key"
+        src "name old\n"
+        checks [
+            {
+                op set_string
+                field name
+                value new
+                eq_bool true
+            }
+            {
+                op get_string
+                field name
+                eq new
+            }
+        ]
+    }
+    {
+        suite Mutation
+        name "mutate nested block value"
+        src "b {\n  a 1\n}\n"
+        checks [
+            {
+                op set_string_path
+                path [
+                    b
+                    x
+                ]
+                value 2
+                eq_bool true
+            }
+            {
+                op get_string_path
+                path [
+                    b
+                    x
+                ]
+                eq 2
+            }
+        ]
+    }
+
+    {
+        suite "Parse errors"
+        name "expected key got 'key'"
+        action parse_fail_msg
+        src "key value\n"
+        needles [
+            "expected key"
+            "got 'key'"
+        ]
+    }
+    {
+        suite "Parse errors"
+        name "unclosed bracket"
+        action parse_fail_msg
+        src "a [\n  1\n"
+        needles [
+            expected
+            "']'"
+            "end of file"
+            EOF
+        ]
+    }
+    {
+        suite "Parse errors"
+        name "duplicate top-level key"
+        action parse_fail_msg
+        src "name first\nname second\n"
+        needles [
+            duplicate
+            key
+            name
+        ]
+    }
+    {
+        suite "Parse errors"
+        name "unterminated string"
+        action parse_fail_msg
+        src "name \"unterminated\n"
+        needles [
+            unterminated
+            string
+            newline
+            EOF
+        ]
+    }
+    {
+        suite "Parse errors"
+        name "ragged row in plain table"
+        action parse_fail_msg
+        src "points [\n  x y z\n  1 2\n]\n"
+        needles [
+            row
+            1
+            expected
+            3
+        ]
+    }
+    {
+        suite "Parse errors"
+        name "ragged row in keyed table"
+        action parse_fail_msg
+        src "t [\n  key x y\n  a 1 2\n  b 3\n]\n"
+        needles [
+            row
+            b
+            1
+            expected
+            2
+        ]
+    }
+]

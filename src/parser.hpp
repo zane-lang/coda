@@ -594,7 +594,7 @@ public:
 
 	// ── public interface ────────────────────────────────────────────────
 
-	CodaFile parseFile() {
+	CodaFile parse() {
 		CodaFile file;
 		skipNewlines();
 		while (current.type != TokenType::Eof) {

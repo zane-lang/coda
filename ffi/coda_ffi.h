@@ -100,6 +100,17 @@ CODA_FFI_EXPORT coda_owned_str_t coda_doc_serialize(
 	coda_error_t* err
 );
 
+// Reorder keys and nested containers using default ordering rules.
+CODA_FFI_EXPORT void coda_doc_order(coda_doc_t* doc);
+
+// Reorder keys using a weight table (higher weight earlier).
+CODA_FFI_EXPORT void coda_doc_order_weighted(
+	coda_doc_t* doc,
+	const char** keys,
+	const float* weights,
+	size_t count
+);
+
 CODA_FFI_EXPORT coda_node_t coda_doc_root(const coda_doc_t* doc);
 
 // ------------------------- Node inspection -------------------------
@@ -163,6 +174,12 @@ CODA_FFI_EXPORT coda_node_t coda_map_value_at(
 // returns 0 if not found
 CODA_FFI_EXPORT coda_node_t coda_map_get(
 	const coda_doc_t* doc, coda_node_t m,
+	const char* key, size_t key_len
+);
+
+// Like coda_map_get, but inserts an empty string node if missing.
+CODA_FFI_EXPORT coda_node_t coda_map_get_or_insert(
+	coda_doc_t* doc, coda_node_t m,
 	const char* key, size_t key_len
 );
 

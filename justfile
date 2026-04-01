@@ -22,6 +22,21 @@ test:
 	clang++ -std=c++20 -I. tests/test_main.cpp -o build/tests
 	./build/tests
 
+# Test the C FFI
+test-c-ffi:
+	mkdir -p build
+	clang++ -std=c++20 -I. tests/test_c_ffi.cpp -L./dist/x86_64-linux-gnu -lcoda_ffi -o build/test_c_ffi
+	./build/test_c_ffi
+
+# Test both FFI layers
+test-ffi: test-c-ffi
+
+# Run all tests
+test-all: cross-all
+	- just test
+	- just test-ffi
+
+
 run: generate
 	mkdir -p build
 	clang++ -std=c++20 -I. tests/run.cpp -o build/run
@@ -31,7 +46,8 @@ generate:
 	quom src/coda.hpp include/coda.hpp
 
 ffi: cross-all
-	python3 tests/ffi/main.py
+	@echo "Running FFI example..."
+	@python3 tests/ffi/main.py
 
 # ----------------------------------------------------------------
 # Host build

@@ -111,10 +111,12 @@ static uint32_t intern_value(coda_doc& d, const coda::CodaValue& v) {
 	if (std::holds_alternative<coda::CodaBlock>(v.content.value)) {
 		const auto& b = std::get<coda::CodaBlock>(v.content.value);
 		id = d.new_node(K::Block);
-		auto* n = d.get(id);
-		n->comment = v.comment;
+		// Don't cache the pointer - it might be invalidated by recursive calls
+		d.get(id)->comment = v.comment;
 		for (const auto& kv : b.content) {
 			uint32_t child = intern_value(d, kv.second);
+			// Re-get pointer after each recursive call
+			auto* n = d.get(id);
 			n->index[kv.first] = n->entries.size();
 			n->entries.emplace_back(kv.first, child);
 		}
@@ -128,7 +130,9 @@ static uint32_t intern_value(coda_doc& d, const coda::CodaValue& v) {
 		n->comment = v.comment;
 		n->arr.reserve(a.content.size());
 		for (const auto& elem : a.content) {
-			n->arr.push_back(intern_value(d, elem));
+			uint32_t child_id = intern_value(d, elem);
+			// Re-get pointer after recursive call
+			d.get(id)->arr.push_back(child_id);
 		}
 		return id;
 	}
@@ -136,10 +140,11 @@ static uint32_t intern_value(coda_doc& d, const coda::CodaValue& v) {
 	// Table
 	const auto& t = std::get<coda::CodaTable>(v.content.value);
 	id = d.new_node(K::Table);
-	auto* n = d.get(id);
-	n->comment = v.comment;
+	d.get(id)->comment = v.comment;
 	for (const auto& kv : t.content) {
 		uint32_t child = intern_value(d, kv.second);
+		// Re-get pointer after each recursive call
+		auto* n = d.get(id);
 		n->index[kv.first] = n->entries.size();
 		n->entries.emplace_back(kv.first, child);
 	}
@@ -240,7 +245,7 @@ extern "C" CODA_FFI_EXPORT coda_doc_t* coda_doc_parse(
 
 		// Parser is part of the header-only implementation and throws ParseError on fatal issues. <!--citation:2-->
 		coda::detail::Parser p(std::move(text), filename ? std::string(filename) : std::string(""));
-		coda::CodaFile file = p.parseFile();
+		coda::CodaFile file = p.parse();
 
 		auto* d = new coda_doc();
 		// replace default empty root with parsed contents
@@ -248,10 +253,11 @@ extern "C" CODA_FFI_EXPORT coda_doc_t* coda_doc_parse(
 		d->nodes.emplace_back(); // null
 
 		d->root = d->new_node(coda_doc::Kind::File);
-		auto* root = d->get(d->root);
 
 		for (const auto& [k, v] : file.statements) {
 			uint32_t child = intern_value(*d, v);
+			// Re-get root pointer after each recursive call that might reallocate
+			auto* root = d->get(d->root);
 			root->index[k] = root->entries.size();
 			root->entries.emplace_back(k, child);
 		}
@@ -334,6 +340,65 @@ extern "C" CODA_FFI_EXPORT coda_owned_str_t coda_doc_serialize(
 	} catch (...) {
 		if (err) err->message = owned_from_std("unknown exception");
 		return {nullptr, 0};
+	}
+}
+
+extern "C" CODA_FFI_EXPORT void coda_doc_order(coda_doc_t* doc) {
+	if (!doc) return;
+	try {
+		coda::CodaFile f = emit_file(*doc);
+		f.order();
+
+		// Rebuild nodes from ordered file
+		doc->nodes.clear();
+		doc->nodes.emplace_back(); // null
+		doc->root = doc->new_node(coda_doc::Kind::File);
+		for (const auto& [k, v] : f.statements) {
+			uint32_t child = intern_value(*doc, v);
+			auto* root = doc->get(doc->root);
+			root->index[k] = root->entries.size();
+			root->entries.emplace_back(k, child);
+		}
+	} catch (...) {
+		return;
+	}
+}
+
+extern "C" CODA_FFI_EXPORT void coda_doc_order_weighted(
+	coda_doc_t* doc,
+	const char** keys,
+	const float* weights,
+	size_t count
+) {
+	if (!doc) return;
+	try {
+		std::unordered_map<std::string, float> weight_map;
+		weight_map.reserve(count);
+		for (size_t i = 0; i < count; ++i) {
+			const char* key = keys ? keys[i] : nullptr;
+			float w = weights ? weights[i] : 0.0f;
+			weight_map[key ? key : ""] = w;
+		}
+
+		coda::CodaFile f = emit_file(*doc);
+		f.order([&](const std::string& field) -> float {
+			auto it = weight_map.find(field);
+			if (it == weight_map.end()) return 0.0f;
+			return it->second;
+		});
+
+		// Rebuild nodes from ordered file
+		doc->nodes.clear();
+		doc->nodes.emplace_back(); // null
+		doc->root = doc->new_node(coda_doc::Kind::File);
+		for (const auto& [k, v] : f.statements) {
+			uint32_t child = intern_value(*doc, v);
+			auto* root = doc->get(doc->root);
+			root->index[k] = root->entries.size();
+			root->entries.emplace_back(k, child);
+		}
+	} catch (...) {
+		return;
 	}
 }
 
@@ -489,6 +554,27 @@ extern "C" CODA_FFI_EXPORT coda_node_t coda_map_get(
 	auto it = node->index.find(k);
 	if (it == node->index.end()) return 0;
 	return node->entries[it->second].second;
+}
+
+extern "C" CODA_FFI_EXPORT coda_node_t coda_map_get_or_insert(
+	coda_doc_t* doc, coda_node_t m,
+	const char* key, size_t key_len
+) {
+	if (!doc) return 0;
+	auto* node = doc->get(m);
+	if (!is_map_kind(node)) return 0;
+
+	std::string k(key ? key : "", key_len);
+	auto it = node->index.find(k);
+	if (it != node->index.end()) return node->entries[it->second].second;
+
+	uint32_t child = doc->new_node(coda_doc::Kind::String);
+	auto* child_node = doc->get(child);
+	child_node->s.clear();
+
+	node->index[k] = node->entries.size();
+	node->entries.emplace_back(std::move(k), child);
+	return child;
 }
 
 extern "C" CODA_FFI_EXPORT coda_status_t coda_map_set(
