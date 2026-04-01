@@ -24,6 +24,10 @@ inline std::string pad(int level, const std::string& unit) {
 }
 
 inline std::string serializeToken(const std::string& s) {
+	if (s == "key") {
+		return "\"key\"";
+	}
+
 	auto isBareChar = [](unsigned char c) -> bool {
 		if (std::isspace(c)) return false;
 		switch (c) {

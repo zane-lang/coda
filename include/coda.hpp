@@ -294,6 +294,10 @@ inline std::string pad(int level, const std::string& unit) {
 }
 
 inline std::string serializeToken(const std::string& s) {
+	if (s == "key") {
+		return "\"key\"";
+	}
+
 	auto isBareChar = [](unsigned char c) -> bool {
 		if (std::isspace(c)) return false;
 		switch (c) {
@@ -1266,15 +1270,14 @@ class Parser {
 		skipNewlines();
 
 		if (firstRow.size() > 1) {
-			return parsePlainTable(std::move(firstRow), std::move(firstComment));
+			return parsePlainTable(std::move(firstRow));
 		}
 		return parseBareList(std::move(firstRow), std::move(firstComment));
 	}
 
-	CodaValue parsePlainTable(std::vector<Token> header, std::string headerComment) {
+	CodaValue parsePlainTable(std::vector<Token> header) {
 		checkUniqueFields(header);
 		CodaArray array;
-		array.headerComment = std::move(headerComment);
 
 		while (current.type != TokenType::RBracket && current.type != TokenType::Eof) {
 			std::string comment = takeComment();
