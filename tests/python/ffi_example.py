@@ -32,7 +32,6 @@ meta {
 """
 
 with CodaDoc.parse(text) as doc:
-	doc: CodaDoc
 	print(doc["name"].asString())
 	print(doc["compiler"]["debug"].asString())
 	print(doc["deps"]["plot"]["link"].asString())
