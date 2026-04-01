@@ -17,9 +17,9 @@ targets := "x86_64-linux-gnu x86_64-linux-musl aarch64-linux-gnu aarch64-linux-m
 default:
 	@just --list
 
-test:
+test-cpp:
 	mkdir -p build
-	clang++ -std=c++20 -I. tests/test_main.cpp -o build/tests
+	clang++ -std=c++20 -I. tests/cpp/test_main.cpp -o build/tests
 	./build/tests
 
 # Test the C FFI
@@ -29,21 +29,23 @@ test-c-ffi:
 	clang++ -std=c++20 -c -fPIC -I. ffi/coda_ffi.cpp -o build/coda_ffi.o
 	ar rcs build/libcoda_ffi_native.a build/coda_ffi.o
 	# Build and run test
-	clang++ -std=c++20 -I. tests/test_c_ffi.cpp build/libcoda_ffi_native.a -o build/test_c_ffi
+	clang++ -std=c++20 -I. tests/cpp/test_c_ffi.cpp build/libcoda_ffi_native.a -o build/test_c_ffi
 	./build/test_c_ffi
 
-# Test both FFI layers
-test-ffi: test-c-ffi
+# Test Python FFI
+test-py-ffi:
+	@python3 tests/python/test_python_ffi.py
 
 # Run all tests
-test-all: cross-all
-	- just test
-	- just test-ffi
+test: cross-all
+	- just test-cpp
+	- just test-c-ffi
+	- just test-py-ffi
 
 
 run: generate
 	mkdir -p build
-	clang++ -std=c++20 -I. tests/run.cpp -o build/run
+	clang++ -std=c++20 -I. tests/cpp/run.cpp -o build/run
 	./build/run
 
 generate:
@@ -51,7 +53,7 @@ generate:
 
 ffi: cross-all
 	@echo "Running FFI example..."
-	@python3 tests/ffi/main.py
+	@python3 tests/python/ffi_example.py
 
 # ----------------------------------------------------------------
 # Host build

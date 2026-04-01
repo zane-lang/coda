@@ -9,7 +9,7 @@
 // macros work in both C++ and C FFI test files.
 
 #include "test_utils.hpp"
-#include "../include/coda.hpp"
+#include "../../include/coda.hpp"
 
 #include <exception>
 #include <initializer_list>

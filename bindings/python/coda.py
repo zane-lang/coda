@@ -5,6 +5,7 @@ This module provides a Pythonic interface to the Coda C library using ctypes.
 """
 
 import ctypes
+import ctypes.util
 from ctypes import c_char_p, c_size_t, c_uint32, c_void_p, POINTER, Structure
 from typing import Iterator, Optional, Tuple
 import os
@@ -53,6 +54,12 @@ def _find_library():
     elif sys.platform == "darwin":
         dist_subdir = f"{arch}-macos"
     
+    # Prefer system-installed library when available
+    for lib_name in lib_names:
+        found = ctypes.util.find_library(lib_name)
+        if found:
+            return found
+
     # Search paths
     script_dir = os.path.dirname(os.path.abspath(__file__))
     repo_root = os.path.join(script_dir, "..", "..")
@@ -635,6 +642,11 @@ class CodaTestRunner:
 
 
 def run_catalog_tests(catalog_path: str) -> None:
+	ansi_green = "\033[32m"
+	ansi_red = "\033[31m"
+	ansi_yellow = "\033[33m"
+	ansi_reset = "\033[0m"
+
 	with open(catalog_path, "r", encoding="utf-8") as f:
 		catalog_text = f.read()
 
@@ -653,7 +665,7 @@ def run_catalog_tests(catalog_path: str) -> None:
 
 			if suite != current_suite:
 				current_suite = suite
-				print(f"\n[{suite}]")
+				print(f"\n{ansi_yellow}[{suite}]{ansi_reset}")
 
 			action = None
 			try:
@@ -716,15 +728,18 @@ def run_catalog_tests(catalog_path: str) -> None:
 
 			if ok:
 				passed += 1
-				print(f"  ✓  {name}")
+				print(f"  {ansi_green}✓{ansi_reset}  {name}")
 			else:
 				failed += 1
-				print(f"  ✗  {name}")
+				print(f"  {ansi_red}✗{ansi_reset}  {name}")
 				print("      returned false")
 
 		print("\n══════════════════════════════")
-		print(f"  Passed: {passed}")
-		print(f"  Failed: {failed}")
+		print(f"  {ansi_green}Passed: {passed}{ansi_reset}")
+		if failed > 0:
+			print(f"  {ansi_red}Failed: {failed}{ansi_reset}")
+		else:
+			print(f"  Failed: {failed}")
 		print("══════════════════════════════")
 		if failed > 0:
 			raise SystemExit(1)

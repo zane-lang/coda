@@ -1,6 +1,6 @@
-#include "../ffi/coda_ffi.h"
-#include "test_macros.hpp"
-#include "test_runner.hpp"
+#include "../../ffi/coda_ffi.h"
+#include "../harness/test_macros.hpp"
+#include "../harness/test_runner.hpp"
 
 #include <cstdio>
 #include <cstring>

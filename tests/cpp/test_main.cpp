@@ -1,6 +1,6 @@
-#include "test_runner.hpp"
-#include "test_data.hpp"
-#include "../include/coda.hpp"
+#include "../harness/test_runner.hpp"
+#include "../harness/test_data.hpp"
+#include "../../include/coda.hpp"
 
 #include <iostream>
 #include <optional>

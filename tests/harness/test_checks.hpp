@@ -1,7 +1,7 @@
 #pragma once
 
 #include "test_data.hpp"
-#include "../include/coda.hpp"
+#include "../../include/coda.hpp"
 
 #include <functional>
 #include <fstream>
@@ -360,7 +360,7 @@ inline int parse_error_code(const std::string& code) {
 
 inline TestCatalog build_catalog() {
 	TestCatalog t;
-	const std::string path = "tests/catalog.coda";
+	const std::string path = "tests/catalog/catalog.coda";
 	std::string text = read_file(path);
 	if (text.empty()) {
 		t.push_back({"Catalog", "load catalog", [path](ParseAdapter&) {

@@ -1,4 +1,4 @@
-from coda_ffi import Coda, CodaDoc
+from bindings.python.coda import Coda, CodaDoc
 
 text = """\
 name example

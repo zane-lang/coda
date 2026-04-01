@@ -8,9 +8,9 @@ import os
 import tempfile
 
 # Add the tests/ffi directory to the path so we can import coda_ffi
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..")))
 
-from coda_ffi import (
+from bindings.python.coda import (
     CodaDoc,
     CodaException,
     CodaParseError,
@@ -336,7 +336,7 @@ def run_tests():
     """Run catalog-driven tests."""
     print("\nCoda Python FFI Tests")
     print("=====================\n")
-    catalog_path = os.path.join(os.path.dirname(__file__), "..", "catalog.coda")
+    catalog_path = os.path.join(os.path.dirname(__file__), "..", "catalog", "catalog.coda")
     run_catalog_tests(catalog_path)
 
 
