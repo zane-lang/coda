@@ -50,10 +50,6 @@ run: generate
 generate:
 	quom src/coda.hpp include/coda.hpp
 
-ffi: cross-all
-	@echo "Running FFI example..."
-	@python3 tests/python/ffi_example.py
-
 # ----------------------------------------------------------------
 # Host build
 # ----------------------------------------------------------------

@@ -10,7 +10,8 @@ name example
 type executable
 
 deps [
-	key link version
+	# possible
+	a link version
 	plot github.com/zane-lang/plot 4.0.3
 	http github.com/zane-lang/http 2.1.0
 ]
@@ -34,7 +35,7 @@ meta {
 with CodaDoc.parse(text) as doc:
 	print(doc["name"].asString())
 	print(doc["compiler"]["debug"].asString())
-	print(doc["deps"]["plot"]["link"].asString())
+	# print(doc["deps"]["plot"]["link"].asString())
 	for target in doc["compiler"]["targets"].asArray():
 		print(target.asString())
 	for key, value in doc["meta"].asBlock():

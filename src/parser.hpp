@@ -372,16 +372,6 @@ class Parser {
 		return v;
 	}
 
-	// ── comment-before-header check ─────────────────────────────────────
-
-	void checkNoOrphanComment() {
-		if (!pendingComment.empty())
-			fatalError(coda::ParseErrorCode::CommentBeforeHeader,
-			           "comments are not allowed before a table header — "
-			           "place the comment before the array",
-			           current.loc);
-	}
-
 	// ── duplicate-key guards ────────────────────────────────────────────
 
 	void insertChecked(OrderedMap<std::string, CodaValue>& map,
@@ -459,15 +449,15 @@ class Parser {
 		expectLineEnd();
 
 		if (current.type == TokenType::Key) {
-			checkNoOrphanComment();
-			return parseKeyedTable();
+			std::string headerComment = takeComment();
+			return parseKeyedTable(std::move(headerComment));
 		}
 		if (current.type == TokenType::LBrace || current.type == TokenType::LBracket)
 			return parseNestedList();
 		return parseAutoList();
 	}
 
-	CodaValue parseKeyedTable() {
+	CodaValue parseKeyedTable(std::string headerComment) {
 		advance(); // consume 'key'
 
 		std::vector<Token> fieldToks;
@@ -477,6 +467,7 @@ class Parser {
 		skipNewlines();
 
 		CodaTable table;
+		table.headerComment = std::move(headerComment);
 		while (current.type != TokenType::RBracket && current.type != TokenType::Eof) {
 			std::string comment = takeComment();
 			auto row = collectFlatRow();
@@ -522,11 +513,6 @@ class Parser {
 		skipNewlines();
 
 		if (firstRow.size() > 1) {
-			if (!firstComment.empty())
-				fatalError(coda::ParseErrorCode::CommentBeforeHeader,
-			   "comments are not allowed before a table header — "
-			   "place the comment before the array",
-			   current.loc);
 			return parsePlainTable(std::move(firstRow));
 		}
 		return parseBareList(std::move(firstRow), std::move(firstComment));
@@ -534,8 +520,8 @@ class Parser {
 
 	CodaValue parsePlainTable(std::vector<Token> header) {
 		checkUniqueFields(header);
-
 		CodaArray array;
+
 		while (current.type != TokenType::RBracket && current.type != TokenType::Eof) {
 			std::string comment = takeComment();
 			auto row = collectFlatRow();

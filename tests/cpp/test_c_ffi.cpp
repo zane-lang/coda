@@ -3,6 +3,7 @@
 #include "../harness/test_runner.hpp"
 
 #include <cstdio>
+#include <filesystem>
 #include <cstring>
 #include <iostream>
 #include <string>
@@ -345,20 +346,20 @@ static void test_ffi_extras() {
 	}
 
 	{
-		const char* tmp = "/tmp/test_coda_ffi.coda";
-		FILE* fp = std::fopen(tmp, "w");
+		auto tmpPath = (std::filesystem::temp_directory_path() / "test_coda_ffi.coda").string();
+		FILE* fp = std::fopen(tmpPath.c_str(), "w");
 		if (fp) {
 			std::fprintf(fp, "name test\nversion 1.0.0\n");
 			std::fclose(fp);
 			coda_error_t err = {};
-			coda_doc_t* doc = coda_doc_parse_file(tmp, &err);
+			coda_doc_t* doc = coda_doc_parse_file(tmpPath.c_str(), &err);
 			CHECK("parse file", doc != nullptr);
 			if (doc) {
 				CHECK("file has 2 entries",
 					coda_map_len(doc, coda_doc_root(doc)) == 2);
 				coda_doc_free(doc);
 			}
-			std::remove(tmp);
+			std::remove(tmpPath.c_str());
 		}
 	}
 }

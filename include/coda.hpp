@@ -366,6 +366,7 @@ inline void orderMapWeighted(
 
 struct CodaTable {
 	detail::OrderedMap<std::string, CodaValue> content;
+	std::string headerComment;
 
 	const CodaValue& operator[](const std::string& key) const;
 	CodaValue&       operator[](const std::string& key);
@@ -566,7 +567,7 @@ inline std::string serializeMap(
 		if (v.isContainer() && !out.empty())
 			out += "\n";
 		out += serializeComment(v.comment, indent, unit);
-		out += pad(indent, unit) + k + " "
+		out += pad(indent, unit) + serializeToken(k) + " "
 			+ v.serializeInline(indent, unit) + "\n";
 	}
 	return out;
@@ -676,6 +677,8 @@ inline std::string CodaTable::serialize(int indent, const std::string& unit) con
 	if (detail::isKeyedTable(*this)) {
 		auto fields = detail::fieldsOf(*this);
 		std::string out = "[\n";
+
+		out += detail::serializeComment(headerComment, indent + 1, unit);
 		out += detail::pad(indent + 1, unit) + "key";
 		for (const auto& f : fields) out += " " + detail::serializeToken(f);
 		out += "\n";
@@ -718,7 +721,7 @@ inline std::string CodaArray::serialize(int indent, const std::string& unit) con
 
 		out += detail::pad(indent + 1, unit);
 		for (size_t i = 0; i < fields.size(); ++i)
-			out += fields[i] + (i < fields.size() - 1 ? " " : "");
+			out += detail::serializeToken(fields[i]) + (i < fields.size() - 1 ? " " : "");
 		out += "\n";
 
 		for (const auto& rowVal : content) {
@@ -1122,16 +1125,6 @@ class Parser {
 		return v;
 	}
 
-	// ── comment-before-header check ─────────────────────────────────────
-
-	void checkNoOrphanComment() {
-		if (!pendingComment.empty())
-			fatalError(coda::ParseErrorCode::CommentBeforeHeader,
-			           "comments are not allowed before a table header — "
-			           "place the comment before the array",
-			           current.loc);
-	}
-
 	// ── duplicate-key guards ────────────────────────────────────────────
 
 	void insertChecked(OrderedMap<std::string, CodaValue>& map,
@@ -1209,15 +1202,15 @@ class Parser {
 		expectLineEnd();
 
 		if (current.type == TokenType::Key) {
-			checkNoOrphanComment();
-			return parseKeyedTable();
+			std::string headerComment = takeComment();
+			return parseKeyedTable(std::move(headerComment));
 		}
 		if (current.type == TokenType::LBrace || current.type == TokenType::LBracket)
 			return parseNestedList();
 		return parseAutoList();
 	}
 
-	CodaValue parseKeyedTable() {
+	CodaValue parseKeyedTable(std::string headerComment) {
 		advance(); // consume 'key'
 
 		std::vector<Token> fieldToks;
@@ -1227,6 +1220,7 @@ class Parser {
 		skipNewlines();
 
 		CodaTable table;
+		table.headerComment = std::move(headerComment);
 		while (current.type != TokenType::RBracket && current.type != TokenType::Eof) {
 			std::string comment = takeComment();
 			auto row = collectFlatRow();
@@ -1272,20 +1266,16 @@ class Parser {
 		skipNewlines();
 
 		if (firstRow.size() > 1) {
-			if (!firstComment.empty())
-				fatalError(coda::ParseErrorCode::CommentBeforeHeader,
-			   "comments are not allowed before a table header — "
-			   "place the comment before the array",
-			   current.loc);
-			return parsePlainTable(std::move(firstRow));
+			return parsePlainTable(std::move(firstRow), std::move(firstComment));
 		}
 		return parseBareList(std::move(firstRow), std::move(firstComment));
 	}
 
-	CodaValue parsePlainTable(std::vector<Token> header) {
+	CodaValue parsePlainTable(std::vector<Token> header, std::string headerComment) {
 		checkUniqueFields(header);
-
 		CodaArray array;
+		array.headerComment = std::move(headerComment);
+
 		while (current.type != TokenType::RBracket && current.type != TokenType::Eof) {
 			std::string comment = takeComment();
 			auto row = collectFlatRow();

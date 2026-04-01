@@ -96,6 +96,7 @@ inline void orderMapWeighted(
 
 struct CodaTable {
 	detail::OrderedMap<std::string, CodaValue> content;
+	std::string headerComment;
 
 	const CodaValue& operator[](const std::string& key) const;
 	CodaValue&       operator[](const std::string& key);
@@ -296,7 +297,7 @@ inline std::string serializeMap(
 		if (v.isContainer() && !out.empty())
 			out += "\n";
 		out += serializeComment(v.comment, indent, unit);
-		out += pad(indent, unit) + k + " "
+		out += pad(indent, unit) + serializeToken(k) + " "
 			+ v.serializeInline(indent, unit) + "\n";
 	}
 	return out;
@@ -406,6 +407,8 @@ inline std::string CodaTable::serialize(int indent, const std::string& unit) con
 	if (detail::isKeyedTable(*this)) {
 		auto fields = detail::fieldsOf(*this);
 		std::string out = "[\n";
+
+		out += detail::serializeComment(headerComment, indent + 1, unit);
 		out += detail::pad(indent + 1, unit) + "key";
 		for (const auto& f : fields) out += " " + detail::serializeToken(f);
 		out += "\n";
@@ -449,7 +452,7 @@ inline std::string CodaArray::serialize(int indent, const std::string& unit) con
 
 		out += detail::pad(indent + 1, unit);
 		for (size_t i = 0; i < fields.size(); ++i)
-			out += fields[i] + (i < fields.size() - 1 ? " " : "");
+			out += detail::serializeToken(fields[i]) + (i < fields.size() - 1 ? " " : "");
 		out += "\n";
 
 		for (const auto& rowVal : content) {
