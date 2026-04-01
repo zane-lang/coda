@@ -87,10 +87,10 @@ struct CodaTable {
 	const CodaValue& operator[](const std::string& key) const;
 	CodaValue&       operator[](const std::string& key);
 
-	auto begin() const { return content.begin(); }
-	auto begin()       { return content.begin(); }
-	auto end()   const { return content.end(); }
-	auto end()         { return content.end(); }
+	auto begin() const;
+	auto begin();
+	auto end() const;
+	auto end();
 
 	std::string serializeRow(const std::vector<std::string>& fields) const;
 	std::string serialize(int indent, const std::string& unit) const;
@@ -102,10 +102,10 @@ struct CodaBlock {
 	const CodaValue& operator[](const std::string& key) const;
 	CodaValue&       operator[](const std::string& key);
 
-	auto begin() const { return content.begin(); }
-	auto begin()       { return content.begin(); }
-	auto end()   const { return content.end(); }
-	auto end()         { return content.end(); }
+	auto begin() const;
+	auto begin();
+	auto end() const;
+	auto end();
 
 	std::string serialize(int indent, const std::string& unit) const;
 };
@@ -116,10 +116,10 @@ struct CodaArray {
 	const CodaValue& operator[](size_t i) const;
 	CodaValue&       operator[](size_t i);
 
-	auto begin() const { return content.begin(); }
-	auto begin()       { return content.begin(); }
-	auto end()   const { return content.end(); }
-	auto end()         { return content.end(); }
+	auto begin() const;
+	auto begin();
+	auto end() const;
+	auto end();
 
 	std::string serialize(int indent, const std::string& unit) const;
 };
@@ -317,6 +317,22 @@ inline void orderMapWeighted(
 }
 
 } // namespace detail
+
+// iterator helpers (defined here so CodaValue is complete for libc++)
+inline auto CodaTable::begin() const { return content.begin(); }
+inline auto CodaTable::begin()       { return content.begin(); }
+inline auto CodaTable::end()   const { return content.end(); }
+inline auto CodaTable::end()         { return content.end(); }
+
+inline auto CodaBlock::begin() const { return content.begin(); }
+inline auto CodaBlock::begin()       { return content.begin(); }
+inline auto CodaBlock::end()   const { return content.end(); }
+inline auto CodaBlock::end()         { return content.end(); }
+
+inline auto CodaArray::begin() const { return content.begin(); }
+inline auto CodaArray::begin()       { return content.begin(); }
+inline auto CodaArray::end()   const { return content.end(); }
+inline auto CodaArray::end()         { return content.end(); }
 
 // ─── CodaValue method bodies ─────────────────────────────────────────────────
 

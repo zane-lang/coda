@@ -51,6 +51,10 @@ public:
 		indentUnit = unit;
 		save(path);
 	}
+	
+	std::string serialize() const {
+		return file.serialize();
+	}
 
 	const coda::CodaValue& operator[](const std::string& key) const { return file[key]; }
 	coda::CodaValue&       operator[](const std::string& key) { return file[key]; }
