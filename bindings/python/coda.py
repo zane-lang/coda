@@ -544,7 +544,7 @@ class CodaTestRunner:
 		if op == "array_element":
 			node = self.doc[check["field"].as_string()]
 			idx = self._parse_int(check["idx"].as_string())
-			return list(node.as_array())[idx].asString() == check["eq"].as_string()
+			return list(node.as_array())[idx].as_string() == check["eq"].as_string()
 
 		if op == "array_block_count":
 			node = self.doc[check["field"].as_string()]
@@ -554,7 +554,7 @@ class CodaTestRunner:
 			node = self.doc[check["field"].as_string()]
 			idx = self._parse_int(check["idx"].as_string())
 			field = check["field_name"].as_string()
-			return list(node.as_array())[idx][field].asString() == check["eq"].as_string()
+			return list(node.as_array())[idx][field].as_string() == check["eq"].as_string()
 
 		if op == "array_index_throws":
 			node = self.doc[check["field"].as_string()]
@@ -570,7 +570,7 @@ class CodaTestRunner:
 			table = self.doc[check["table"].as_string()]
 			idx = self._parse_int(check["idx"].as_string())
 			col = check["col"].as_string()
-			return list(table.as_array())[idx][col].asString() == check["eq"].as_string()
+			return list(table.as_array())[idx][col].as_string() == check["eq"].as_string()
 
 		if op == "table_cell":
 			table = self.doc[check["table"].as_string()]
@@ -824,7 +824,7 @@ class CodaDoc:
 	
 	Use as a context manager to ensure proper cleanup:
 		with CodaDoc.parse(text) as doc:
-			print(doc["name"].asString())
+			print(doc["name"].as_string())
 	"""
 	
 	def __init__(self, ptr: c_void_p):

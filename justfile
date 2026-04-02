@@ -109,12 +109,11 @@ cross-all: generate
 	just clean
 	@for t in {{targets}}; do just cross $t; done
 	@echo "Cross build done. Artifacts are in dist/."
+	just install
 
 install libdir="/usr/local/lib":
-	# Run with sudo explicitly if you want a system install:
-	#   sudo just install
-	install -d "{{libdir}}"
-	install -m 755 dist/x86_64-linux-gnu/libcoda_ffi.so "{{libdir}}/"
+	sudo install -d "{{libdir}}"
+	sudo install -m 755 dist/x86_64-linux-gnu/libcoda_ffi.so "{{libdir}}/"
 
 # ----------------------------------------------------------------
 # Clean build artifacts 
