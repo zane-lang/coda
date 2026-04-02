@@ -379,6 +379,7 @@ extern "C" CODA_FFI_EXPORT coda_owned_str_t coda_doc_serialize(
 	size_t indent_unit_len,
 	coda_error_t* err
 ) {
+	if (!indent_unit && indent_unit_len != 0) return { nullptr, 0 };
 	if (err) coda_error_clear(err);
 	if (!doc) {
 		if (err) err->message = owned_from_std("doc is null");
@@ -546,6 +547,7 @@ extern "C" CODA_FFI_EXPORT coda_str_t coda_string_get(const coda_doc_t* doc, cod
 extern "C" CODA_FFI_EXPORT coda_status_t coda_string_set(
 	coda_doc_t* doc, coda_node_t n, const char* s, size_t len
 ) {
+	if (!s && len != 0) return CODA_ERR;
 	if (!doc) return CODA_ERR;
 	auto* node = doc->get(n);
 	if (!node) return CODA_ERR;
@@ -633,6 +635,7 @@ extern "C" CODA_FFI_EXPORT coda_node_t coda_map_get(
 	const coda_doc_t* doc, coda_node_t m,
 	const char* key, size_t key_len
 ) {
+	if (!key && key_len != 0) return 0;
 	if (!doc) return 0;
 	const auto* node = doc->get(m);
 	if (!is_map_kind(node)) return 0;
@@ -647,6 +650,7 @@ extern "C" CODA_FFI_EXPORT coda_node_t coda_map_get_or_insert(
 	coda_doc_t* doc, coda_node_t m,
 	const char* key, size_t key_len
 ) {
+	if (!key && key_len != 0) return 0;
 	if (!doc) return 0;
 	auto* node = doc->get(m);
 	if (!is_map_kind(node)) return 0;
@@ -670,6 +674,7 @@ extern "C" CODA_FFI_EXPORT coda_status_t coda_map_set(
 	const char* key, size_t key_len,
 	coda_node_t value
 ) {
+	if (!key && key_len != 0) return CODA_ERR;
 	if (!doc) return CODA_ERR;
 	auto* node = doc->get(m);
 	if (!is_map_kind(node)) return CODA_BAD_KIND;
@@ -715,6 +720,7 @@ extern "C" CODA_FFI_EXPORT coda_status_t coda_map_remove(
 // ------------------------- Node creation -------------------------
 
 extern "C" CODA_FFI_EXPORT coda_node_t coda_new_string(coda_doc_t* doc, const char* s, size_t len) {
+	if (!s && len != 0) return 0;
 	if (!doc) return 0;
 	try {
 		uint32_t id = doc->new_node(coda_doc::Kind::String);
