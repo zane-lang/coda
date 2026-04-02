@@ -1,52 +1,12 @@
 # Coda
 
-```coda
-# Release notes
-title "Coda 1.2"
-date 2026-04-01
-"release manager" "Terry Davis"
-
-changes [
-	type desc
-	feat "HolyC-style map ordering"
-	feat "Script runner: once-a-boot"
-	fix "comment attachment in tables"
-]
-
-contributors [
-	key role handle
-	terry maintainer td
-]
-
-notes {
-	summary "Blessed boot and brisk builds"
-	impact "No breaking changes"
-}
-```
+<img width="700" alt="imprint_coda_20260403010920" src="https://github.com/user-attachments/assets/4f13c85c-5767-425f-8090-02805720273f" />
 
 A compact configuration format designed to be easily read- and writeable. The name comes from music — a coda is the concluding passage that ties a composition together. A `.coda` file is the single, definitive statement of how a project is configured.
 
 The above file in JSON:
 
-```json
-{
-	"title": "Coda 1.2",
-	"date": "2026-04-01",
-	"release manager": "Terry Davis",
-	"changes": [
-		{ "type": "feat", "desc": "HolyC-style map ordering" },
-		{ "type": "feat", "desc": "Script runner: once-a-boot" },
-		{ "type": "fix", "desc": "comment attachment in tables" }
-	],
-	"contributors": {
-		"terry": { "role": "maintainer", "handle": "td" }
-	},
-	"notes": {
-		"summary": "Blessed boot and brisk builds",
-		"impact": "No breaking changes"
-	}
-}
-```
+<img width="700" alt="imprint_coda_20260403010924" src="https://github.com/user-attachments/assets/fde8d7b5-3dd0-42ac-a640-980de4baf017" />
 
 ---
 
