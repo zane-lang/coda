@@ -167,7 +167,71 @@ tests [
             }
         ]
     }
-
+	{
+		suite "Comments"
+		name "comment before plain table header becomes header_comment"
+		src "points [\n # possible\n x y z\n 1 2 3\n]\n"
+		checks [
+			{
+				op header_comment
+				field points
+				eq possible
+			}
+			{
+				op plain_table_cell
+				table points
+				idx 0
+				col x
+				eq 1
+			}
+			{
+				op serialize_contains
+				indent " "
+				contains " # possible\n x y z\n"
+			}
+		]
+	}
+	{
+		suite "Comments"
+		name "comment before keyed table header becomes header_comment"
+		src "deps [\n # possible\n key link version\n plot github.com/zane-lang/plot 4.0.3\n]\n"
+		checks [
+			{
+				op header_comment
+				field deps
+				eq possible
+			}
+			{
+				op table_cell
+				table deps
+				row plot
+				col link
+				eq github.com/zane-lang/plot
+			}
+			{
+				op serialize_contains
+				indent " "
+				contains " # possible\n key link version\n"
+			}
+		]
+	}
+	{
+		suite "Comments"
+		name "multi-line header_comment preserved (plain table)"
+		src "points [\n # line1\n # line2\n x y\n 1 2\n]\n"
+		checks [
+			{
+				op header_comment
+				field points
+				eq "line1\nline2"
+			}
+			{
+				op serialize_contains
+				indent " "
+				contains " # line1\n # line2\n x y\n"
+			}
+		]
+	}
     {
         suite "Comments"
         name "comment before key parses"
@@ -875,6 +939,48 @@ tests [
             }
         ]
     }
+	{
+		suite "Round-trip"
+		name "value containing # stays quoted"
+		action roundtrip
+		src "a \"x#y\"\n"
+	}
+	{
+		suite "Round-trip"
+		name "value equal to key stays quoted"
+		action roundtrip
+		src "a \"key\"\n"
+	}
+	{
+		suite "Round-trip"
+		name "map key named key stays quoted"
+		action roundtrip
+		src "\"key\" 1\n"
+	}
+	{
+		suite "Round-trip"
+		name "plain table header containing # stays quoted"
+		action roundtrip
+		src "t [\n \"a#b\" c\n 1 2\n]\n"
+	}
+	{
+		suite "Round-trip"
+		name "plain table header equal to key stays quoted"
+		action roundtrip
+		src "t [\n \"key\" v\n a b\n]\n"
+	}
+	{
+		suite "Round-trip"
+		name "plain table header comment round-trip stable"
+		action roundtrip
+		src "points [\n # possible\n x y z\n 1 2 3\n]\n"
+	}
+	{
+		suite "Round-trip"
+		name "keyed table header comment round-trip stable"
+		action roundtrip
+		src "deps [\n # possible\n key link version\n plot github.com/zane-lang/plot 4.0.3\n]\n"
+	}
 	{
 		suite "Round-trip"
 		name "value containing # stays quoted"

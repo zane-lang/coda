@@ -6,6 +6,7 @@ zig_cc  := `pwd` + "/scripts/zig-cc"
 zig_cxx := `pwd` + "/scripts/zig-cxx"
 zig_ar  := `pwd` + "/scripts/zig-ar"
 
+test_flags := "-O0 -g -std=c++20"
 flags       := "-O3 -std=c++20"
 flags_cross := "-O3 -std=c++20"
 
@@ -18,17 +19,16 @@ default:
 
 test-cpp:
 	mkdir -p build
-	clang++ -std=c++20 -I. tests/cpp/test_main.cpp -o build/tests
+	{{zig_cxx}} {{test_flags}} -I. tests/cpp/test_main.cpp -o build/tests
 	./build/tests
 
-# Test the C FFI
 test-c-ffi:
 	mkdir -p build
 	# Build native static lib (not cross-compiled) because of name collisions
-	clang++ -std=c++20 -c -fPIC -I. ffi/coda_ffi.cpp -o build/coda_ffi.o
-	ar rcs build/libcoda_ffi_native.a build/coda_ffi.o
+	{{zig_cxx}} {{test_flags}} -I. -c -fPIC ffi/coda_ffi.cpp -o build/coda_ffi.o
+	{{zig_ar}} rcs build/libcoda_ffi_native.a build/coda_ffi.o
 	# Build and run test
-	clang++ -std=c++20 -I. tests/cpp/test_c_ffi.cpp build/libcoda_ffi_native.a -o build/test_c_ffi
+	{{zig_cxx}} {{test_flags}} -I. tests/cpp/test_c_ffi.cpp build/libcoda_ffi_native.a -o build/test_c_ffi
 	./build/test_c_ffi
 
 # Test Python FFI
@@ -44,7 +44,7 @@ test: cross-all
 
 run: generate
 	mkdir -p build
-	clang++ -std=c++20 -I. tests/cpp/run.cpp -o build/run
+	{{zig_cxx}} {{test_flags}} -I. tests/run/cpp.cpp -o build/run
 	./build/run
 
 generate:

@@ -241,6 +241,20 @@ public:
 			return false;
 		} catch (...) { return true; }
 	}
+
+	std::string get_header_comment(const char* key) override {
+		auto& v = f()[key];
+
+		// Plain table container = array
+		if (std::holds_alternative<coda::CodaArray>(v.content.value))
+			return v.asArray().headerComment;   // (whatever field name you added)
+
+		// Keyed table container = table
+		if (std::holds_alternative<coda::CodaTable>(v.content.value))
+			return v.asTable().headerComment;
+
+		return "";
+	}
 };
 
 // ─── Main ─────────────────────────────────────────────────────────────────────

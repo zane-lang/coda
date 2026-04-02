@@ -607,6 +607,10 @@ class CodaTestRunner:
 			node = self.doc[check["field"].asString()]
 			return node.comment == check["eq"].asString()
 
+		if op == "header_comment":
+			node = self.doc[check["field"].asString()]
+			return node.header_comment == check["eq"].asString()
+
 		if op == "comment_path":
 			path = self._array_as_strings(check["path"])
 			node = self.doc[path[0]]

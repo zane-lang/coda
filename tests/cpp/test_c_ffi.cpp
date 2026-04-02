@@ -324,6 +324,10 @@ public:
 	bool const_missing_key_throws(const char* key) override {
 		return coda_map_get(doc_, root(), key, std::strlen(key)) == 0;
 	}
+
+	std::string get_header_comment(const char* key) override {
+		return to_str(coda_node_header_comment_get(doc_, get_node(key)));
+	}
 };
 
 // ─── FFI-only extras ─────────────────────────────────────────────────────────

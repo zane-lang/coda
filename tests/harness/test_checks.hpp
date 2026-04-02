@@ -62,6 +62,7 @@ struct ParseAdapter {
 
 	// ── Comments ──────────────────────────────────────────────────────────
 	virtual std::string get_comment(const char* key) = 0;
+	virtual std::string get_header_comment(const char* key) = 0;
 	virtual std::string get_comment_path(const std::vector<std::string>& keys) = 0;
 	virtual std::string get_array_element_comment(const char* key, size_t idx) = 0;
 	virtual std::string get_table_row_comment(const char* table, const char* row) = 0;
@@ -255,6 +256,10 @@ inline bool run_check(ParseAdapter& p, const coda::CodaValue& check) {
 	}
 	if (op == "comment") {
 		return p.get_comment(block_string(check, "field").c_str())
+			== block_string(check, "eq");
+	}
+	if (op == "header_comment") {
+		return p.get_header_comment(block_string(check, "field").c_str())
 			== block_string(check, "eq");
 	}
 	if (op == "comment_path") {

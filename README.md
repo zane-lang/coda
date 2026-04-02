@@ -52,15 +52,12 @@ The above file in JSON:
 
 ## Overview
 
-- Whitespace-sensitive, line-oriented.
-- Every leaf value is a string; interpretation is left to the consumer.
-- Quotes are optional unless a value contains whitespace or syntax characters (`{}[]"#`).
-
-```coda
-name myproject
-type executable
-author "Albert Einstein"
-```
+* Whitespace-sensitive, line-oriented.
+* Every leaf value is a string; interpretation is left to the consumer.
+* Quotes are optional unless a value contains whitespace or syntax characters (`{}[]"#`).
+* Comments are preserved:
+	* `comment`: attaches to the following node.
+	* `headerComment`: attaches to a table header (plain and keyed tables).
 
 Coda has three structural constructs: **blocks** `{}`, **arrays** `[]`, and **tables** (inferred from array headers).
 
@@ -98,6 +95,19 @@ Keys can also be quoted strings:
 "weird-key!" "weird value"
 ```
 
+
+### Reserved word: `key`
+
+`key` is a reserved keyword used in keyed table headers.
+
+* Bare `key` is not a normal identifier token.
+* If you want the literal key/value `key`, write `"key"`.
+
+```coda
+"key" value
+value "key"
+```
+
 ---
 
 ## Comments
@@ -115,38 +125,31 @@ compiler {
 }
 ```
 
-Comments may appear before array elements in bare lists, and before rows in keyed tables. A comment directly before a plain or keyed table header is an error — there is no node to attach it to. Place the comment on the array instead.
+### Header comments in tables
+
+You can place comments directly before a plain or keyed table header. Since there is no node _for_ the header row itself, these comments are stored separately as a **header comment** on the table container.
+
+Plain table (array with a multi-column header row):
 
 ```coda
-# Legal — comment is on the array itself
-# points data
 points [
-	x y z
-	1 2 3
-]
-
-# Illegal — nothing to attach the comment to
-points [
-	# this will error
+	# units: meters
 	x y z
 	1 2 3
 ]
 ```
 
-```coda
-# Legal
-deps [
-	key link version
-	plot github.com/zane-lang/plot 4.0.3
-]
+Keyed table (header row begins with `key`):
 
-# Illegal
+```coda
 deps [
-	# this will also error
+	# optional deps
 	key link version
 	plot github.com/zane-lang/plot 4.0.3
 ]
 ```
+
+Multi-line header comments are preserved as a `\n`-joined string (one line per `# ...` line).
 
 ---
 
@@ -281,13 +284,14 @@ deps [
 ## Errors & semantics
 
 - Type errors throw: string-indexing a scalar, int-indexing a block, or calling `asArray`/`asBlock`/`asTable` on the wrong kind.
-- Array index out of range throws.
-- Inline blocks are illegal: content must start on a new line after `{`.
-- `key` is reserved in table headers; `"key"` is allowed as a normal key.
-- Comments attach to the following node, including array elements and table rows.
-- Ordering: `order()` sorts scalars before containers, then alphabetically; weighted order puts higher weights earlier.
-- Keyed table row iteration preserves insertion order.
-- Parse → serialize → parse → serialize is stable for core constructs.
+* Array index out of range throws.
+* Inline blocks are illegal: content must start on a new line after `{`.
+* `key` is reserved for keyed table headers; `"key"` is allowed as a normal key/value.
+* Comments attach to the following node, including array elements and table rows.
+* Table headers can carry a `header_comment` (comments directly before the header row).
+* Ordering: `order()` sorts scalars before containers, then alphabetically; weighted order puts higher weights earlier.
+* Keyed table row iteration preserves insertion order.
+* Parse → serialize → parse → serialize is stable for core constructs (including quoting rules).
 
 ---
 
@@ -341,3 +345,61 @@ coda.order([](const std::string& key) -> float {
 	return 0;
 });
 ```
+
+## C FFI (`ffi/coda_ffi.h`)
+
+Coda also ships a C ABI for embedding in other languages. See `ffi/coda_ffi.h` for the full surface.
+
+Highlights:
+
+* parse from bytes / file
+* serialize back to Coda text
+* walk arrays and map-like nodes (file/block/table)
+* get/set `comment` and `header_comment`
+* reorder keys (`order`, `order_weighted`)
+* ABI version check (`coda_ffi_abi_version`)
+
+(When using `coda_str_t` views, treat returned pointers as borrowed: they remain valid only as long as the underlying document and node storage remain unchanged.)
+
+---
+
+## Python bindings (`bindings/python/coda.py`)
+
+The Python wrapper uses `ctypes` to load `libcoda_ffi` and provides `CodaDoc` and `Coda` helpers.
+
+Example:
+
+```python
+from bindings.python.coda import CodaDoc
+
+text = """\
+deps [
+	# optional deps
+	a link version
+	plot github.com/zane-lang/plot 4.0.3
+]
+"""
+
+with CodaDoc.parse(text) as doc:
+	print(doc["deps"].header_comment)     # "optional deps"
+	print(doc["deps"][0]["a"].asString()) # "plot"
+```
+
+---
+
+## Building & testing (Just)
+
+This repo is built and tested via `just`.
+
+Common commands:
+
+```bash
+just generate     # regenerate include/coda.hpp (requires quom)
+just cross-all    # cross compile for all available platforms
+just test         # run all tests
+just test-cpp
+just test-c-ffi
+just test-py-ffi
+```
+
+Cross-compiled FFI artifacts (if enabled by your recipes) are placed under `dist/<target>/`.
