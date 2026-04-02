@@ -1,0 +1,17 @@
+{
+	"title": "Coda 1.2",
+	"date": "2026-04-01",
+	"release manager": "Terry Davis",
+	"changes": [
+		{ "type": "feat", "desc": "HolyC-style map ordering" },
+		{ "type": "feat", "desc": "Script runner: once-a-boot" },
+		{ "type": "fix", "desc": "comment attachment in tables" }
+	],
+	"contributors": {
+		"terry": { "role": "maintainer", "handle": "td" }
+	},
+	"notes": {
+		"summary": "Blessed boot and brisk builds",
+		"impact": "No breaking changes"
+	}
+}
