@@ -59,7 +59,7 @@ public:
 	}
 	
 	std::string serialize() const {
-		return file.serialize();
+		return file.serialize(indentUnit);
 	}
 
 	const coda::CodaValue& operator[](const std::string& key) const { return file[key]; }

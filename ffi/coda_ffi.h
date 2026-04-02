@@ -118,9 +118,13 @@ CODA_FFI_EXPORT coda_owned_str_t coda_doc_serialize(
 );
 
 // Reorder keys and nested containers using default ordering rules.
+// WARNING: All previously obtained coda_node_t handles become INVALID after this call.
+//          Obtain fresh handles via coda_doc_root() and the map/array traversal APIs.
 CODA_FFI_EXPORT void coda_doc_order(coda_doc_t* doc);
 
 // Reorder keys using a weight table (higher weight earlier).
+// WARNING: All previously obtained coda_node_t handles become INVALID after this call.
+//          Obtain fresh handles via coda_doc_root() and the map/array traversal APIs.
 CODA_FFI_EXPORT void coda_doc_order_weighted(
 	coda_doc_t* doc,
 	const char** keys,

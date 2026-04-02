@@ -203,17 +203,41 @@ struct CodaValue {
 		);
 	}
 
-	const std::string& asString() const { return std::get<std::string>(content.value); }
-	std::string&       asString()       { return std::get<std::string>(content.value); }
+	const std::string& asString() const {
+		if (auto* p = std::get_if<std::string>(&content.value)) return *p;
+		throw std::runtime_error("CodaValue::asString() — value is not a string");
+	}
+	std::string& asString() {
+		if (auto* p = std::get_if<std::string>(&content.value)) return *p;
+		throw std::runtime_error("CodaValue::asString() — value is not a string");
+	}
 
-	const CodaBlock& asBlock() const { return std::get<CodaBlock>(content.value); }
-	CodaBlock&       asBlock()       { return std::get<CodaBlock>(content.value); }
+	const CodaBlock& asBlock() const {
+		if (auto* p = std::get_if<CodaBlock>(&content.value)) return *p;
+		throw std::runtime_error("CodaValue::asBlock() — value is not a block");
+	}
+	CodaBlock& asBlock() {
+		if (auto* p = std::get_if<CodaBlock>(&content.value)) return *p;
+		throw std::runtime_error("CodaValue::asBlock() — value is not a block");
+	}
 
-	const CodaArray& asArray() const { return std::get<CodaArray>(content.value); }
-	CodaArray&       asArray()       { return std::get<CodaArray>(content.value); }
+	const CodaArray& asArray() const {
+		if (auto* p = std::get_if<CodaArray>(&content.value)) return *p;
+		throw std::runtime_error("CodaValue::asArray() — value is not an array");
+	}
+	CodaArray& asArray() {
+		if (auto* p = std::get_if<CodaArray>(&content.value)) return *p;
+		throw std::runtime_error("CodaValue::asArray() — value is not an array");
+	}
 
-	const CodaTable& asTable() const { return std::get<CodaTable>(content.value); }
-	CodaTable&       asTable()       { return std::get<CodaTable>(content.value); }
+	const CodaTable& asTable() const {
+		if (auto* p = std::get_if<CodaTable>(&content.value)) return *p;
+		throw std::runtime_error("CodaValue::asTable() — value is not a table");
+	}
+	CodaTable& asTable() {
+		if (auto* p = std::get_if<CodaTable>(&content.value)) return *p;
+		throw std::runtime_error("CodaValue::asTable() — value is not a table");
+	}
 
 	bool isContainer() const {
 		return std::holds_alternative<CodaBlock>(content.value) ||

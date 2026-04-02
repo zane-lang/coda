@@ -379,8 +379,11 @@ extern "C" CODA_FFI_EXPORT coda_owned_str_t coda_doc_serialize(
 	size_t indent_unit_len,
 	coda_error_t* err
 ) {
-	if (!indent_unit && indent_unit_len != 0) return { nullptr, 0 };
 	if (err) coda_error_clear(err);
+	if (!indent_unit && indent_unit_len != 0) {
+		if (err) err->message = owned_from_std("indent_unit is null but indent_unit_len is nonzero");
+		return { nullptr, 0 };
+	}
 	if (!doc) {
 		if (err) err->message = owned_from_std("doc is null");
 		return {nullptr, 0};

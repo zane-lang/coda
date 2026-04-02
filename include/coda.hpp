@@ -473,17 +473,41 @@ struct CodaValue {
 		);
 	}
 
-	const std::string& asString() const { return std::get<std::string>(content.value); }
-	std::string&       asString()       { return std::get<std::string>(content.value); }
+	const std::string& asString() const {
+		if (auto* p = std::get_if<std::string>(&content.value)) return *p;
+		throw std::runtime_error("CodaValue::asString() — value is not a string");
+	}
+	std::string& asString() {
+		if (auto* p = std::get_if<std::string>(&content.value)) return *p;
+		throw std::runtime_error("CodaValue::asString() — value is not a string");
+	}
 
-	const CodaBlock& asBlock() const { return std::get<CodaBlock>(content.value); }
-	CodaBlock&       asBlock()       { return std::get<CodaBlock>(content.value); }
+	const CodaBlock& asBlock() const {
+		if (auto* p = std::get_if<CodaBlock>(&content.value)) return *p;
+		throw std::runtime_error("CodaValue::asBlock() — value is not a block");
+	}
+	CodaBlock& asBlock() {
+		if (auto* p = std::get_if<CodaBlock>(&content.value)) return *p;
+		throw std::runtime_error("CodaValue::asBlock() — value is not a block");
+	}
 
-	const CodaArray& asArray() const { return std::get<CodaArray>(content.value); }
-	CodaArray&       asArray()       { return std::get<CodaArray>(content.value); }
+	const CodaArray& asArray() const {
+		if (auto* p = std::get_if<CodaArray>(&content.value)) return *p;
+		throw std::runtime_error("CodaValue::asArray() — value is not an array");
+	}
+	CodaArray& asArray() {
+		if (auto* p = std::get_if<CodaArray>(&content.value)) return *p;
+		throw std::runtime_error("CodaValue::asArray() — value is not an array");
+	}
 
-	const CodaTable& asTable() const { return std::get<CodaTable>(content.value); }
-	CodaTable&       asTable()       { return std::get<CodaTable>(content.value); }
+	const CodaTable& asTable() const {
+		if (auto* p = std::get_if<CodaTable>(&content.value)) return *p;
+		throw std::runtime_error("CodaValue::asTable() — value is not a table");
+	}
+	CodaTable& asTable() {
+		if (auto* p = std::get_if<CodaTable>(&content.value)) return *p;
+		throw std::runtime_error("CodaValue::asTable() — value is not a table");
+	}
 
 	bool isContainer() const {
 		return std::holds_alternative<CodaBlock>(content.value) ||
@@ -882,7 +906,14 @@ class Lexer {
 
 	char advance() {
 		char c = src[pos++];
-		if (c == '\n') { ++line_; lineStart = pos; }
+		if (c == '\n') {
+			++line_; lineStart = pos;
+		} else if (c == '\r') {
+			// CR-only or CR+LF: treat as newline.
+			// Consume the following \n of a CRLF pair so it isn't counted twice.
+			if (pos < src.size() && src[pos] == '\n') ++pos;
+			++line_; lineStart = pos;
+		}
 		return c;
 	}
 
@@ -998,20 +1029,23 @@ class Parser {
 
 	// ── token helpers ───────────────────────────────────────────────────
 
-	Token advance() {
-		if (current.type == TokenType::Error) {
-			coda::ParseErrorCode code;
-			if (current.value.find("unterminated") != std::string::npos)
-				code = coda::ParseErrorCode::UnterminatedString;
-			else if (current.value.find("escape") != std::string::npos)
-				code = coda::ParseErrorCode::InvalidEscape;
-			else
-				code = coda::ParseErrorCode::UnexpectedToken;
+	// If the current token is a lexer Error, translate its message into the
+	// appropriate typed ParseErrorCode and throw.  Called from advance() and
+	// from any parse path that inspects current.type before consuming it.
+	void checkNotError() {
+		if (current.type != TokenType::Error) return;
+		coda::ParseErrorCode code;
+		if (current.value.find("unterminated") != std::string::npos)
+			code = coda::ParseErrorCode::UnterminatedString;
+		else if (current.value.find("escape") != std::string::npos)
+			code = coda::ParseErrorCode::InvalidEscape;
+		else
+			code = coda::ParseErrorCode::UnexpectedToken;
+		fatalError(code, current.value, current.loc);
+	}
 
-			fatalError(code,
-			           current.value,
-			           current.loc);
-		}
+	Token advance() {
+		checkNotError();
 		Token t   = current;
 		current   = lookahead;
 		lookahead = lexer.next();
@@ -1170,10 +1204,28 @@ class Parser {
 	CodaValue parseValue() {
 		std::string comment = takeComment();
 
+		// Surface lexer errors (unterminated string, bad escape) with their
+		// proper typed ParseErrorCode before doing any type dispatch.
+		checkNotError();
+
 		CodaValue v;
-		if (current.type == TokenType::LBrace)        v = parseBlock();
-		else if (current.type == TokenType::LBracket)  v = parseArray();
-		else                                           v = advance().value;
+		if (current.type == TokenType::LBrace) {
+			v = parseBlock();
+		} else if (current.type == TokenType::LBracket) {
+			v = parseArray();
+		} else if (current.type == TokenType::Ident
+		        || current.type == TokenType::String
+		        || current.type == TokenType::Key) {
+			// TokenType::Key ('key') is reserved as a table header marker, but
+			// when it appears in a value position it is just the string "key".
+			v = advance().value;
+		} else {
+			// Newline, RBrace, RBracket, Eof, Key — no value present
+			fatalError(coda::ParseErrorCode::UnexpectedToken,
+			           "expected value (string, identifier, block, or array), got "
+			           + tokenToString.at(current.type),
+			           current.loc);
+		}
 
 		v.comment = std::move(comment);
 		return v;
@@ -1416,7 +1468,7 @@ public:
 	}
 	
 	std::string serialize() const {
-		return file.serialize();
+		return file.serialize(indentUnit);
 	}
 
 	const coda::CodaValue& operator[](const std::string& key) const { return file[key]; }
