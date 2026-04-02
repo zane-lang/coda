@@ -288,7 +288,7 @@ deps [
 * Inline blocks are illegal: content must start on a new line after `{`.
 * `key` is reserved for keyed table headers; `"key"` is allowed as a normal key/value.
 * Comments attach to the following node, including array elements and table rows.
-* Table headers can carry a `header_comment` (comments directly before the header row).
+* Table headers can carry a `headerComment` (comments directly before the header row).
 * Ordering: `order()` sorts scalars before containers, then alphabetically; weighted order puts higher weights earlier.
 * Keyed table row iteration preserves insertion order.
 * Parse → serialize → parse → serialize is stable for core constructs (including quoting rules).
@@ -355,7 +355,7 @@ Highlights:
 * parse from bytes / file
 * serialize back to Coda text
 * walk arrays and map-like nodes (file/block/table)
-* get/set `comment` and `header_comment`
+* get/set `comment` and `headerComment`
 * reorder keys (`order`, `order_weighted`)
 * ABI version check (`coda_ffi_abi_version`)
 
@@ -382,7 +382,7 @@ deps [
 
 with CodaDoc.parse(text) as doc:
 	print(doc["deps"].header_comment)     # "optional deps"
-	print(doc["deps"][0]["a"].asString()) # "plot"
+	print(doc["deps"][0]["a"].as_string()) # "plot"
 ```
 
 ---

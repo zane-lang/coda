@@ -332,13 +332,13 @@ class Coda:
 		self._check_valid()
 		return _lib.coda_node_kind(self._doc._ptr, self._node_id)
 	
-	def asString(self) -> str:
+	def as_string(self) -> str:
 		"""Get this node as a string value."""
 		self._check_valid()
 		result = _lib.coda_string_get(self._doc._ptr, self._node_id)
 		return result.to_python()
 	
-	def asArray(self) -> Iterator['Coda']:
+	def as_array(self) -> Iterator['Coda']:
 		"""Iterate over array elements."""
 		self._check_valid()
 		if self.kind != CODA_NODE_ARRAY:
@@ -349,7 +349,7 @@ class Coda:
 			if child_id != 0:
 				yield Coda(self._doc, child_id)
 	
-	def asBlock(self) -> Iterator[Tuple[str, 'Coda']]:
+	def as_block(self) -> Iterator[Tuple[str, 'Coda']]:
 		"""Iterate over block/map key-value pairs."""
 		self._check_valid()
 		if self.kind not in (CODA_NODE_FILE, CODA_NODE_BLOCK, CODA_NODE_TABLE):
@@ -361,12 +361,12 @@ class Coda:
 			if value_id != 0:
 				yield (key.to_python(), Coda(self._doc, value_id))
 
-	def asTable(self) -> Iterator[Tuple[str, 'Coda']]:
+	def as_table(self) -> Iterator[Tuple[str, 'Coda']]:
 		"""Iterate over keyed table rows."""
 		self._check_valid()
 		if self.kind != CODA_NODE_TABLE:
 			raise TypeError("node is not a table")
-		return self.asBlock()
+		return self.as_block()
 
 	@overload
 	def __getitem__(self, key: str) -> "Coda": ...
@@ -422,7 +422,7 @@ class Coda:
 	def get(self, key: str, default: Optional[str] = None) -> Optional[str]:
 		"""Get a value by key with optional default."""
 		try:
-			return self[key].asString()
+			return self[key].as_string()
 		except KeyError:
 			return default
 
@@ -491,7 +491,7 @@ class CodaTestRunner:
 		return float(value)
 
 	def _array_as_strings(self, arr: Coda) -> list[str]:
-		return [v.asString() for v in arr.asArray()]
+		return [v.as_string() for v in arr.as_array()]
 
 	def _check_order_contains(self, text: str, order: list[str]) -> bool:
 		pos = 0
@@ -503,195 +503,195 @@ class CodaTestRunner:
 		return True
 
 	def run_check(self, check: Coda) -> bool:
-		op = check["op"].asString()
+		op = check["op"].as_string()
 
 		if op == "get_string":
-			return self.doc[check["field"].asString()].asString() == check["eq"].asString()
+			return self.doc[check["field"].as_string()].as_string() == check["eq"].as_string()
 
 		if op == "get_string_path":
 			path = self._array_as_strings(check["path"])
 			node = self.doc[path[0]]
 			for key in path[1:]:
 				node = node[key]
-			return node.asString() == check["eq"].asString()
+			return node.as_string() == check["eq"].as_string()
 
 		if op == "is_container":
-			node = self.doc[check["field"].asString()]
-			return (node.kind in (CODA_NODE_BLOCK, CODA_NODE_ARRAY, CODA_NODE_TABLE)) == self._parse_bool(check["eq_bool"].asString())
+			node = self.doc[check["field"].as_string()]
+			return (node.kind in (CODA_NODE_BLOCK, CODA_NODE_ARRAY, CODA_NODE_TABLE)) == self._parse_bool(check["eq_bool"].as_string())
 
 		if op == "has_key":
-			key = check["field"].asString()
+			key = check["field"].as_string()
 			try:
 				_ = self.doc[key]
 				got = True
 			except KeyError:
 				got = False
-			return got == self._parse_bool(check["eq_bool"].asString())
+			return got == self._parse_bool(check["eq_bool"].as_string())
 
 		if op == "map_len":
-			node = self.doc[check["field"].asString()]
-			return len(list(node.asBlock())) == self._parse_int(check["eq_int"].asString())
+			node = self.doc[check["field"].as_string()]
+			return len(list(node.as_block())) == self._parse_int(check["eq_int"].as_string())
 
 		if op == "map_keys":
-			node = self.doc[check["field"].asString()]
-			keys = [k for k, _ in node.asBlock()]
+			node = self.doc[check["field"].as_string()]
+			keys = [k for k, _ in node.as_block()]
 			return keys == self._array_as_strings(check["eq_list"])
 
 		if op == "array_len":
-			node = self.doc[check["field"].asString()]
-			return len(list(node.asArray())) == self._parse_int(check["eq_int"].asString())
+			node = self.doc[check["field"].as_string()]
+			return len(list(node.as_array())) == self._parse_int(check["eq_int"].as_string())
 
 		if op == "array_element":
-			node = self.doc[check["field"].asString()]
-			idx = self._parse_int(check["idx"].asString())
-			return list(node.asArray())[idx].asString() == check["eq"].asString()
+			node = self.doc[check["field"].as_string()]
+			idx = self._parse_int(check["idx"].as_string())
+			return list(node.as_array())[idx].asString() == check["eq"].as_string()
 
 		if op == "array_block_count":
-			node = self.doc[check["field"].asString()]
-			return len(list(node.asArray())) == self._parse_int(check["eq_int"].asString())
+			node = self.doc[check["field"].as_string()]
+			return len(list(node.as_array())) == self._parse_int(check["eq_int"].as_string())
 
 		if op == "array_block_field":
-			node = self.doc[check["field"].asString()]
-			idx = self._parse_int(check["idx"].asString())
-			field = check["field_name"].asString()
-			return list(node.asArray())[idx][field].asString() == check["eq"].asString()
+			node = self.doc[check["field"].as_string()]
+			idx = self._parse_int(check["idx"].as_string())
+			field = check["field_name"].as_string()
+			return list(node.as_array())[idx][field].asString() == check["eq"].as_string()
 
 		if op == "array_index_throws":
-			node = self.doc[check["field"].asString()]
-			idx = self._parse_int(check["idx"].asString())
+			node = self.doc[check["field"].as_string()]
+			idx = self._parse_int(check["idx"].as_string())
 			try:
-				_ = list(node.asArray())[idx]
+				_ = list(node.as_array())[idx]
 				got = False
 			except Exception:
 				got = True
-			return got == self._parse_bool(check["eq_bool"].asString())
+			return got == self._parse_bool(check["eq_bool"].as_string())
 
 		if op == "plain_table_cell":
-			table = self.doc[check["table"].asString()]
-			idx = self._parse_int(check["idx"].asString())
-			col = check["col"].asString()
-			return list(table.asArray())[idx][col].asString() == check["eq"].asString()
+			table = self.doc[check["table"].as_string()]
+			idx = self._parse_int(check["idx"].as_string())
+			col = check["col"].as_string()
+			return list(table.as_array())[idx][col].asString() == check["eq"].as_string()
 
 		if op == "table_cell":
-			table = self.doc[check["table"].asString()]
-			row = check["row"].asString()
-			col = check["col"].asString()
-			return table[row][col].asString() == check["eq"].asString()
+			table = self.doc[check["table"].as_string()]
+			row = check["row"].as_string()
+			col = check["col"].as_string()
+			return table[row][col].as_string() == check["eq"].as_string()
 
 		if op == "table_row_keys":
-			table = self.doc[check["table"].asString()]
-			keys = [k for k, _ in table.asTable()]
+			table = self.doc[check["table"].as_string()]
+			keys = [k for k, _ in table.as_table()]
 			return keys == self._array_as_strings(check["eq_list"])
 
 		if op == "table_row_missing_inserts":
-			table = self.doc[check["table"].asString()]
-			row = check["row"].asString()
+			table = self.doc[check["table"].as_string()]
+			row = check["row"].as_string()
 			try:
 				node = table.get_or_insert(row)
-				got = node.asString() == ""
+				got = node.as_string() == ""
 			except Exception:
 				got = False
-			return got == self._parse_bool(check["eq_bool"].asString())
+			return got == self._parse_bool(check["eq_bool"].as_string())
 
 		if op == "table_row_missing_throws":
-			table = self.doc[check["table"].asString()]
-			row = check["row"].asString()
+			table = self.doc[check["table"].as_string()]
+			row = check["row"].as_string()
 			try:
 				_ = table[row]
 				got = False
 			except KeyError:
 				got = True
-			return got == self._parse_bool(check["eq_bool"].asString())
+			return got == self._parse_bool(check["eq_bool"].as_string())
 
 		if op == "comment":
-			node = self.doc[check["field"].asString()]
-			return node.comment == check["eq"].asString()
+			node = self.doc[check["field"].as_string()]
+			return node.comment == check["eq"].as_string()
 
 		if op == "header_comment":
-			node = self.doc[check["field"].asString()]
-			return node.header_comment == check["eq"].asString()
+			node = self.doc[check["field"].as_string()]
+			return node.header_comment == check["eq"].as_string()
 
 		if op == "comment_path":
 			path = self._array_as_strings(check["path"])
 			node = self.doc[path[0]]
 			for key in path[1:]:
 				node = node[key]
-			return node.comment == check["eq"].asString()
+			return node.comment == check["eq"].as_string()
 
 		if op == "array_element_comment":
-			node = self.doc[check["field"].asString()]
-			idx = self._parse_int(check["idx"].asString())
-			return list(node.asArray())[idx].comment == check["eq"].asString()
+			node = self.doc[check["field"].as_string()]
+			idx = self._parse_int(check["idx"].as_string())
+			return list(node.as_array())[idx].comment == check["eq"].as_string()
 
 		if op == "table_row_comment":
-			table = self.doc[check["table"].asString()]
-			row = check["row"].asString()
-			return table[row].comment == check["eq"].asString()
+			table = self.doc[check["table"].as_string()]
+			row = check["row"].as_string()
+			return table[row].comment == check["eq"].as_string()
 
 		if op == "plain_table_row_comment":
-			table = self.doc[check["table"].asString()]
-			idx = self._parse_int(check["idx"].asString())
-			return list(table.asArray())[idx].comment == check["eq"].asString()
+			table = self.doc[check["table"].as_string()]
+			idx = self._parse_int(check["idx"].as_string())
+			return list(table.as_array())[idx].comment == check["eq"].as_string()
 
 		if op == "set_string":
-			self.doc[check["field"].asString()] = check["value"].asString()
-			return self.doc[check["field"].asString()].asString() == check["value"].asString()
+			self.doc[check["field"].as_string()] = check["value"].as_string()
+			return self.doc[check["field"].as_string()].as_string() == check["value"].as_string()
 
 		if op == "set_string_path":
 			path = self._array_as_strings(check["path"])
 			node = self.doc[path[0]]
 			for key in path[1:-1]:
 				node = node[key]
-			node[path[-1]] = check["value"].asString()
-			return node[path[-1]].asString() == check["value"].asString()
+			node[path[-1]] = check["value"].as_string()
+			return node[path[-1]].as_string() == check["value"].as_string()
 
 		if op == "string_index_on_scalar_throws":
 			try:
-				_ = self.doc[check["field"].asString()][check["sub"].asString()]
+				_ = self.doc[check["field"].as_string()][check["sub"].as_string()]
 				got = False
 			except Exception:
 				got = True
-			return got == self._parse_bool(check["eq_bool"].asString())
+			return got == self._parse_bool(check["eq_bool"].as_string())
 
 		if op == "int_index_on_block_throws":
 			try:
-				_ = list(self.doc[check["field"].asString()].asArray())[self._parse_int(check["idx"].asString())]
+				_ = list(self.doc[check["field"].as_string()].as_array())[self._parse_int(check["idx"].as_string())]
 				got = False
 			except Exception:
 				got = True
-			return got == self._parse_bool(check["eq_bool"].asString())
+			return got == self._parse_bool(check["eq_bool"].as_string())
 
 		if op == "as_array_on_scalar_throws":
 			try:
-				_ = list(self.doc[check["field"].asString()].asArray())
+				_ = list(self.doc[check["field"].as_string()].as_array())
 				got = False
 			except Exception:
 				got = True
-			return got == self._parse_bool(check["eq_bool"].asString())
+			return got == self._parse_bool(check["eq_bool"].as_string())
 
 		if op == "as_block_on_array_throws":
 			try:
-				_ = list(self.doc[check["field"].asString()].asBlock())
+				_ = list(self.doc[check["field"].as_string()].as_block())
 				got = False
 			except Exception:
 				got = True
-			return got == self._parse_bool(check["eq_bool"].asString())
+			return got == self._parse_bool(check["eq_bool"].as_string())
 
 		if op == "as_table_on_block_throws":
 			try:
-				_ = list(self.doc[check["field"].asString()].asTable())
+				_ = list(self.doc[check["field"].as_string()].as_table())
 				got = False
 			except Exception:
 				got = True
-			return got == self._parse_bool(check["eq_bool"].asString())
+			return got == self._parse_bool(check["eq_bool"].as_string())
 
 		if op == "const_missing_key_throws":
 			try:
-				_ = self.doc[check["field"].asString()]
+				_ = self.doc[check["field"].as_string()]
 				got = False
 			except KeyError:
 				got = True
-			return got == self._parse_bool(check["eq_bool"].asString())
+			return got == self._parse_bool(check["eq_bool"].as_string())
 
 		if op == "order_default_contains_order":
 			order = self._array_as_strings(check["order"])
@@ -701,14 +701,14 @@ class CodaTestRunner:
 		if op == "order_weighted_contains_order":
 			order = self._array_as_strings(check["order"])
 			weights = []
-			for entry in check["weights"].asArray():
-				weights.append((entry["field"].asString(), self._parse_float(entry["weight"].asString())))
+			for entry in check["weights"].as_array():
+				weights.append((entry["field"].as_string(), self._parse_float(entry["weight"].as_string())))
 			return self._check_order_contains(self.doc.order_weighted_and_serialize(weights), order)
 
 		if op == "serialize_contains":
-			indent = check["indent"].asString()
+			indent = check["indent"].as_string()
 			text = self.doc.serialize(indent)
-			return check["contains"].asString() in text
+			return check["contains"].as_string() in text
 
 		return False
 
@@ -724,16 +724,16 @@ def run_catalog_tests(catalog_path: str) -> None:
 
 	catalog = CodaDoc.parse(catalog_text)
 	try:
-		tests = list(catalog["tests"].asArray())
+		tests = list(catalog["tests"].as_array())
 
 		passed = 0
 		failed = 0
 		current_suite = None
 
 		for test in tests:
-			suite = test["suite"].asString()
-			name = test["name"].asString()
-			src = test["src"].asString()
+			suite = test["suite"].as_string()
+			name = test["name"].as_string()
+			src = test["src"].as_string()
 
 			if suite != current_suite:
 				current_suite = suite
@@ -741,7 +741,7 @@ def run_catalog_tests(catalog_path: str) -> None:
 
 			action = None
 			try:
-				action = test["action"].asString()
+				action = test["action"].as_string()
 			except KeyError:
 				action = None
 
@@ -753,7 +753,7 @@ def run_catalog_tests(catalog_path: str) -> None:
 							CodaDoc.parse(src)
 							ok = False
 						except CodaParseError as e:
-							needles = [v.asString() for v in test["needles"].asArray()]
+							needles = [v.as_string() for v in test["needles"].as_array()]
 							ok = any(n in str(e) for n in needles) or not needles
 					elif action == "parse_fail_code":
 						try:
@@ -772,7 +772,7 @@ def run_catalog_tests(catalog_path: str) -> None:
 								"ContentAfterBrace": 8,
 								"KeyInBlock": 9,
 							}
-							expected = code_map.get(test["code"].asString(), -1)
+							expected = code_map.get(test["code"].as_string(), -1)
 							ok = int(e.code) == expected
 					elif action == "roundtrip":
 						with CodaDoc.parse(src) as d1:
@@ -787,7 +787,7 @@ def run_catalog_tests(catalog_path: str) -> None:
 						runner = CodaTestRunner(doc)
 						ok = True
 						try:
-							checks = list(test["checks"].asArray())
+							checks = list(test["checks"].as_array())
 						except KeyError:
 							checks = []
 						for check in checks:

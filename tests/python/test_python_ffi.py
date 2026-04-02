@@ -27,8 +27,8 @@ def test_basic_parsing():
 	
 	with CodaDoc.parse(text) as doc:
 		# Check we can access fields
-		assert doc["name"].asString() == "example"
-		assert doc["type"].asString() == "executable"
+		assert doc["name"].as_string() == "example"
+		assert doc["type"].as_string() == "executable"
 
 
 def test_nested_blocks():
@@ -43,8 +43,8 @@ compiler {
 """
 	
 	with CodaDoc.parse(text) as doc:
-		assert doc["compiler"]["debug"].asString() == "false"
-		assert doc["compiler"]["optimize"].asString() == "true"
+		assert doc["compiler"]["debug"].as_string() == "false"
+		assert doc["compiler"]["optimize"].as_string() == "true"
 
 
 def test_arrays():
@@ -60,11 +60,11 @@ targets [
 """
 	
 	with CodaDoc.parse(text) as doc:
-		targets = list(doc["targets"].asArray())
+		targets = list(doc["targets"].as_array())
 		assert len(targets) == 3
-		assert targets[0].asString() == "x86_64-linux"
-		assert targets[1].asString() == "x86_64-windows"
-		assert targets[2].asString() == "aarch64-macos"
+		assert targets[0].as_string() == "x86_64-linux"
+		assert targets[1].as_string() == "x86_64-windows"
+		assert targets[2].as_string() == "aarch64-macos"
 
 
 def test_block_iteration():
@@ -79,10 +79,10 @@ meta {
 """
 	
 	with CodaDoc.parse(text) as doc:
-		entries = dict(doc["meta"].asBlock())
+		entries = dict(doc["meta"].as_block())
 		assert len(entries) == 2
-		assert entries["author"].asString() == "Albert Einstein"
-		assert entries["description"].asString() == "a test project"
+		assert entries["author"].as_string() == "Albert Einstein"
+		assert entries["description"].as_string() == "a test project"
 
 
 def test_keyed_table():
@@ -98,10 +98,10 @@ deps [
 """
 	
 	with CodaDoc.parse(text) as doc:
-		assert doc["deps"]["plot"]["link"].asString() == "github.com/zane-lang/plot"
-		assert doc["deps"]["plot"]["version"].asString() == "4.0.3"
-		assert doc["deps"]["http"]["link"].asString() == "github.com/zane-lang/http"
-		assert doc["deps"]["http"]["version"].asString() == "2.1.0"
+		assert doc["deps"]["plot"]["link"].as_string() == "github.com/zane-lang/plot"
+		assert doc["deps"]["plot"]["version"].as_string() == "4.0.3"
+		assert doc["deps"]["http"]["link"].as_string() == "github.com/zane-lang/http"
+		assert doc["deps"]["http"]["version"].as_string() == "2.1.0"
 
 
 def test_quoted_strings():
@@ -115,9 +115,9 @@ path "C:\\\\Users\\\\name"
 '''
 	
 	with CodaDoc.parse(text) as doc:
-		assert doc["author"].asString() == "Albert Einstein"
-		assert doc["message"].asString() == "Hello\nWorld"
-		assert doc["path"].asString() == "C:\\Users\\name"
+		assert doc["author"].as_string() == "Albert Einstein"
+		assert doc["message"].as_string() == "Hello\nWorld"
+		assert doc["path"].as_string() == "C:\\Users\\name"
 
 
 def test_serialization():
@@ -143,11 +143,11 @@ def test_modification():
 	with CodaDoc.parse(text) as doc:
 		# Modify existing field
 		doc["name"] = "newproject"
-		assert doc["name"].asString() == "newproject"
+		assert doc["name"].as_string() == "newproject"
 		
 		# Add new field
 		doc["type"] = "library"
-		assert doc["type"].asString() == "library"
+		assert doc["type"].as_string() == "library"
 
 
 def test_file_operations():
@@ -164,8 +164,8 @@ def test_file_operations():
 	try:
 		# Parse from file
 		with CodaDoc.parse_file(temp_path) as doc:
-			assert doc["name"].asString() == "test"
-			assert doc["version"].asString() == "1.0.0"
+			assert doc["name"].as_string() == "test"
+			assert doc["version"].as_string() == "1.0.0"
 			
 			# Modify and save
 			doc["name"] = "modified"
@@ -173,7 +173,7 @@ def test_file_operations():
 		
 		# Parse again to verify save worked
 		with CodaDoc.parse_file(temp_path) as doc:
-			assert doc["name"].asString() == "modified"
+			assert doc["name"].as_string() == "modified"
 	finally:
 		os.unlink(temp_path)
 
@@ -255,21 +255,21 @@ meta {
 	
 	with CodaDoc.parse(text) as doc:
 		# Top-level fields
-		assert doc["name"].asString() == "example"
-		assert doc["type"].asString() == "executable"
+		assert doc["name"].as_string() == "example"
+		assert doc["type"].as_string() == "executable"
 		
 		# Keyed table
-		assert doc["deps"]["plot"]["link"].asString() == "github.com/zane-lang/plot"
+		assert doc["deps"]["plot"]["link"].as_string() == "github.com/zane-lang/plot"
 		
 		# Nested block
-		assert doc["compiler"]["debug"].asString() == "false"
+		assert doc["compiler"]["debug"].as_string() == "false"
 		
 		# Nested array
-		targets = list(doc["compiler"]["targets"].asArray())
+		targets = list(doc["compiler"]["targets"].as_array())
 		assert len(targets) == 3
 		
 		# Block iteration
-		meta = dict(doc["meta"].asBlock())
+		meta = dict(doc["meta"].as_block())
 		assert len(meta) == 2
 		
 		# Serialization round-trip
@@ -277,8 +277,8 @@ meta {
 		
 	# Parse the serialized version
 	with CodaDoc.parse(serialized) as doc2:
-		assert doc2["name"].asString() == "example"
-		assert doc2["deps"]["plot"]["link"].asString() == "github.com/zane-lang/plot"
+		assert doc2["name"].as_string() == "example"
+		assert doc2["deps"]["plot"]["link"].as_string() == "github.com/zane-lang/plot"
 
 
 def test_context_manager():
@@ -291,7 +291,7 @@ def test_context_manager():
 	assert doc._ptr is not None
 	
 	with doc:
-		assert doc["name"].asString() == "example"
+		assert doc["name"].as_string() == "example"
 	
 	# After exiting context, should be freed
 	assert doc._ptr is None
