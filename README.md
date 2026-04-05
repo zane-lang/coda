@@ -1,4 +1,4 @@
-# <img height="80" align="right" src="https://raw.githubusercontent.com/zane-lang/logos/refs/heads/main/coda/coda-render.svg" /> <br> Coda
+# <img height="80" align="right" src="https://raw.githubusercontent.com/zane-lang/logos/refs/heads/main/coda/coda.svg" /> <br> Coda
 
 <img width="700" alt="imprint_coda_20260403010920" src="https://github.com/user-attachments/assets/4f13c85c-5767-425f-8090-02805720273f" />
 
