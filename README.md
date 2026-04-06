@@ -1,6 +1,6 @@
 # <img height="80" align="right" src="https://raw.githubusercontent.com/zane-lang/logos/refs/heads/main/coda/coda.svg" /> <br> Coda
 
-<img width="700" alt="imprint_coda_20260403010920" src="https://github.com/user-attachments/assets/4f13c85c-5767-425f-8090-02805720273f" />
+<img width="700" alt="imprint_coda_20260403010920" src="https://github.com/user-attachments/assets/8384c670-bf40-45b4-bf1f-5fcaa2f35324" />
 
 A compact configuration format designed to be easily read- and writeable. The name comes from music — a coda is the concluding passage that ties a composition together. A `.coda` file is the single, definitive statement of how a project is configured.
 
