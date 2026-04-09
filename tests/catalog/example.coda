@@ -2,3 +2,8 @@ test [
 	"a#" 3 2
 	hi three two
 ]
+
+test2 [
+	key hello world
+	peter 33 abc
+]
