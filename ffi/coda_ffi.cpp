@@ -63,6 +63,7 @@ struct coda_doc {
 	};
 
 	std::vector<Node> nodes;
+	std::vector<uint32_t> free_list;   // recycled node IDs
 	uint32_t root = 0;
 
 	coda_doc() {
@@ -71,10 +72,42 @@ struct coda_doc {
 	}
 
 	uint32_t new_node(Kind k) {
+		if (!free_list.empty()) {
+			uint32_t id = free_list.back();
+			free_list.pop_back();
+			nodes[id] = Node{};
+			nodes[id].kind = k;
+			return id;
+		}
 		Node n;
 		n.kind = k;
 		nodes.push_back(std::move(n));
 		return static_cast<uint32_t>(nodes.size() - 1);
+	}
+
+	// Recursively reset a node and all children, returning IDs to the freelist.
+	void free_node(uint32_t id) {
+		if (id == 0 || id >= nodes.size()) return;
+		Node& n = nodes[id];
+		switch (n.kind) {
+			case Kind::File:
+			case Kind::Block:
+				for (const auto& [k, child] : n.entries) free_node(child);
+				break;
+			case Kind::Array:
+				for (uint32_t child : n.arr) free_node(child);
+				break;
+			case Kind::Table:
+				for (uint32_t child : n.arr) free_node(child);
+				break;
+			case Kind::KeyedTable:
+				for (const auto& [k, child] : n.entries) free_node(child);
+				break;
+			default:
+				break;
+		}
+		n = Node{};   // reset to null kind, release strings/vectors
+		free_list.push_back(id);
 	}
 
 	Node* get(uint32_t id) {
@@ -333,6 +366,7 @@ static void fill_parse_error(coda_error_t* err, const coda::ParseError& e) {
 
 static void rebuild_from_file(coda_doc& d, const coda::File& f) {
 	d.nodes.clear();
+	d.free_list.clear();                            // stale IDs are no longer valid
 	d.nodes.emplace_back();                         // null sentinel
 	d.root = d.new_node(coda_doc::Kind::File);
 	for (const auto& [k, vp] : f.getRoot().getContent()) {
@@ -377,7 +411,12 @@ extern "C" CODA_FFI_EXPORT coda_doc_t* coda_doc_parse(
 		coda::File f = p.parse();
 
 		auto* d = new coda_doc();
-		rebuild_from_file(*d, f);
+		try {
+			rebuild_from_file(*d, f);
+		} catch (...) {
+			delete d;
+			throw;
+		}
 		return d;
 	} catch (const coda::ParseError& e) {
 		fill_parse_error(err, e);
@@ -754,7 +793,9 @@ extern "C" CODA_FFI_EXPORT coda_status_t coda_array_set(
 	if (!n) return CODA_ERR;
 	if (n->kind != coda_doc::Kind::Array) return CODA_BAD_KIND;
 	if (idx >= n->arr.size()) return CODA_OUT_OF_RANGE;
+	uint32_t old = n->arr[idx];
 	n->arr[idx] = value;
+	if (old != value) doc->free_node(old);
 	return CODA_OK;
 }
 
@@ -777,7 +818,9 @@ extern "C" CODA_FFI_EXPORT coda_status_t coda_array_remove(
 	if (!n) return CODA_ERR;
 	if (n->kind != coda_doc::Kind::Array) return CODA_BAD_KIND;
 	if (idx >= n->arr.size()) return CODA_OUT_OF_RANGE;
+	uint32_t old = n->arr[idx];
 	n->arr.erase(n->arr.begin() + idx);
+	doc->free_node(old);
 	return CODA_OK;
 }
 
@@ -852,7 +895,9 @@ extern "C" CODA_FFI_EXPORT coda_status_t coda_map_set(
 			n->index[k] = n->entries.size();
 			n->entries.emplace_back(std::move(k), value);
 		} else {
+			uint32_t old = n->entries[it->second].second;
 			n->entries[it->second].second = value;
+			if (old != value) doc->free_node(old);
 		}
 		return CODA_OK;
 	} catch (...) { return CODA_ERR; }
@@ -868,10 +913,12 @@ extern "C" CODA_FFI_EXPORT coda_status_t coda_map_remove(
 	auto it = n->index.find(k);
 	if (it == n->index.end()) return CODA_NOT_FOUND;
 	size_t idx = it->second;
+	uint32_t old = n->entries[idx].second;
 	n->entries.erase(n->entries.begin() + idx);
 	n->index.erase(it);
 	for (size_t i = idx; i < n->entries.size(); ++i)
 		n->index[n->entries[i].first] = i;
+	doc->free_node(old);
 	return CODA_OK;
 }
 
@@ -946,7 +993,9 @@ extern "C" CODA_FFI_EXPORT coda_status_t coda_table_row_set(
 	if (row_idx >= n->arr.size()) return CODA_OUT_OF_RANGE;
 	const auto* rn = doc->get(row);
 	if (!rn || rn->kind != coda_doc::Kind::Row) return CODA_BAD_KIND;
+	uint32_t old = n->arr[row_idx];
 	n->arr[row_idx] = row;
+	if (old != row) doc->free_node(old);
 	return CODA_OK;
 }
 
@@ -958,7 +1007,9 @@ extern "C" CODA_FFI_EXPORT coda_status_t coda_table_row_remove(
 	if (!n) return CODA_ERR;
 	if (n->kind != coda_doc::Kind::Table) return CODA_BAD_KIND;
 	if (row_idx >= n->arr.size()) return CODA_OUT_OF_RANGE;
+	uint32_t old = n->arr[row_idx];
 	n->arr.erase(n->arr.begin() + row_idx);
+	doc->free_node(old);
 	return CODA_OK;
 }
 
@@ -1048,7 +1099,9 @@ extern "C" CODA_FFI_EXPORT coda_status_t coda_keyed_table_row_set(
 			n->index[k] = n->entries.size();
 			n->entries.emplace_back(std::move(k), row);
 		} else {
+			uint32_t old = n->entries[it->second].second;
 			n->entries[it->second].second = row;
+			if (old != row) doc->free_node(old);
 		}
 		return CODA_OK;
 	} catch (...) { return CODA_ERR; }
@@ -1065,10 +1118,12 @@ extern "C" CODA_FFI_EXPORT coda_status_t coda_keyed_table_row_remove(
 	auto it = n->index.find(k);
 	if (it == n->index.end()) return CODA_NOT_FOUND;
 	size_t idx = it->second;
+	uint32_t old = n->entries[idx].second;
 	n->entries.erase(n->entries.begin() + idx);
 	n->index.erase(it);
 	for (size_t i = idx; i < n->entries.size(); ++i)
 		n->index[n->entries[i].first] = i;
+	doc->free_node(old);
 	return CODA_OK;
 }
 
