@@ -82,8 +82,8 @@ public:
 	void setComment(const std::string& c) { comment = c; }
 	const std::string& getComment() const  { return comment; }
 
-	Row insert(const std::string& key, std::string value) {
-		content[key] = value;
+	Row& insert(const std::string& key, std::string value) {
+		content[key] = std::move(value);
 		return *this;
 	}
 
@@ -109,12 +109,19 @@ public:
 	void setHeaderComment(const std::string& c) { headerComment = c; }
 	const std::string& getHeaderComment() const  { return headerComment; }
 
-	Table append(Row row) {
+	Table& append(Row row) {
 		for (auto& [field, val] : row) {
 			if (headers.find(field) == headers.end())
 				throw std::invalid_argument("Table::append — unknown field '" + field + "'");
 		}
-		content.push_back(row);
+		for (const auto& h : headers) {
+			bool found = false;
+			for (auto& [field, val] : row)
+				if (field == h) { found = true; break; }
+			if (!found)
+				throw std::invalid_argument("Table::append — missing required field '" + h + "'");
+		}
+		content.push_back(std::move(row));
 		return *this;
 	}
 
@@ -146,10 +153,17 @@ public:
 	void setHeaderComment(const std::string& c) { headerComment = c; }
 	const std::string& getHeaderComment() const  { return headerComment; }
 
-	KeyedTable insert(const std::string& key, Row row) {
+	KeyedTable& insert(const std::string& key, Row row) {
 		for (auto& [field, val] : row) {
 			if (headers.find(field) == headers.end())
 				throw std::invalid_argument("KeyedTable::insert — unknown field '" + field + "'");
+		}
+		for (const auto& h : headers) {
+			bool found = false;
+			for (auto& [field, val] : row)
+				if (field == h) { found = true; break; }
+			if (!found)
+				throw std::invalid_argument("KeyedTable::insert — missing required field '" + h + "'");
 		}
 		content[key] = std::move(row);
 		return *this;
@@ -187,7 +201,7 @@ public:
 	Block& operator=(const Block& o);
 	Block& operator=(Block&&) = default;
 
-	Block insert(const std::string& key, detail::Value value);
+	Block& insert(const std::string& key, detail::Value value);
 
 	const detail::Value& operator[](const std::string& key) const;
 	detail::Value&       operator[](const std::string& key);
@@ -219,7 +233,7 @@ public:
 	void setHeaderComment(const std::string& c) { headerComment = c; }
 	const std::string& getHeaderComment() const  { return headerComment; }
 
-	Array append(detail::Value value);
+	Array& append(detail::Value value);
 
 	const detail::Value& operator[](size_t i) const;
 	detail::Value&       operator[](size_t i);
@@ -351,7 +365,7 @@ inline Block& Block::operator=(const Block& o) {
 		content[k] = std::make_unique<detail::Value>(*v);
 	return *this;
 }
-inline Block Block::insert(const std::string& key, detail::Value value) {
+inline Block& Block::insert(const std::string& key, detail::Value value) {
 	content[key] = std::make_unique<detail::Value>(std::move(value));
 	return *this;
 }
@@ -371,7 +385,7 @@ inline Array& Array::operator=(const Array& o) {
 		content.push_back(std::make_unique<detail::Value>(*v));
 	return *this;
 }
-inline Array Array::append(detail::Value value) {
+inline Array& Array::append(detail::Value value) {
 	content.push_back(std::make_unique<detail::Value>(std::move(value)));
 	return *this;
 }
@@ -515,8 +529,8 @@ inline void Value::order(const std::function<float(const std::string&)>& weightF
 		[](std::string&)   {},
 		[&](Block& b)      { detail::orderMapWeighted(b.getContent(), weightFn); },
 		[&](Array& a)      { for (auto& v : a) v->order(weightFn); },
-		[&](Table&)        {},
-		[&](KeyedTable&)   {}
+		[](Table&)         {},
+		[&](KeyedTable& t) { detail::orderMapWeighted(t.getContent(), weightFn); }
 	);
 }
 

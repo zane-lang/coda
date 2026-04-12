@@ -239,8 +239,6 @@ class Parser {
 	Token       lookahead;
 	std::string pendingComment;
 
-	std::vector<coda::ParseError> errors_;
-
 	// ── token helpers ───────────────────────────────────────────────────
 
 	void checkNotError() {
@@ -333,33 +331,12 @@ class Parser {
 		return source.substr(start, end - start);
 	}
 
-	void recordError(coda::ParseErrorCode code,
-	                 const std::string& msg,
-	                 const SourceLoc& loc)
-	{
-		std::string srcLine = extractLine(loc.lineStart);
-		errors_.emplace_back(code, loc, msg, filename, srcLine);
-	}
-
 	[[noreturn]]
 	void fatalError(coda::ParseErrorCode code,
 	                const std::string& msg,
 	                const SourceLoc& loc)
 	{
-		recordError(code, msg, loc);
-		throw errors_.back();
-	}
-
-	void synchronize() {
-		while (current.type != TokenType::Newline
-		    && current.type != TokenType::Eof
-		    && current.type != TokenType::RBrace
-		    && current.type != TokenType::RBracket)
-		{
-			current   = lookahead;
-			lookahead = lexer.next();
-		}
-		skipNewlines();
+		throw coda::ParseError(code, loc, msg, filename, extractLine(loc.lineStart));
 	}
 
 	// ── comment handling ────────────────────────────────────────────────
@@ -637,8 +614,6 @@ public:
 		return file;
 	}
 
-	const std::vector<coda::ParseError>& errors() const { return errors_; }
-	bool hasErrors() const { return !errors_.empty(); }
 };
 
 } // namespace detail

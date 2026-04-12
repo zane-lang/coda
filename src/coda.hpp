@@ -13,7 +13,7 @@ class Coda {
 public:
 	Coda() = default;
 	Coda(const std::string& path) {
-		std::ifstream f(path);
+		std::ifstream f(path, std::ios::binary);
 		if (!f) throw std::runtime_error("could not open: " + path);
 		std::ostringstream ss;
 		ss << f.rdbuf();

@@ -116,6 +116,12 @@ class _CodaOwnedStr(Structure):
 	_fields_ = [("ptr", c_char_p), ("len", c_size_t)]
 	def to_python(self) -> str:
 		return self.ptr[:self.len].decode("utf-8", errors="replace") if self.ptr else ""
+	def to_python_and_free(self) -> str:
+		"""Decode to Python str and free the underlying C buffer."""
+		result = self.to_python()
+		if self.ptr:
+			_lib.coda_owned_str_free(self)
+		return result
 
 class _CodaError(Structure):
 	_fields_ = [
@@ -1119,13 +1125,22 @@ class CodaDoc:
 		self.free()
 		return False
 
+	def close(self):
+		"""Idempotent alias for free(). Suitable for use with contextlib.closing()."""
+		self.free()
+
 	def free(self):
 		if self._ptr is not None:
 			_lib.coda_doc_free(self._ptr)
 			self._ptr = None
 
 	def __del__(self):
-		self.free()
+		# Backstop: catches cases where the context manager or close() was not used.
+		# Do not rely on this for correctness — always prefer the context manager.
+		try:
+			self.free()
+		except Exception:
+			pass
 
 	# ── Root access ───────────────────────────────────────────────────────────
 

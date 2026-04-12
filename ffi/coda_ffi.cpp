@@ -558,8 +558,7 @@ static void dom_order_node(coda_doc& d, uint32_t id,
 
 	switch (n->kind) {
 		case coda_doc::Kind::File:
-		case coda_doc::Kind::Block:
-		case coda_doc::Kind::KeyedTable: {
+		case coda_doc::Kind::Block: {
 			if (wfn) {
 				std::stable_sort(n->entries.begin(), n->entries.end(),
 				    [&](const auto& a, const auto& b) {
@@ -573,6 +572,13 @@ static void dom_order_node(coda_doc& d, uint32_t id,
 			for (size_t i = 0; i < n->entries.size(); ++i)
 				n->index[n->entries[i].first] = i;
 			// Recurse into children
+			for (const auto& [k, child] : n->entries)
+				dom_order_node(d, child, wfn);
+			break;
+		}
+		case coda_doc::Kind::Table: {
+			// Row insertion order is semantically meaningful and is always preserved.
+			// Recurse into each row's children only.
 			for (const auto& [k, child] : n->entries)
 				dom_order_node(d, child, wfn);
 			break;

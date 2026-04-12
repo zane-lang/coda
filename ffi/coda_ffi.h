@@ -23,6 +23,21 @@ typedef struct coda_doc coda_doc_t;
 // 0 is reserved as "null/invalid".
 typedef uint32_t coda_node_t;
 
+// ─── Borrowed string view ─────────────────────────────────────────────────────
+//
+// LIFETIME WARNING: coda_str_t is a *borrowed* view into the document's internal
+// storage. The pointer is only valid as long as:
+//   (a) the coda_doc_t that owns the string is alive, AND
+//   (b) no mutation is made to the document (insert, set, remove, order, etc.)
+//
+// You MUST copy the contents (e.g. memcpy / strncpy) before performing any
+// mutation or before the document is freed. Do NOT store coda_str_t across
+// calls that modify the document.
+//
+// Returned by: coda_string_get, coda_map_key_at, coda_table_col_name,
+//   coda_keyed_table_col_name, coda_keyed_table_row_key_at, coda_row_get,
+//   coda_row_col_name_at, coda_row_col_value_at, coda_node_comment_get,
+//   coda_node_header_comment_get, coda_row_comment_get, coda_parse_error_code_name.
 typedef struct coda_str {
 	const char* ptr;
 	size_t      len;
@@ -76,7 +91,21 @@ typedef enum coda_parse_error_code {
 CODA_FFI_EXPORT coda_str_t coda_parse_error_code_name(uint32_t code);
 
 // ─── Memory management ───────────────────────────────────────────────────────
+//
+// Every buffer the library hands you falls into exactly one of three categories;
+// use the matching free function — mixing them is undefined behaviour and will
+// crash on Windows when the library and caller link different CRT instances.
+//
+//   coda_doc_t*       → coda_doc_free()
+//   coda_owned_str_t  → coda_owned_str_free()
+//   coda_error_t      → coda_error_clear() for the embedded message buffer
+//                        (the struct itself is caller-allocated, no free needed)
+//
+// coda_free() exists only for symmetry and must only be used on pointers
+// returned by future API functions that explicitly document it as the correct
+// free function.  Do NOT call coda_free() on coda_doc_t* or coda_owned_str_t.
 
+// Generic free using the library's allocator.  See note above before using.
 CODA_FFI_EXPORT void coda_free(void* p);
 
 // Frees the message buffer inside err (does NOT free err itself).
