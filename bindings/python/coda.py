@@ -1202,6 +1202,39 @@ class CodaTestRunner:
 			pos = found + len(needle)
 		return True
 
+	def _path_walk(self, start_key: str, keys: list[str]) -> CodaNode:
+		"""Walk a path of keys, returning the final node."""
+		node: CodaNode = self.file[start_key]
+		for key in keys:
+			node = node.as_block()[key]
+		return node
+
+	def _try_key(self, key: str) -> bool:
+		"""Return True if key exists in file, False otherwise."""
+		try:
+			_ = self.file[key]
+			return True
+		except KeyError:
+			return False
+
+	def _try_access(self, fn) -> bool:
+		"""Execute fn and return True; catch exceptions and return False."""
+		try:
+			fn()
+			return False
+		except (TypeError, IndexError, KeyError, CodaException):
+			return True
+
+	def _get_header_comment(self, node: CodaNode) -> Optional[str]:
+		"""Get header_comment if node supports it."""
+		if isinstance(node, CodaArray):
+			return node.header_comment
+		if isinstance(node, CodaTable):
+			return node.header_comment
+		if isinstance(node, CodaKeyedTable):
+			return node.header_comment
+		return None
+
 	def run_check(self, check: CodaBlock) -> bool:
 		op = str(check["op"])
 
@@ -1210,20 +1243,14 @@ class CodaTestRunner:
 
 		if op == "get_string_path":
 			path = self._strings(check["path"])
-			node: CodaNode = self.file[path[0]]
-			for key in path[1:]:
-				node = node.as_block()[key]
+			node = self._path_walk(path[0], path[1:])
 			return str(node) == str(check["eq"])
 
 		if op == "is_container":
 			return self.file[str(check["field"])].is_container() == self._bool(str(check["eq_bool"]))
 
 		if op == "has_key":
-			try:
-				_ = self.file[str(check["field"])]
-				got = True
-			except KeyError:
-				got = False
+			got = self._try_key(str(check["field"]))
 			return got == self._bool(str(check["eq_bool"]))
 
 		if op == "map_len":
@@ -1251,20 +1278,16 @@ class CodaTestRunner:
 
 		if op == "array_index_throws":
 			arr = self.file[str(check["field"])].as_array()
-			try:
-				_ = arr[self._int(str(check["idx"]))]
-				got = False
-			except (IndexError, KeyError):
-				got = True
+			got = self._try_access(lambda: arr[self._int(str(check["idx"]))])
 			return got == self._bool(str(check["eq_bool"]))
 
 		if op == "plain_table_cell":
-			table = self.file[str(check["table"])].as_table()
-			return table[self._int(str(check["idx"]))][str(check["col"])] == str(check["eq"])
+			ptable = self.file[str(check["table"])].as_table()
+			return ptable[self._int(str(check["idx"]))][str(check["col"])] == str(check["eq"])
 
 		if op == "table_cell":
-			table = self.file[str(check["table"])].as_keyed_table()
-			return table[str(check["row"])][str(check["col"])] == str(check["eq"])
+			kt = self.file[str(check["table"])].as_keyed_table()
+			return kt[str(check["row"])][str(check["col"])] == str(check["eq"])
 
 		if op == "table_row_keys":
 			keys = [k for k, _ in self.file[str(check["table"])].as_keyed_table()]
@@ -1272,21 +1295,16 @@ class CodaTestRunner:
 
 		if op == "table_row_missing_inserts":
 			block = self.file[str(check["table"])].as_block()
-			key   = str(check["row"])
 			try:
-				node = block.get_or_insert(key)
+				node = block.get_or_insert(str(check["row"]))
 				got  = isinstance(node, CodaString) and str(node) == ""
 			except Exception:
 				got = False
 			return got == self._bool(str(check["eq_bool"]))
 
 		if op == "table_row_missing_throws":
-			table = self.file[str(check["table"])].as_keyed_table()
-			try:
-				_ = table[str(check["row"])]
-				got = False
-			except KeyError:
-				got = True
+			kt = self.file[str(check["table"])].as_keyed_table()
+			got = self._try_access(lambda: kt[str(check["row"])])
 			return got == self._bool(str(check["eq_bool"]))
 
 		if op == "comment":
@@ -1294,19 +1312,12 @@ class CodaTestRunner:
 
 		if op == "header_comment":
 			node = self.file[str(check["field"])]
-			if isinstance(node, CodaArray):
-				return node.header_comment == str(check["eq"])
-			elif isinstance(node, CodaTable):
-				return node.header_comment == str(check["eq"])
-			elif isinstance(node, CodaKeyedTable):
-				return node.header_comment == str(check["eq"])
-			return False
+			hc = self._get_header_comment(node)
+			return (hc == str(check["eq"])) if hc is not None else False
 
 		if op == "comment_path":
 			path = self._strings(check["path"])
-			node = self.file[path[0]]
-			for key in path[1:]:
-				node = node.as_block()[key]
+			node = self._path_walk(path[0], path[1:])
 			return node.comment == str(check["eq"])
 
 		if op == "array_element_comment":
@@ -1314,12 +1325,12 @@ class CodaTestRunner:
 			return arr[self._int(str(check["idx"]))].comment == str(check["eq"])
 
 		if op == "table_row_comment":
-			table = self.file[str(check["table"])].as_keyed_table()
-			return table[str(check["row"])].comment == str(check["eq"])
+			kt = self.file[str(check["table"])].as_keyed_table()
+			return kt[str(check["row"])].comment == str(check["eq"])
 
 		if op == "plain_table_row_comment":
-			table = self.file[str(check["table"])].as_table()
-			return table[self._int(str(check["idx"]))].comment == str(check["eq"])
+			ptable = self.file[str(check["table"])].as_table()
+			return ptable[self._int(str(check["idx"]))].comment == str(check["eq"])
 
 		if op == "set_string":
 			key = str(check["field"])
@@ -1337,19 +1348,11 @@ class CodaTestRunner:
 			return str(block[path[-1]]) == val
 
 		if op == "string_index_on_scalar_throws":
-			try:
-				_ = self.file[str(check["field"])].as_block()[str(check["sub"])]
-				got = False
-			except (TypeError, KeyError, CodaException):
-				got = True
+			got = self._try_access(lambda: self.file[str(check["field"])].as_block()[str(check["sub"])])
 			return got == self._bool(str(check["eq_bool"]))
 
 		if op == "int_index_on_block_throws":
-			try:
-				_ = self.file[str(check["field"])].as_array()[self._int(str(check["idx"]))]
-				got = False
-			except (TypeError, IndexError, CodaException):
-				got = True
+			got = self._try_access(lambda: self.file[str(check["field"])].as_array()[self._int(str(check["idx"]))])
 			return got == self._bool(str(check["eq_bool"]))
 
 		if op == "as_array_on_scalar_throws":
@@ -1368,11 +1371,7 @@ class CodaTestRunner:
 			return got == self._bool(str(check["eq_bool"]))
 
 		if op == "const_missing_key_throws":
-			try:
-				_ = self.file[str(check["field"])]
-				got = False
-			except KeyError:
-				got = True
+			got = self._try_access(lambda: self.file[str(check["field"])])
 			return got == self._bool(str(check["eq_bool"]))
 
 		if op == "order_default_contains_order":
@@ -1402,6 +1401,47 @@ def run_catalog_tests(catalog_path: str) -> None:
 	ansi_yellow = "\033[33m"
 	ansi_reset  = "\033[0m"
 
+	def test_parse_fail_msg(src: str, test: CodaBlock) -> bool:
+		try:
+			CodaDoc.parse(src)
+		except CodaParseError as e:
+			needles = [str(v) for v in test["needles"].as_array()]
+			return any(n in str(e) for n in needles) or not needles
+		return False
+
+	def test_parse_fail_code(src: str, test: CodaBlock) -> bool:
+		code_map = {
+			"UnexpectedToken":    0, "UnexpectedEOF":      1,
+			"DuplicateKey":       2, "DuplicateField":     3,
+			"RaggedRow":          4, "InvalidEscape":      5,
+			"UnterminatedString": 6, "NestedBlock":        7,
+			"ContentAfterBrace":  8, "KeyInBlock":         9,
+		}
+		try:
+			CodaDoc.parse(src)
+		except CodaParseError as e:
+			return int(e.code) == code_map.get(str(test["code"]), -1)
+		return False
+
+	def test_roundtrip(src: str, test: CodaBlock) -> bool:
+		with CodaDoc.parse(src) as d1:
+			s1 = d1.serialize()
+		with CodaDoc.parse(s1) as d2:
+			s2 = d2.serialize()
+		return s1 == s2
+
+	def test_check_all(src: str, test: CodaBlock) -> bool:
+		with CodaDoc.parse(src) as doc:
+			runner = CodaTestRunner(doc)
+			try:
+				checks = list(doc.file()["checks"].as_array())
+			except KeyError:
+				checks = []
+			for check_node in checks:
+				if not runner.run_check(check_node.as_block()):
+					return False
+		return True
+
 	with open(catalog_path, "r", encoding="utf-8") as f:
 		catalog_text = f.read()
 
@@ -1422,53 +1462,23 @@ def run_catalog_tests(catalog_path: str) -> None:
 				current_suite = suite
 				print(f"\n{ansi_yellow}[{suite}]{ansi_reset}")
 
+			action = None
 			try:
-				action = str(test["action"])
+				action = test["action"]
 			except KeyError:
-				action = None
+				pass
+			action_str = str(action) if action else None
 
 			ok = False
 			try:
-				if action == "parse_fail_msg":
-					try:
-						CodaDoc.parse(src)
-					except CodaParseError as e:
-						needles = [str(v) for v in test["needles"].as_array()]
-						ok = any(n in str(e) for n in needles) or not needles
-
-				elif action == "parse_fail_code":
-					try:
-						CodaDoc.parse(src)
-					except CodaParseError as e:
-						code_map = {
-							"UnexpectedToken":    0, "UnexpectedEOF":      1,
-							"DuplicateKey":       2, "DuplicateField":     3,
-							"RaggedRow":          4, "InvalidEscape":      5,
-							"UnterminatedString": 6, "NestedBlock":        7,
-							"ContentAfterBrace":  8, "KeyInBlock":         9,
-						}
-						ok = int(e.code) == code_map.get(str(test["code"]), -1)
-
-				elif action == "roundtrip":
-					with CodaDoc.parse(src) as d1:
-						s1 = d1.serialize()
-					with CodaDoc.parse(s1) as d2:
-						s2 = d2.serialize()
-					ok = s1 == s2
-
-				elif action is None:
-					with CodaDoc.parse(src) as doc:
-						runner = CodaTestRunner(doc)
-						ok     = True
-						try:
-							checks = list(doc.file()["checks"].as_array())
-						except KeyError:
-							checks = []
-						for check_node in checks:
-							if not runner.run_check(check_node.as_block()):
-								ok = False
-								break
-
+				if action_str == "parse_fail_msg":
+					ok = test_parse_fail_msg(src, test)
+				elif action_str == "parse_fail_code":
+					ok = test_parse_fail_code(src, test)
+				elif action_str == "roundtrip":
+					ok = test_roundtrip(src, test)
+				elif action_str is None:
+					ok = test_check_all(src, test)
 			except Exception:
 				ok = False
 
