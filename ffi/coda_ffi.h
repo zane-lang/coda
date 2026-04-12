@@ -50,9 +50,8 @@ typedef struct coda_owned_str {
 
 typedef enum coda_node_kind {
 	CODA_NODE_NULL         = 0,
-	CODA_NODE_FILE         = 1,  // top-level block (serializes without braces)
 	CODA_NODE_STRING       = 2,
-	CODA_NODE_BLOCK        = 3,  // { key value ... }
+	CODA_NODE_BLOCK        = 3,  // { key value ... } — also used for the root node
 	CODA_NODE_ARRAY        = 4,  // [ ... ] — homogeneous or nested values
 	CODA_NODE_TABLE        = 5,  // anonymous-row table: header row + data rows
 	CODA_NODE_KEYED_TABLE  = 6,  // keyed-row table: "key col..." header + keyed rows
@@ -119,7 +118,7 @@ CODA_FFI_EXPORT uint32_t coda_ffi_abi_version(void);
 
 // ─── Doc lifecycle ───────────────────────────────────────────────────────────
 
-// Create an empty document with an empty root FILE node.
+// Create an empty document with an empty root Block node.
 CODA_FFI_EXPORT coda_doc_t* coda_doc_new(void);
 CODA_FFI_EXPORT void        coda_doc_free(coda_doc_t* doc);
 
@@ -171,7 +170,7 @@ CODA_FFI_EXPORT void coda_doc_order_weighted(
 	size_t       count
 );
 
-// Returns the root FILE node of the document.
+// Returns the root Block node of the document.
 CODA_FFI_EXPORT coda_node_t coda_doc_root(const coda_doc_t* doc);
 
 // ─── Node inspection ─────────────────────────────────────────────────────────
@@ -181,7 +180,7 @@ CODA_FFI_EXPORT coda_node_kind_t coda_node_kind(
 );
 
 // Returns 1 if the node is a container (BLOCK, ARRAY, TABLE, KEYED_TABLE),
-// 0 otherwise (STRING, ROW, FILE, NULL).
+// 0 otherwise (STRING, ROW, NULL).
 CODA_FFI_EXPORT int coda_node_is_container(const coda_doc_t* doc, coda_node_t n);
 
 // Pre-node comment (the # lines above a key/row).
@@ -232,9 +231,9 @@ CODA_FFI_EXPORT coda_status_t coda_array_remove(
 	coda_doc_t* doc, coda_node_t a, size_t idx
 );
 
-// ─── Map-like nodes (FILE / BLOCK) ───────────────────────────────────────────
+// ─── Map-like nodes (BLOCK) ───────────────────────────────────────────────────
 
-// Valid for: CODA_NODE_FILE, CODA_NODE_BLOCK
+// Valid for: CODA_NODE_BLOCK
 
 CODA_FFI_EXPORT size_t      coda_map_len(const coda_doc_t* doc, coda_node_t m);
 CODA_FFI_EXPORT coda_str_t  coda_map_key_at(const coda_doc_t* doc, coda_node_t m, size_t idx);
@@ -389,8 +388,8 @@ CODA_FFI_EXPORT coda_status_t coda_row_comment_set(
 );
 
 // Serialize a single node to Coda text.
-// For FILE nodes this is the same as coda_doc_serialize().
-// For BLOCK nodes the output is wrapped in { }.
+// For the root BLOCK node this is the same as coda_doc_serialize() (no braces).
+// For nested BLOCK nodes the output is wrapped in { }.
 // indent_unit: e.g. "\t" or "  " (pass NULL for default "\t")
 // Returns {NULL,0} on error and fills *err.
 CODA_FFI_EXPORT coda_owned_str_t coda_node_serialize(

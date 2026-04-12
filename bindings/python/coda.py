@@ -3,8 +3,7 @@ Python FFI bindings for the Coda configuration format.
 
 One class per AST node type, mirroring the C++ architecture:
 
-    CodaFile        ← top-level document (wraps a Block root, no braces)
-    CodaBlock       ← { key value ... }
+    CodaBlock       ← { key value ... } — also used as the root node
     CodaArray       ← [ ... ]              homogeneous or nested values
     CodaTable       ← [ col1 col2 \n ... ] anonymous-row plain table
     CodaKeyedTable  ← [ key col1 col2 \n rowkey val1 val2 ] keyed table
@@ -14,13 +13,13 @@ One class per AST node type, mirroring the C++ architecture:
 Usage mirrors C++:
 
     with CodaDoc.parse(text) as doc:
-        file = doc.file()
-        name = file["name"]                     # CodaString
-        for key, val in file["block"]:          # CodaBlock iteration
+        root = doc.root()
+        name = root["name"]                     # CodaString
+        for key, val in root["block"]:          # CodaBlock iteration
             ...
-        for row in file["table"]:               # CodaTable → CodaRow
+        for row in root["table"]:               # CodaTable → CodaRow
             print(row["col"])
-        for key, row in file["ktable"]:         # CodaKeyedTable → (str, CodaRow)
+        for key, row in root["ktable"]:         # CodaKeyedTable → (str, CodaRow)
             print(key, row["col"])
 """
 
@@ -136,7 +135,6 @@ class _CodaError(Structure):
 # ─── Node kind constants (internal) ───────────────────────────────────────────
 
 _NODE_NULL        = 0
-_NODE_FILE        = 1
 _NODE_STRING      = 2
 _NODE_BLOCK       = 3
 _NODE_ARRAY       = 4
@@ -263,7 +261,7 @@ def _node_from_id(doc: 'CodaDoc', node_id: int) -> 'CodaNode':
 	kind = _lib.coda_node_kind(doc._ptr, node_id)
 	if kind == _NODE_STRING:
 		return CodaString._wrap(doc, node_id)
-	if kind in (_NODE_BLOCK, _NODE_FILE):
+	if kind == _NODE_BLOCK:
 		return CodaBlock._wrap(doc, node_id)
 	if kind == _NODE_ARRAY:
 		return CodaArray._wrap(doc, node_id)
@@ -628,6 +626,10 @@ class CodaBlock(CodaNode):
 		doc = self._check()
 		kb = _enc(key)
 		return _lib.coda_map_get(doc._ptr, self._node_id, kb, len(kb)) != 0
+
+	def has(self, key: str) -> bool:
+		"""Return True if the block contains the given key."""
+		return key in self
 
 	def __iter__(self) -> Iterator[Tuple[str, CodaNode]]:
 		"""Yield (key, node) pairs in insertion order."""
@@ -1031,30 +1033,6 @@ class CodaKeyedTable(CodaNode):
 		_lib.coda_node_order_weighted(doc._ptr, self._node_id, keys, vals, len(weights))
 
 
-# ─── CodaFile ─────────────────────────────────────────────────────────────────
-
-class CodaFile(CodaBlock):
-	"""
-	The top-level document node — a Block without surrounding braces.
-
-    Mirrors: coda::File (which owns a Block root).
-
-    Returned by CodaDoc.file(). Shares the doc's arena; do not outlive the
-    CodaDoc that produced it.
-
-        with CodaDoc.parse(text) as doc:
-            file = doc.file()
-            name = file["name"]              # CodaString
-            file.insert("x", CodaString(doc, "y"))
-	"""
-
-	# Does NOT call coda_new_block — wraps the existing root FILE node.
-	def __init__(self, doc: 'CodaDoc'):
-		# Bypass CodaBlock.__init__ intentionally; root already exists.
-		self._doc     = doc
-		self._node_id = _lib.coda_doc_root(doc._ptr)
-
-
 # ─── CodaDoc ──────────────────────────────────────────────────────────────────
 
 class CodaDoc:
@@ -1065,12 +1043,12 @@ class CodaDoc:
     invalid after CodaDoc.free() / exiting the context manager.
 
         with CodaDoc.parse(text) as doc:
-            file = doc.file()
+            root = doc.root()
             ...
 
         doc = CodaDoc.new()
-        file = doc.file()
-        file.insert("key", CodaString(doc, "value"))
+        root = doc.root()
+        root.insert("key", CodaString("value"))
         doc.save("out.coda")
         doc.free()
 	"""
@@ -1144,10 +1122,14 @@ class CodaDoc:
 
 	# ── Root access ───────────────────────────────────────────────────────────
 
-	def file(self) -> CodaFile:
-		"""Return the root CodaFile node."""
+	def root(self) -> CodaBlock:
+		"""Return the root CodaBlock node."""
 		doc = self._check()
-		return CodaFile(self)
+		return CodaBlock._wrap(self, _lib.coda_doc_root(doc._ptr))
+
+	def file(self) -> CodaBlock:
+		"""Return the root CodaBlock node. Alias for root()."""
+		return self.root()
 
 	# ── Serialisation ─────────────────────────────────────────────────────────
 
@@ -1199,7 +1181,7 @@ class CodaTestRunner:
 
 	def __init__(self, doc: CodaDoc):
 		self.doc  = doc
-		self.file = doc.file()
+		self.root = doc.root()
 
 	def _bool(self, v: str) -> bool:   return v in ("true", "1", "yes")
 	def _int(self,  v: str) -> int:    return int(v)
@@ -1219,7 +1201,7 @@ class CodaTestRunner:
 
 	def _path_walk(self, start_key: str, keys: list[str]) -> CodaNode:
 		"""Walk a path of keys, returning the final node."""
-		node: CodaNode = self.file[start_key]
+		node: CodaNode = self.root[start_key]
 		for key in keys:
 			node = node.as_block()[key]
 		return node
@@ -1227,7 +1209,7 @@ class CodaTestRunner:
 	def _try_key(self, key: str) -> bool:
 		"""Return True if key exists in file, False otherwise."""
 		try:
-			_ = self.file[key]
+			_ = self.root[key]
 			return True
 		except KeyError:
 			return False
@@ -1254,7 +1236,7 @@ class CodaTestRunner:
 		op = str(check["op"])
 
 		if op == "get_string":
-			return str(self.file[str(check["field"])]) == str(check["eq"])
+			return str(self.root[str(check["field"])]) == str(check["eq"])
 
 		if op == "get_string_path":
 			path = self._strings(check["path"])
@@ -1262,54 +1244,54 @@ class CodaTestRunner:
 			return str(node) == str(check["eq"])
 
 		if op == "is_container":
-			return self.file[str(check["field"])].is_container() == self._bool(str(check["eq_bool"]))
+			return self.root[str(check["field"])].is_container() == self._bool(str(check["eq_bool"]))
 
 		if op == "has_key":
 			got = self._try_key(str(check["field"]))
 			return got == self._bool(str(check["eq_bool"]))
 
 		if op == "map_len":
-			return len(self.file[str(check["field"])].as_block()) == self._int(str(check["eq_int"]))
+			return len(self.root[str(check["field"])].as_block()) == self._int(str(check["eq_int"]))
 
 		if op == "map_keys":
-			keys = [k for k, _ in self.file[str(check["field"])].as_block()]
+			keys = [k for k, _ in self.root[str(check["field"])].as_block()]
 			return keys == self._strings(check["eq_list"])
 
 		if op == "array_len":
-			return len(self.file[str(check["field"])].as_array()) == self._int(str(check["eq_int"]))
+			return len(self.root[str(check["field"])].as_array()) == self._int(str(check["eq_int"]))
 
 		if op == "array_element":
-			arr = self.file[str(check["field"])].as_array()
+			arr = self.root[str(check["field"])].as_array()
 			return str(arr[self._int(str(check["idx"]))]) == str(check["eq"])
 
 		if op == "array_block_count":
-			return len(self.file[str(check["field"])].as_array()) == self._int(str(check["eq_int"]))
+			return len(self.root[str(check["field"])].as_array()) == self._int(str(check["eq_int"]))
 
 		if op == "array_block_field":
-			arr   = self.file[str(check["field"])].as_array()
+			arr   = self.root[str(check["field"])].as_array()
 			idx   = self._int(str(check["idx"]))
 			field = str(check["field_name"])
 			return str(arr[idx].as_block()[field]) == str(check["eq"])
 
 		if op == "array_index_throws":
-			arr = self.file[str(check["field"])].as_array()
+			arr = self.root[str(check["field"])].as_array()
 			got = self._try_access(lambda: arr[self._int(str(check["idx"]))])
 			return got == self._bool(str(check["eq_bool"]))
 
 		if op == "plain_table_cell":
-			ptable = self.file[str(check["table"])].as_table()
+			ptable = self.root[str(check["table"])].as_table()
 			return ptable[self._int(str(check["idx"]))][str(check["col"])] == str(check["eq"])
 
 		if op == "table_cell":
-			kt = self.file[str(check["table"])].as_keyed_table()
+			kt = self.root[str(check["table"])].as_keyed_table()
 			return kt[str(check["row"])][str(check["col"])] == str(check["eq"])
 
 		if op == "table_row_keys":
-			keys = [k for k, _ in self.file[str(check["table"])].as_keyed_table()]
+			keys = [k for k, _ in self.root[str(check["table"])].as_keyed_table()]
 			return keys == self._strings(check["eq_list"])
 
 		if op == "table_row_missing_inserts":
-			block = self.file[str(check["table"])].as_block()
+			block = self.root[str(check["table"])].as_block()
 			try:
 				node = block.get_or_insert(str(check["row"]))
 				got  = isinstance(node, CodaString) and str(node) == ""
@@ -1318,15 +1300,15 @@ class CodaTestRunner:
 			return got == self._bool(str(check["eq_bool"]))
 
 		if op == "table_row_missing_throws":
-			kt = self.file[str(check["table"])].as_keyed_table()
+			kt = self.root[str(check["table"])].as_keyed_table()
 			got = self._try_access(lambda: kt[str(check["row"])])
 			return got == self._bool(str(check["eq_bool"]))
 
 		if op == "comment":
-			return self.file[str(check["field"])].comment == str(check["eq"])
+			return self.root[str(check["field"])].comment == str(check["eq"])
 
 		if op == "header_comment":
-			node = self.file[str(check["field"])]
+			node = self.root[str(check["field"])]
 			hc = self._get_header_comment(node)
 			return (hc == str(check["eq"])) if hc is not None else False
 
@@ -1336,26 +1318,26 @@ class CodaTestRunner:
 			return node.comment == str(check["eq"])
 
 		if op == "array_element_comment":
-			arr = self.file[str(check["field"])].as_array()
+			arr = self.root[str(check["field"])].as_array()
 			return arr[self._int(str(check["idx"]))].comment == str(check["eq"])
 
 		if op == "table_row_comment":
-			kt = self.file[str(check["table"])].as_keyed_table()
+			kt = self.root[str(check["table"])].as_keyed_table()
 			return kt[str(check["row"])].comment == str(check["eq"])
 
 		if op == "plain_table_row_comment":
-			ptable = self.file[str(check["table"])].as_table()
+			ptable = self.root[str(check["table"])].as_table()
 			return ptable[self._int(str(check["idx"]))].comment == str(check["eq"])
 
 		if op == "set_string":
 			key = str(check["field"])
 			val = str(check["value"])
-			self.file.insert(key, CodaString(self.doc, val))
-			return str(self.file[key]) == val
+			self.root.insert(key, CodaString(self.doc, val))
+			return str(self.root[key]) == val
 
 		if op == "set_string_path":
 			path = self._strings(check["path"])
-			block = self.file[path[0]].as_block()
+			block = self.root[path[0]].as_block()
 			for key in path[1:-1]:
 				block = block[key].as_block()
 			val = str(check["value"])
@@ -1363,30 +1345,30 @@ class CodaTestRunner:
 			return str(block[path[-1]]) == val
 
 		if op == "string_index_on_scalar_throws":
-			got = self._try_access(lambda: self.file[str(check["field"])].as_block()[str(check["sub"])])
+			got = self._try_access(lambda: self.root[str(check["field"])].as_block()[str(check["sub"])])
 			return got == self._bool(str(check["eq_bool"]))
 
 		if op == "int_index_on_block_throws":
-			got = self._try_access(lambda: self.file[str(check["field"])].as_array()[self._int(str(check["idx"]))])
+			got = self._try_access(lambda: self.root[str(check["field"])].as_array()[self._int(str(check["idx"]))])
 			return got == self._bool(str(check["eq_bool"]))
 
 		if op == "as_array_on_scalar_throws":
-			node = self.file[str(check["field"])]
+			node = self.root[str(check["field"])]
 			got  = not isinstance(node, CodaArray)
 			return got == self._bool(str(check["eq_bool"]))
 
 		if op == "as_block_on_array_throws":
-			node = self.file[str(check["field"])]
+			node = self.root[str(check["field"])]
 			got  = not isinstance(node, CodaBlock)
 			return got == self._bool(str(check["eq_bool"]))
 
 		if op == "as_table_on_block_throws":
-			node = self.file[str(check["field"])]
+			node = self.root[str(check["field"])]
 			got  = not isinstance(node, (CodaTable, CodaKeyedTable))
 			return got == self._bool(str(check["eq_bool"]))
 
 		if op == "const_missing_key_throws":
-			got = self._try_access(lambda: self.file[str(check["field"])])
+			got = self._try_access(lambda: self.root[str(check["field"])])
 			return got == self._bool(str(check["eq_bool"]))
 
 		if op == "order_default_contains_order":
@@ -1449,7 +1431,7 @@ def run_catalog_tests(catalog_path: str) -> None:
 		with CodaDoc.parse(src) as doc:
 			runner = CodaTestRunner(doc)
 			try:
-				checks = list(doc.file()["checks"].as_array())
+				checks = list(doc.root()["checks"].as_array())
 			except KeyError:
 				checks = []
 			for check_node in checks:
@@ -1461,7 +1443,7 @@ def run_catalog_tests(catalog_path: str) -> None:
 		catalog_text = f.read()
 
 	with CodaDoc.parse(catalog_text) as catalog_doc:
-		catalog = catalog_doc.file()
+		catalog = catalog_doc.root()
 		tests   = list(catalog["tests"].as_array())
 		passed  = 0
 		failed  = 0
@@ -1520,7 +1502,6 @@ def get_abi_version() -> int:
 
 __all__ = [
 	"CodaDoc",
-	"CodaFile",
 	"CodaBlock",
 	"CodaArray",
 	"CodaTable",

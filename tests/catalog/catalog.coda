@@ -1043,7 +1043,7 @@ tests [
     }
     {
         suite "Round-trip"
-        name "CodaFile::has works"
+        name "CodaBlock::has works"
         src "a 1\n"
         checks [
             {

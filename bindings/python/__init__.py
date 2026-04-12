@@ -1,6 +1,5 @@
 from .coda import (
 	CodaDoc,
-	CodaFile,
 	CodaBlock,
 	CodaArray,
 	CodaTable,
@@ -15,7 +14,6 @@ from .coda import (
 
 __all__ = [
 	"CodaDoc",
-	"CodaFile",
 	"CodaBlock",
 	"CodaArray",
 	"CodaTable",

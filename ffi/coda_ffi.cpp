@@ -27,7 +27,6 @@
 struct coda_doc {
 	enum class Kind : uint8_t {
 		Null        = 0,
-		File        = 1,
 		String      = 2,
 		Block       = 3,
 		Array       = 4,
@@ -68,7 +67,7 @@ struct coda_doc {
 
 	coda_doc() {
 		nodes.emplace_back();            // nodes[0] = null sentinel
-		root = new_node(Kind::File);     // nodes[1] = root FILE
+		root = new_node(Kind::Block);    // nodes[1] = root Block
 	}
 
 	uint32_t new_node(Kind k) {
@@ -90,7 +89,6 @@ struct coda_doc {
 		if (id == 0 || id >= nodes.size()) return;
 		Node& n = nodes[id];
 		switch (n.kind) {
-			case Kind::File:
 			case Kind::Block:
 				for (const auto& [k, child] : n.entries) free_node(child);
 				break;
@@ -139,8 +137,7 @@ static inline coda_owned_str_t owned_from_std(std::string s) {
 }
 
 static inline bool is_map_kind(const coda_doc::Node* n) {
-	return n && (n->kind == coda_doc::Kind::File ||
-	             n->kind == coda_doc::Kind::Block);
+	return n && n->kind == coda_doc::Kind::Block;
 }
 
 // ─── AST → DOM (intern) ───────────────────────────────────────────────────────
@@ -277,7 +274,6 @@ static coda::detail::Value emit_value(const coda_doc& d, uint32_t id) {
 			return v;
 		}
 
-		case coda_doc::Kind::File:
 		case coda_doc::Kind::Block: {
 			coda::Block b;
 			for (const auto& [k, child] : n->entries)
@@ -342,14 +338,14 @@ static coda::detail::Value emit_value(const coda_doc& d, uint32_t id) {
 	}
 }
 
-static coda::File emit_file(const coda_doc& d) {
-	coda::File f;
+static coda::Block emit_block(const coda_doc& d) {
+	coda::Block b;
 	const auto* root = d.get(d.root);
-	if (!root) return f;
+	if (!root) return b;
 	for (const auto& [k, child] : root->entries)
-		f.getRoot().getContent()[k] =
+		b.getContent()[k] =
 			std::make_unique<coda::detail::Value>(emit_value(d, child));
-	return f;
+	return b;
 }
 
 // ─── Utilities ────────────────────────────────────────────────────────────────
@@ -364,12 +360,12 @@ static void fill_parse_error(coda_error_t* err, const coda::ParseError& e) {
 	err->message = owned_from_std(std::string(e.what()));
 }
 
-static void rebuild_from_file(coda_doc& d, const coda::File& f) {
+static void rebuild_from_block(coda_doc& d, const coda::Block& b) {
 	d.nodes.clear();
 	d.free_list.clear();                            // stale IDs are no longer valid
 	d.nodes.emplace_back();                         // null sentinel
-	d.root = d.new_node(coda_doc::Kind::File);
-	for (const auto& [k, vp] : f.getRoot().getContent()) {
+	d.root = d.new_node(coda_doc::Kind::Block);
+	for (const auto& [k, vp] : b.getContent()) {
 		uint32_t child = intern_value(d, *vp);
 		auto* root = d.get(d.root);
 		root->index[k] = root->entries.size();
@@ -408,11 +404,11 @@ extern "C" CODA_FFI_EXPORT coda_doc_t* coda_doc_parse(
 	try {
 		std::string text(src ? src : "", src ? len : 0);
 		coda::detail::Parser p(std::move(text), filename ? filename : "");
-		coda::File f = p.parse();
+		coda::Block b = p.parse();
 
 		auto* d = new coda_doc();
 		try {
-			rebuild_from_file(*d, f);
+			rebuild_from_block(*d, b);
 		} catch (...) {
 			delete d;
 			throw;
@@ -493,8 +489,8 @@ extern "C" CODA_FFI_EXPORT coda_owned_str_t coda_doc_serialize(
 	}
 	try {
 		std::string unit = indent_unit ? std::string(indent_unit, indent_unit_len) : "\t";
-		coda::File f = emit_file(*doc);
-		return owned_from_std(f.serialize(unit));
+		coda::Block b = emit_block(*doc);
+		return owned_from_std(b.serialize(unit));
 	} catch (const std::exception& e) {
 		if (err) err->message = owned_from_std(std::string("exception: ") + e.what());
 		return { nullptr, 0 };
@@ -507,9 +503,9 @@ extern "C" CODA_FFI_EXPORT coda_owned_str_t coda_doc_serialize(
 extern "C" CODA_FFI_EXPORT void coda_doc_order(coda_doc_t* doc) {
 	if (!doc) return;
 	try {
-		coda::File f = emit_file(*doc);
-		f.order();
-		rebuild_from_file(*doc, f);
+		coda::Block b = emit_block(*doc);
+		b.order();
+		rebuild_from_block(*doc, b);
 	} catch (...) {}
 }
 
@@ -524,12 +520,12 @@ extern "C" CODA_FFI_EXPORT void coda_doc_order_weighted(
 		for (size_t i = 0; i < count; ++i)
 			wmap[keys && keys[i] ? keys[i] : ""] = weights ? weights[i] : 0.0f;
 
-		coda::File f = emit_file(*doc);
-		f.order([&](const std::string& k) -> float {
+		coda::Block b = emit_block(*doc);
+		b.order([&](const std::string& k) -> float {
 			auto it = wmap.find(k);
 			return it != wmap.end() ? it->second : 0.0f;
 		});
-		rebuild_from_file(*doc, f);
+		rebuild_from_block(*doc, b);
 	} catch (...) {}
 }
 
@@ -539,7 +535,7 @@ extern "C" CODA_FFI_EXPORT coda_node_t coda_doc_root(const coda_doc_t* doc) {
 
 // ─── C API — node-level serialize / order ────────────────────────────────────
 
-// Sort entries alphabetically and rebuild the index for a BLOCK/FILE/KEYED_TABLE node.
+// Sort entries alphabetically and rebuild the index for a BLOCK/KEYED_TABLE node.
 static void sort_entries(coda_doc::Node* n) {
 	std::sort(n->entries.begin(), n->entries.end(),
 	          [](const auto& a, const auto& b) { return a.first < b.first; });
@@ -557,7 +553,6 @@ static void dom_order_node(coda_doc& d, uint32_t id,
 	if (!n) return;
 
 	switch (n->kind) {
-		case coda_doc::Kind::File:
 		case coda_doc::Kind::Block: {
 			if (wfn) {
 				std::stable_sort(n->entries.begin(), n->entries.end(),
@@ -624,10 +619,10 @@ extern "C" CODA_FFI_EXPORT coda_owned_str_t coda_node_serialize(
 	try {
 		std::string unit = indent_unit ? std::string(indent_unit, indent_unit_len) : "\t";
 		const auto* node = doc->get(n);
-		// FILE node — serialize the whole document
-		if (!node || node->kind == coda_doc::Kind::File) {
-			coda::File f = emit_file(*doc);
-			return owned_from_std(f.serialize(unit));
+		// Root Block node — serialize the whole document without braces
+		if (!node || n == doc->root) {
+			coda::Block b = emit_block(*doc);
+			return owned_from_std(b.serialize(unit));
 		}
 		coda::detail::Value v = emit_value(*doc, n);
 		return owned_from_std(v.serializeInline(0, unit));
@@ -694,7 +689,6 @@ extern "C" CODA_FFI_EXPORT coda_node_kind_t coda_node_kind(
 	const auto* node = doc->get(n);
 	if (!node) return CODA_NODE_NULL;
 	switch (node->kind) {
-		case coda_doc::Kind::File:       return CODA_NODE_FILE;
 		case coda_doc::Kind::String:     return CODA_NODE_STRING;
 		case coda_doc::Kind::Block:      return CODA_NODE_BLOCK;
 		case coda_doc::Kind::Array:      return CODA_NODE_ARRAY;
@@ -830,7 +824,7 @@ extern "C" CODA_FFI_EXPORT coda_status_t coda_array_remove(
 	return CODA_OK;
 }
 
-// ─── C API — map nodes (FILE / BLOCK) ────────────────────────────────────────
+// ─── C API — map nodes (BLOCK) ────────────────────────────────────────────────
 
 extern "C" CODA_FFI_EXPORT size_t coda_map_len(
 	const coda_doc_t* doc, coda_node_t m

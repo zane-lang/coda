@@ -475,6 +475,8 @@ public:
 	const detail::Value& operator[](const std::string& key) const;
 	detail::Value&       operator[](const std::string& key);
 
+	bool has(const std::string& key) const { return content.contains(key); }
+
 	auto begin() const { return content.begin(); }
 	auto begin()       { return content.begin(); }
 	auto end()   const { return content.end(); }
@@ -483,7 +485,11 @@ public:
 	const detail::OrderedMap<std::string, std::unique_ptr<detail::Value>>& getContent() const { return content; }
 	detail::OrderedMap<std::string, std::unique_ptr<detail::Value>>&       getContent()       { return content; }
 
+	void order();
+	void order(const std::function<float(const std::string&)>& weightFn);
+
 	std::string serialize(int indent, const std::string& unit) const;
+	std::string serialize(const std::string& unit = "\t") const;
 };
 
 // ─── Array ───────────────────────────────────────────────────────────────────
@@ -515,26 +521,6 @@ public:
 	auto end()         { return content.end(); }
 
 	std::string serialize(int indent, const std::string& unit) const;
-};
-
-// ─── File ────────────────────────────────────────────────────────────────────
-
-class File {
-	Block root;
-
-public:
-	const detail::Value& operator[](const std::string& key) const { return root[key]; }
-	detail::Value&       operator[](const std::string& key)       { return root[key]; }
-
-	bool has(const std::string& key) const { return root.getContent().count(key) > 0; }
-
-	Block&       getRoot()       { return root; }
-	const Block& getRoot() const { return root; }
-
-	void order();
-	void order(const std::function<float(const std::string&)>& weightFn);
-
-	std::string serialize(const std::string& unit = "\t") const;
 };
 
 // ─── Value ───────────────────────────────────────────────────────────────────
@@ -708,8 +694,8 @@ inline void orderMapWeighted(
 
 // ─── serialize impls ──────────────────────────────────────────────────────────
 
-inline std::string File::serialize(const std::string& unit) const {
-	return detail::serializeMap(root.getContent(), 0, unit);
+inline std::string Block::serialize(const std::string& unit) const {
+	return detail::serializeMap(getContent(), 0, unit);
 }
 
 inline std::string Block::serialize(int indent, const std::string& unit) const {
@@ -779,7 +765,7 @@ inline std::string Array::serialize(int indent, const std::string& unit) const {
 	return out + detail::pad(indent, unit) + "]";
 }
 
-// ─── Value::order / File::order ───────────────────────────────────────────────
+// ─── Value::order / Block::order ──────────────────────────────────────────────
 
 namespace detail {
 
@@ -805,12 +791,12 @@ inline void Value::order(const std::function<float(const std::string&)>& weightF
 
 } // namespace detail
 
-inline void File::order() {
-	detail::orderMap(root.getContent());
+inline void Block::order() {
+	detail::orderMap(getContent());
 }
 
-inline void File::order(const std::function<float(const std::string&)>& weightFn) {
-	detail::orderMapWeighted(root.getContent(), weightFn);
+inline void Block::order(const std::function<float(const std::string&)>& weightFn) {
+	detail::orderMapWeighted(getContent(), weightFn);
 }
 
 } // namespace coda
@@ -1416,16 +1402,16 @@ public:
 
 	// ── public interface ────────────────────────────────────────────────
 
-	coda::File parse() {
-		coda::File file;
+	coda::Block parse() {
+		coda::Block root;
 		skipNewlines();
 		while (current.type != TokenType::Eof) {
 			Token keyTok            = expectKey();
 			coda::detail::Value val = parseValue();
-			blockInsertChecked(file.getRoot(), keyTok.value, std::move(val), keyTok.loc);
+			blockInsertChecked(root, keyTok.value, std::move(val), keyTok.loc);
 			skipNewlines();
 		}
-		return file;
+		return root;
 	}
 
 };
@@ -1441,7 +1427,7 @@ public:
 
 class Coda {
 	std::string indentUnit = "\t";
-	coda::File file;
+	coda::Block root;
 
 public:
 	Coda() = default;
@@ -1450,12 +1436,12 @@ public:
 		if (!f) throw std::runtime_error("could not open: " + path);
 		std::ostringstream ss;
 		ss << f.rdbuf();
-		file = coda::detail::Parser(ss.str(), path).parse();
+		root = coda::detail::Parser(ss.str(), path).parse();
 	}
 
 	static Coda parse(std::string content, std::string filename = "") {
 		Coda coda;
-		coda.file = coda::detail::Parser(content, filename).parse();
+		coda.root = coda::detail::Parser(content, filename).parse();
 		return coda;
 	}
 
@@ -1464,7 +1450,7 @@ public:
 
 	/// Recursively sort all fields: scalars first (alphabetical),
 	/// then containers (alphabetical). Array element order is preserved.
-	void order() { file.order(); }
+	void order() { root.order(); }
 
 	/// Recursively sort all fields by a weight function.
 	/// Higher weight → closer to the top. Equal weight → alphabetical.
@@ -1477,13 +1463,13 @@ public:
 	///       return 0; // everything else alphabetical at the bottom
 	///   });
 	void order(const std::function<float(const std::string&)>& weightFn) {
-		file.order(weightFn);
+		root.order(weightFn);
 	}
 
 	void save(const std::string& path) const {
 		std::ofstream f(path);
 		if (!f) throw std::runtime_error("could not open: " + path);
-		f << file.serialize(indentUnit);
+		f << root.serialize(indentUnit);
 	}
 
 	void save(const std::string& path, const std::string& unit) {
@@ -1492,9 +1478,9 @@ public:
 	}
 	
 	std::string serialize() const {
-		return file.serialize(indentUnit);
+		return root.serialize(indentUnit);
 	}
 
-	const coda::detail::Value& operator[](const std::string& key) const { return file[key]; }
-	coda::detail::Value&       operator[](const std::string& key) { return file[key]; }
+	const coda::detail::Value& operator[](const std::string& key) const { return root[key]; }
+	coda::detail::Value&       operator[](const std::string& key) { return root[key]; }
 };
