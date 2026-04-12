@@ -151,6 +151,10 @@ CODA_FFI_EXPORT coda_node_kind_t coda_node_kind(
 	const coda_doc_t* doc, coda_node_t n
 );
 
+// Returns 1 if the node is a container (BLOCK, ARRAY, TABLE, KEYED_TABLE),
+// 0 otherwise (STRING, ROW, FILE, NULL).
+CODA_FFI_EXPORT int coda_node_is_container(const coda_doc_t* doc, coda_node_t n);
+
 // Pre-node comment (the # lines above a key/row).
 CODA_FFI_EXPORT coda_str_t coda_node_comment_get(
 	const coda_doc_t* doc, coda_node_t n
@@ -353,6 +357,37 @@ CODA_FFI_EXPORT coda_str_t coda_row_comment_get(
 CODA_FFI_EXPORT coda_status_t coda_row_comment_set(
 	coda_doc_t* doc, coda_node_t row,
 	const char* s, size_t len
+);
+
+// Serialize a single node to Coda text.
+// For FILE nodes this is the same as coda_doc_serialize().
+// For BLOCK nodes the output is wrapped in { }.
+// indent_unit: e.g. "\t" or "  " (pass NULL for default "\t")
+// Returns {NULL,0} on error and fills *err.
+CODA_FFI_EXPORT coda_owned_str_t coda_node_serialize(
+	const coda_doc_t* doc,
+	coda_node_t       n,
+	const char*       indent_unit,
+	size_t            indent_unit_len,
+	coda_error_t*     err
+);
+
+// Reorder a sub-tree rooted at n using default ordering.
+// Has no effect on non-container nodes.
+//
+// WARNING: All previously obtained coda_node_t handles become INVALID after
+//          this call. Re-acquire handles via traversal APIs.
+CODA_FFI_EXPORT void coda_node_order(coda_doc_t* doc, coda_node_t n);
+
+// Reorder a sub-tree rooted at n by weight.
+//
+// WARNING: Same handle invalidation caveat as coda_node_order().
+CODA_FFI_EXPORT void coda_node_order_weighted(
+	coda_doc_t*  doc,
+	coda_node_t  n,
+	const char** keys,
+	const float* weights,
+	size_t       count
 );
 
 // ─── Node creation ───────────────────────────────────────────────────────────

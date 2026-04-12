@@ -12,11 +12,11 @@ using namespace test_framework;
 // ─── C++ ParseAdapter ────────────────────────────────────────────────────────
 
 class CppAdapter : public ParseAdapter {
-	std::optional<coda::CodaFile> file_;
+	std::optional<coda::File> file_;
 
-	coda::CodaFile& f() { return *file_; }
+	coda::File& f() { return *file_; }
 
-	static coda::CodaFile do_parse(const char* src) {
+	static coda::File do_parse(const char* src) {
 		return coda::detail::Parser(src).parse();
 	}
 
@@ -60,10 +60,10 @@ public:
 	}
 
 	std::string get_string_path(const std::vector<std::string>& keys) override {
-		coda::CodaValue* v = nullptr;
+		coda::detail::Value* v = nullptr;
 		for (size_t i = 0; i < keys.size(); ++i) {
 			if (i == 0) v = &f()[keys[i]];
-			else v = &(*v)[keys[i]];
+			else        v = &v->asBlock()[keys[i]];
 		}
 		return v->asString();
 	}
@@ -77,7 +77,7 @@ public:
 	}
 
 	size_t get_map_len(const char* key) override {
-		return f()[key].asBlock().content.size();
+		return f()[key].asBlock().getContent().size();
 	}
 
 	std::vector<std::string> get_map_keys(const char* key) override {
@@ -91,7 +91,9 @@ public:
 	}
 
 	size_t get_array_len(const char* key) override {
-		return f()[key].asArray().content.size();
+		auto& v = f()[key];
+		try { return v.asArray().size(); } catch (...) {}
+		return v.asTable().size();
 	}
 
 	std::string get_array_element(const char* key, size_t idx) override {
@@ -99,71 +101,71 @@ public:
 	}
 
 	bool array_index_throws(const char* key, size_t idx) override {
-		try { (void)f()[key].asArray().content.at(idx); return false; }
+		try { (void)f()[key].asArray()[idx]; return false; }
 		catch (...) { return true; }
 	}
 
 	std::string get_array_block_field(const char* array_key, size_t idx,
 	                                  const char* field) override {
-		return f()[array_key].asArray()[idx][field].asString();
+		return f()[array_key].asArray()[idx].asBlock()[field].asString();
 	}
 
 	size_t get_array_block_count(const char* array_key) override {
-		return f()[array_key].asArray().content.size();
+		return f()[array_key].asArray().size();
 	}
 
 	std::string get_table_cell(const char* table, const char* row,
 	                           const char* col) override {
-		return f()[table][row][col].asString();
+		return f()[table].asKeyedTable()[row][col];
 	}
 
 	std::vector<std::string> get_table_row_keys(const char* table) override {
 		std::vector<std::string> keys;
-		for (const auto& [k, _] : f()[table].asTable()) keys.push_back(k);
+		for (const auto& [k, _] : f()[table].asKeyedTable()) keys.push_back(k);
 		return keys;
 	}
 
 	bool table_row_missing_throws(const char* table, const char* row) override {
 		try {
 			const auto& cf = f();
-			(void)cf[table][row];
+			(void)cf[table].asKeyedTable()[row];
 			return false;
 		} catch (...) { return true; }
 	}
 
 	bool table_row_missing_inserts(const char* table, const char* row) override {
-		auto& v = f()[table][row];
-		return f()[table].asTable().content.contains(row) && v.asString() == "";
+		f()[table].asKeyedTable()[row];  // non-const operator[] auto-inserts
+		return f()[table].asKeyedTable().getContent().count(row) > 0;
 	}
 
 	std::string get_plain_table_cell(const char* table, size_t row,
 	                                 const char* col) override {
-		return f()[table].asArray()[row][col].asString();
+		return f()[table].asTable()[row][col];
 	}
 
 	std::string get_comment(const char* key) override {
-		return f()[key].comment;
+		return f()[key].getComment();
 	}
 
 	std::string get_comment_path(const std::vector<std::string>& keys) override {
-		coda::CodaValue* v = nullptr;
+		coda::detail::Value* v = nullptr;
 		for (size_t i = 0; i < keys.size(); ++i) {
 			if (i == 0) v = &f()[keys[i]];
-			else v = &(*v)[keys[i]];
+			else        v = &v->asBlock()[keys[i]];
 		}
-		return v->comment;
+		return v->getComment();
 	}
 
 	std::string get_array_element_comment(const char* key, size_t idx) override {
-		return f()[key].asArray().content[idx].comment;
+		return f()[key].asArray()[idx].getComment();
 	}
 
 	std::string get_table_row_comment(const char* table, const char* row) override {
-		return f()[table].asTable()[row].comment;
+		return f()[table].asKeyedTable()[row].getComment();
 	}
 
 	std::string get_plain_table_row_comment(const char* table, size_t row) override {
-		return f()[table].asArray().content[row].comment;
+		return f()[table].asTable()[row].getComment();
 	}
 
 	bool set_string(const char* key, const char* value) override {
@@ -173,10 +175,10 @@ public:
 
 	bool set_string_path(const std::vector<std::string>& keys,
 	                     const char* value) override {
-		coda::CodaValue* v = nullptr;
+		coda::detail::Value* v = nullptr;
 		for (size_t i = 0; i < keys.size(); ++i) {
 			if (i == 0) v = &f()[keys[i]];
-			else v = &(*v)[keys[i]];
+			else        v = &v->asBlock()[keys[i]];
 		}
 		*v = std::string(value);
 		return true;
@@ -210,12 +212,12 @@ public:
 	}
 
 	bool string_index_on_scalar_throws(const char* key, const char* sub) override {
-		try { (void)f()[key][sub]; return false; }
+		try { (void)f()[key].asBlock()[sub]; return false; }
 		catch (...) { return true; }
 	}
 
 	bool int_index_on_block_throws(const char* key, size_t idx) override {
-		try { (void)f()[key][idx]; return false; }
+		try { (void)f()[key].asArray()[idx]; return false; }
 		catch (...) { return true; }
 	}
 
@@ -244,15 +246,9 @@ public:
 
 	std::string get_header_comment(const char* key) override {
 		auto& v = f()[key];
-
-		// Plain table container = array
-		if (std::holds_alternative<coda::CodaArray>(v.content.value))
-			return v.asArray().headerComment;   // (whatever field name you added)
-
-		// Keyed table container = table
-		if (std::holds_alternative<coda::CodaTable>(v.content.value))
-			return v.asTable().headerComment;
-
+		try { return v.asArray().getHeaderComment(); }      catch (...) {}
+		try { return v.asKeyedTable().getHeaderComment(); } catch (...) {}
+		try { return v.asTable().getHeaderComment(); }      catch (...) {}
 		return "";
 	}
 };

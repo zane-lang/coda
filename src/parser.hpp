@@ -560,7 +560,9 @@ class Parser {
 	coda::detail::Value parsePlainTable(std::vector<Token> header, std::string headerComment) {
 		checkUniqueFields(header);
 
-		coda::Table table;
+		std::set<std::string> headerSet;
+		for (const auto& tok : header) headerSet.insert(tok.value);
+		coda::Table table(std::move(headerSet));
 		table.setHeaderComment(std::move(headerComment));
 
 		while (current.type != TokenType::RBracket && current.type != TokenType::Eof) {

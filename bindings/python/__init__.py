@@ -1,9 +1,29 @@
-from .coda import Coda, CodaDoc, CodaException, CodaParseError, get_abi_version
+from .coda import (
+	CodaDoc,
+	CodaFile,
+	CodaBlock,
+	CodaArray,
+	CodaTable,
+	CodaKeyedTable,
+	CodaRow,
+	CodaString,
+	CodaException,
+	CodaParseError,
+	get_abi_version,
+	run_catalog_tests,
+)
 
 __all__ = [
-	"Coda",
 	"CodaDoc",
+	"CodaFile",
+	"CodaBlock",
+	"CodaArray",
+	"CodaTable",
+	"CodaKeyedTable",
+	"CodaRow",
+	"CodaString",
 	"CodaException",
 	"CodaParseError",
 	"get_abi_version",
+	"run_catalog_tests",
 ]

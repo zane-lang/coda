@@ -1,29 +1,46 @@
 """
-Python FFI bindings for Coda configuration format parser.
+Python FFI bindings for the Coda configuration format.
 
-This module provides a Pythonic interface to the Coda C library using ctypes.
+One class per AST node type, mirroring the C++ architecture:
+
+    CodaFile        ← top-level document (wraps a Block root, no braces)
+    CodaBlock       ← { key value ... }
+    CodaArray       ← [ ... ]              homogeneous or nested values
+    CodaTable       ← [ col1 col2 \n ... ] anonymous-row plain table
+    CodaKeyedTable  ← [ key col1 col2 \n rowkey val1 val2 ] keyed table
+    CodaRow         ← one row inside a Table or KeyedTable
+    CodaString      ← a leaf string value
+
+Usage mirrors C++:
+
+    with CodaDoc.parse(text) as doc:
+        file = doc.file()
+        name = file["name"]                     # CodaString
+        for key, val in file["block"]:          # CodaBlock iteration
+            ...
+        for row in file["table"]:               # CodaTable → CodaRow
+            print(row["col"])
+        for key, row in file["ktable"]:         # CodaKeyedTable → (str, CodaRow)
+            print(key, row["col"])
 """
 
 import ctypes
 import ctypes.util
-from ctypes import c_char_p, c_size_t, c_uint32, c_void_p, POINTER, Structure
-from typing import Iterator, Optional, Tuple
+from ctypes import c_char_p, c_int, c_size_t, c_uint32, c_void_p, POINTER, Structure
 import os
 import sys
-from typing import overload, Union
+from typing import Any, Iterator, Optional, Tuple, Union
 
 
-# ------------------------- Find and load the library -------------------------
+# ─── Find and load the library ───────────────────────────────────────────────
 
-def _find_library():
-	"""Locate the coda FFI shared library."""
+def _find_library() -> str:
 	env_path = os.environ.get("CODA_FFI_LIB")
 	if env_path:
 		return env_path
 
-	lib_names = []
 	if sys.platform == "win32":
-		lib_names = ["coda_ffi.dll", "libcoda_ffi.dll"]
+		lib_names = ["libcoda_ffi.dll", "coda_ffi.dll"]
 	elif sys.platform == "darwin":
 		lib_names = ["libcoda_ffi.dylib", "coda_ffi.dylib"]
 	else:
@@ -31,19 +48,14 @@ def _find_library():
 
 	import platform
 	machine = platform.machine().lower()
-	arch_map = {
-		'x86_64': 'x86_64',
-		'amd64':  'x86_64',
-		'aarch64':'aarch64',
-		'arm64':  'aarch64',
-	}
-	arch = arch_map.get(machine, machine)
+	arch = {"x86_64": "x86_64", "amd64": "x86_64",
+	        "aarch64": "aarch64", "arm64": "aarch64"}.get(machine, machine)
 
-	libc = 'gnu'
+	libc = "gnu"
 	try:
-		with open('/usr/bin/ldd', 'rb') as f:
-			if b'musl' in f.read():
-				libc = 'musl'
+		with open("/usr/bin/ldd", "rb") as f:
+			if b"musl" in f.read():
+				libc = "musl"
 	except Exception:
 		pass
 
@@ -54,26 +66,24 @@ def _find_library():
 	else:
 		dist_subdir = f"{arch}-linux-{libc}"
 
-	for base in ("coda_ffi",):
-		found = ctypes.util.find_library(base)
-		if found:
-			return found
-
+	# Check repo-local paths first (dist/, build/), then fall back to the
+	# bare library name so the OS linker resolves it via LD_LIBRARY_PATH /
+	# ldconfig — same mechanism as rake install.
 	script_dir = os.path.dirname(os.path.abspath(__file__))
 	repo_root  = os.path.join(script_dir, "..", "..")
-	search_paths = [
+	for path in [
 		os.path.join(repo_root, "dist", dist_subdir),
 		os.path.join(repo_root, "dist", "x86_64-linux-gnu"),
 		os.path.join(repo_root, "dist"),
 		script_dir,
 		os.path.join(repo_root, "build"),
-	]
-	for path in search_paths:
+	]:
 		for lib_name in lib_names:
 			lib_path = os.path.join(path, lib_name)
 			if os.path.exists(lib_path):
 				return lib_path
 
+	# Let the OS find it (installed via rake install / ldconfig).
 	return lib_names[0]
 
 
@@ -86,155 +96,145 @@ except OSError as e:
 		"Make sure the library is built and in the correct location."
 	) from e
 
-_lib.coda_ffi_abi_version.restype = ctypes.c_uint32
+_lib.coda_ffi_abi_version.restype  = c_uint32
+_lib.coda_ffi_abi_version.argtypes = []
 _abi = _lib.coda_ffi_abi_version()
-if _abi != 1:
+if _abi != 3:
 	raise ImportError(
-		f"Incompatible libcoda_ffi ABI: expected 1, got {_abi} (library: {_lib_path})"
+		f"Incompatible libcoda_ffi ABI: expected 3, got {_abi} (library: {_lib_path})"
 	)
 
 
-# ------------------------- C Types and Structures -------------------------
+# ─── C structures ─────────────────────────────────────────────────────────────
 
-class CodaStr(Structure):
-	"""Borrowed string view (non-owning)."""
+class _CodaStr(Structure):
 	_fields_ = [("ptr", c_char_p), ("len", c_size_t)]
-
 	def to_python(self) -> str:
-		if self.ptr is None:
-			return ""
-		return self.ptr[:self.len].decode('utf-8', errors='replace')
+		return self.ptr[:self.len].decode("utf-8", errors="replace") if self.ptr else ""
 
-
-class CodaOwnedStr(Structure):
-	"""Owned string (must be freed)."""
+class _CodaOwnedStr(Structure):
 	_fields_ = [("ptr", c_char_p), ("len", c_size_t)]
-
 	def to_python(self) -> str:
-		if self.ptr is None:
-			return ""
-		return self.ptr[:self.len].decode('utf-8', errors='replace')
+		return self.ptr[:self.len].decode("utf-8", errors="replace") if self.ptr else ""
 
-
-class CodaError(Structure):
-	"""Error information from parser."""
+class _CodaError(Structure):
 	_fields_ = [
 		("code",    c_uint32),
 		("line",    c_uint32),
 		("col",     c_uint32),
 		("offset",  c_size_t),
-		("message", CodaOwnedStr),
+		("message", _CodaOwnedStr),
 	]
 
 
-# Node kinds
-CODA_NODE_NULL   = 0
-CODA_NODE_FILE   = 1
-CODA_NODE_STRING = 2
-CODA_NODE_BLOCK  = 3
-CODA_NODE_ARRAY  = 4
-CODA_NODE_TABLE  = 5
+# ─── Node kind constants (internal) ───────────────────────────────────────────
 
-# Status codes
-CODA_OK           = 0
-CODA_ERR          = 1
-CODA_NOT_FOUND    = 2
-CODA_BAD_KIND     = 3
-CODA_OUT_OF_RANGE = 4
+_NODE_NULL        = 0
+_NODE_FILE        = 1
+_NODE_STRING      = 2
+_NODE_BLOCK       = 3
+_NODE_ARRAY       = 4
+_NODE_TABLE       = 5
+_NODE_KEYED_TABLE = 6
+_NODE_ROW         = 7
 
-
-# ------------------------- Function Signatures -------------------------
-
-_lib.coda_free.argtypes             = [c_void_p]
-_lib.coda_free.restype              = None
-_lib.coda_error_clear.argtypes      = [POINTER(CodaError)]
-_lib.coda_error_clear.restype       = None
-_lib.coda_owned_str_free.argtypes   = [CodaOwnedStr]
-_lib.coda_owned_str_free.restype    = None
-_lib.coda_ffi_abi_version.argtypes  = []
-_lib.coda_ffi_abi_version.restype   = c_uint32
-
-# Doc lifecycle
-_lib.coda_doc_new.argtypes          = []
-_lib.coda_doc_new.restype           = c_void_p
-_lib.coda_doc_free.argtypes         = [c_void_p]
-_lib.coda_doc_free.restype          = None
-_lib.coda_doc_parse.argtypes        = [c_char_p, c_size_t, c_char_p, POINTER(CodaError)]
-_lib.coda_doc_parse.restype         = c_void_p
-_lib.coda_doc_parse_file.argtypes   = [c_char_p, POINTER(CodaError)]
-_lib.coda_doc_parse_file.restype    = c_void_p
-_lib.coda_doc_serialize.argtypes    = [c_void_p, c_char_p, c_size_t, POINTER(CodaError)]
-_lib.coda_doc_serialize.restype     = CodaOwnedStr
-_lib.coda_doc_order.argtypes        = [c_void_p]
-_lib.coda_doc_order.restype         = None
-_lib.coda_doc_order_weighted.argtypes = [c_void_p, POINTER(c_char_p), POINTER(ctypes.c_float), c_size_t]
-_lib.coda_doc_order_weighted.restype  = None
-_lib.coda_doc_root.argtypes         = [c_void_p]
-_lib.coda_doc_root.restype          = c_uint32
-
-# Node inspection
-_lib.coda_node_kind.argtypes             = [c_void_p, c_uint32]
-_lib.coda_node_kind.restype              = c_uint32
-_lib.coda_node_comment_get.argtypes      = [c_void_p, c_uint32]
-_lib.coda_node_comment_get.restype       = CodaStr
-_lib.coda_node_comment_set.argtypes      = [c_void_p, c_uint32, c_char_p, c_size_t]
-_lib.coda_node_comment_set.restype       = c_uint32
-_lib.coda_node_header_comment_get.argtypes = [c_void_p, c_uint32]
-_lib.coda_node_header_comment_get.restype  = CodaStr
-_lib.coda_node_header_comment_set.argtypes = [c_void_p, c_uint32, c_char_p, c_size_t]
-_lib.coda_node_header_comment_set.restype  = c_uint32
-
-# String nodes
-_lib.coda_string_get.argtypes  = [c_void_p, c_uint32]
-_lib.coda_string_get.restype   = CodaStr
-_lib.coda_string_set.argtypes  = [c_void_p, c_uint32, c_char_p, c_size_t]
-_lib.coda_string_set.restype   = c_uint32
-
-# Array nodes
-_lib.coda_array_len.argtypes   = [c_void_p, c_uint32]
-_lib.coda_array_len.restype    = c_size_t
-_lib.coda_array_get.argtypes   = [c_void_p, c_uint32, c_size_t]
-_lib.coda_array_get.restype    = c_uint32
-_lib.coda_array_set.argtypes   = [c_void_p, c_uint32, c_size_t, c_uint32]
-_lib.coda_array_set.restype    = c_uint32
-_lib.coda_array_push.argtypes  = [c_void_p, c_uint32, c_uint32]
-_lib.coda_array_push.restype   = c_uint32
-
-# Map-like nodes
-_lib.coda_map_len.argtypes          = [c_void_p, c_uint32]
-_lib.coda_map_len.restype           = c_size_t
-_lib.coda_map_key_at.argtypes       = [c_void_p, c_uint32, c_size_t]
-_lib.coda_map_key_at.restype        = CodaStr
-_lib.coda_map_value_at.argtypes     = [c_void_p, c_uint32, c_size_t]
-_lib.coda_map_value_at.restype      = c_uint32
-_lib.coda_map_get.argtypes          = [c_void_p, c_uint32, c_char_p, c_size_t]
-_lib.coda_map_get.restype           = c_uint32
-_lib.coda_map_get_or_insert.argtypes= [c_void_p, c_uint32, c_char_p, c_size_t]
-_lib.coda_map_get_or_insert.restype = c_uint32
-_lib.coda_map_set.argtypes          = [c_void_p, c_uint32, c_char_p, c_size_t, c_uint32]
-_lib.coda_map_set.restype           = c_uint32
-_lib.coda_map_remove.argtypes       = [c_void_p, c_uint32, c_char_p, c_size_t]
-_lib.coda_map_remove.restype        = c_uint32
-
-# Node creation
-_lib.coda_new_string.argtypes  = [c_void_p, c_char_p, c_size_t]
-_lib.coda_new_string.restype   = c_uint32
-_lib.coda_new_block.argtypes   = [c_void_p]
-_lib.coda_new_block.restype    = c_uint32
-_lib.coda_new_array.argtypes   = [c_void_p]
-_lib.coda_new_array.restype    = c_uint32
-_lib.coda_new_table.argtypes   = [c_void_p]
-_lib.coda_new_table.restype    = c_uint32
+_CODA_OK           = 0
+_CODA_NOT_FOUND    = 2
+_CODA_BAD_KIND     = 3
+_CODA_OUT_OF_RANGE = 4
 
 
-# ------------------------- Exceptions -------------------------
+# ─── Function signatures ──────────────────────────────────────────────────────
+
+def _sig(fn, restype, *argtypes):
+	fn.restype  = restype
+	fn.argtypes = list(argtypes)
+
+_sig(_lib.coda_free,            None,          c_void_p)
+_sig(_lib.coda_error_clear,     None,          POINTER(_CodaError))
+_sig(_lib.coda_owned_str_free,  None,          _CodaOwnedStr)
+_sig(_lib.coda_ffi_abi_version, c_uint32)
+
+_sig(_lib.coda_doc_new,            c_void_p)
+_sig(_lib.coda_doc_free,           None,          c_void_p)
+_sig(_lib.coda_doc_parse,          c_void_p,      c_char_p, c_size_t, c_char_p, POINTER(_CodaError))
+_sig(_lib.coda_doc_parse_file,     c_void_p,      c_char_p, POINTER(_CodaError))
+_sig(_lib.coda_doc_serialize,      _CodaOwnedStr, c_void_p, c_char_p, c_size_t, POINTER(_CodaError))
+_sig(_lib.coda_doc_order,          None,          c_void_p)
+_sig(_lib.coda_doc_order_weighted, None,          c_void_p, POINTER(c_char_p), POINTER(ctypes.c_float), c_size_t)
+_sig(_lib.coda_doc_root,           c_uint32,      c_void_p)
+
+_sig(_lib.coda_node_kind,               c_uint32, c_void_p, c_uint32)
+_sig(_lib.coda_node_is_container,       c_int,    c_void_p, c_uint32)
+_sig(_lib.coda_node_comment_get,        _CodaStr, c_void_p, c_uint32)
+_sig(_lib.coda_node_comment_set,        c_uint32, c_void_p, c_uint32, c_char_p, c_size_t)
+_sig(_lib.coda_node_header_comment_get, _CodaStr, c_void_p, c_uint32)
+_sig(_lib.coda_node_header_comment_set, c_uint32, c_void_p, c_uint32, c_char_p, c_size_t)
+_sig(_lib.coda_node_serialize,          _CodaOwnedStr, c_void_p, c_uint32, c_char_p, c_size_t, POINTER(_CodaError))
+_sig(_lib.coda_node_order,              None,     c_void_p, c_uint32)
+_sig(_lib.coda_node_order_weighted,     None,     c_void_p, c_uint32, POINTER(c_char_p), POINTER(ctypes.c_float), c_size_t)
+
+_sig(_lib.coda_string_get, _CodaStr, c_void_p, c_uint32)
+_sig(_lib.coda_string_set, c_uint32, c_void_p, c_uint32, c_char_p, c_size_t)
+
+_sig(_lib.coda_array_len,    c_size_t, c_void_p, c_uint32)
+_sig(_lib.coda_array_get,    c_uint32, c_void_p, c_uint32, c_size_t)
+_sig(_lib.coda_array_set,    c_uint32, c_void_p, c_uint32, c_size_t, c_uint32)
+_sig(_lib.coda_array_push,   c_uint32, c_void_p, c_uint32, c_uint32)
+_sig(_lib.coda_array_remove, c_uint32, c_void_p, c_uint32, c_size_t)
+
+_sig(_lib.coda_map_len,           c_size_t, c_void_p, c_uint32)
+_sig(_lib.coda_map_key_at,        _CodaStr, c_void_p, c_uint32, c_size_t)
+_sig(_lib.coda_map_value_at,      c_uint32, c_void_p, c_uint32, c_size_t)
+_sig(_lib.coda_map_get,           c_uint32, c_void_p, c_uint32, c_char_p, c_size_t)
+_sig(_lib.coda_map_get_or_insert, c_uint32, c_void_p, c_uint32, c_char_p, c_size_t)
+_sig(_lib.coda_map_set,           c_uint32, c_void_p, c_uint32, c_char_p, c_size_t, c_uint32)
+_sig(_lib.coda_map_remove,        c_uint32, c_void_p, c_uint32, c_char_p, c_size_t)
+
+_sig(_lib.coda_table_col_count,  c_size_t, c_void_p, c_uint32)
+_sig(_lib.coda_table_col_name,   _CodaStr, c_void_p, c_uint32, c_size_t)
+_sig(_lib.coda_table_col_append, c_uint32, c_void_p, c_uint32, c_char_p, c_size_t)
+_sig(_lib.coda_table_row_count,  c_size_t, c_void_p, c_uint32)
+_sig(_lib.coda_table_row_at,     c_uint32, c_void_p, c_uint32, c_size_t)
+_sig(_lib.coda_table_row_append, c_uint32, c_void_p, c_uint32, c_uint32)
+_sig(_lib.coda_table_row_set,    c_uint32, c_void_p, c_uint32, c_size_t, c_uint32)
+_sig(_lib.coda_table_row_remove, c_uint32, c_void_p, c_uint32, c_size_t)
+
+_sig(_lib.coda_keyed_table_col_count,  c_size_t, c_void_p, c_uint32)
+_sig(_lib.coda_keyed_table_col_name,   _CodaStr, c_void_p, c_uint32, c_size_t)
+_sig(_lib.coda_keyed_table_col_append, c_uint32, c_void_p, c_uint32, c_char_p, c_size_t)
+_sig(_lib.coda_keyed_table_row_count,  c_size_t, c_void_p, c_uint32)
+_sig(_lib.coda_keyed_table_row_key_at, _CodaStr, c_void_p, c_uint32, c_size_t)
+_sig(_lib.coda_keyed_table_row_at,     c_uint32, c_void_p, c_uint32, c_size_t)
+_sig(_lib.coda_keyed_table_row_get,    c_uint32, c_void_p, c_uint32, c_char_p, c_size_t)
+_sig(_lib.coda_keyed_table_row_set,    c_uint32, c_void_p, c_uint32, c_char_p, c_size_t, c_uint32)
+_sig(_lib.coda_keyed_table_row_remove, c_uint32, c_void_p, c_uint32, c_char_p, c_size_t)
+
+_sig(_lib.coda_row_get,          _CodaStr, c_void_p, c_uint32, c_char_p, c_size_t)
+_sig(_lib.coda_row_set,          c_uint32, c_void_p, c_uint32, c_char_p, c_size_t, c_char_p, c_size_t)
+_sig(_lib.coda_row_remove,       c_uint32, c_void_p, c_uint32, c_char_p, c_size_t)
+_sig(_lib.coda_row_col_count,    c_size_t, c_void_p, c_uint32)
+_sig(_lib.coda_row_col_name_at,  _CodaStr, c_void_p, c_uint32, c_size_t)
+_sig(_lib.coda_row_col_value_at, _CodaStr, c_void_p, c_uint32, c_size_t)
+_sig(_lib.coda_row_comment_get,  _CodaStr, c_void_p, c_uint32)
+_sig(_lib.coda_row_comment_set,  c_uint32, c_void_p, c_uint32, c_char_p, c_size_t)
+
+_sig(_lib.coda_new_string,      c_uint32, c_void_p, c_char_p, c_size_t)
+_sig(_lib.coda_new_block,       c_uint32, c_void_p)
+_sig(_lib.coda_new_array,       c_uint32, c_void_p)
+_sig(_lib.coda_new_table,       c_uint32, c_void_p)
+_sig(_lib.coda_new_keyed_table, c_uint32, c_void_p)
+_sig(_lib.coda_new_row,         c_uint32, c_void_p)
+
+
+# ─── Exceptions ───────────────────────────────────────────────────────────────
 
 class CodaException(Exception):
 	pass
 
-
 class CodaParseError(CodaException):
-	def __init__(self, message: str, code: int = 0, line: int = 0, col: int = 0, offset: int = 0):
+	def __init__(self, message: str, code: int = 0, line: int = 0,
+	             col: int = 0, offset: int = 0):
 		super().__init__(message)
 		self.code   = code
 		self.line   = line
@@ -247,246 +247,829 @@ class CodaParseError(CodaException):
 		return super().__str__()
 
 
-# ------------------------- Python Interface -------------------------
+# ─── Internal helpers ─────────────────────────────────────────────────────────
 
-class Coda:
-	"""A single node in a Coda document."""
+def _enc(s: str) -> bytes:
+	return s.encode("utf-8")
+
+def _node_from_id(doc: 'CodaDoc', node_id: int) -> 'CodaNode':
+	"""Wrap a raw node_id in the correct Python class."""
+	kind = _lib.coda_node_kind(doc._ptr, node_id)
+	if kind == _NODE_STRING:
+		return CodaString._wrap(doc, node_id)
+	if kind in (_NODE_BLOCK, _NODE_FILE):
+		return CodaBlock._wrap(doc, node_id)
+	if kind == _NODE_ARRAY:
+		return CodaArray._wrap(doc, node_id)
+	if kind == _NODE_TABLE:
+		return CodaTable._wrap(doc, node_id)
+	if kind == _NODE_KEYED_TABLE:
+		return CodaKeyedTable._wrap(doc, node_id)
+	if kind == _NODE_ROW:
+		return CodaRow._wrap(doc, node_id)
+	raise CodaException(f"Unknown node kind: {kind}")
+
+
+def _materialize(node: 'CodaNode', doc: 'CodaDoc') -> None:
+	"""Ensure a node is allocated in *doc*, materializing it if it was created without one."""
+	if node._doc is None:
+		node._materialize(doc)
+
+
+# ─── Base node ────────────────────────────────────────────────────────────────
+
+class CodaNode:
+	"""Base class for all Coda node types. Not instantiated directly."""
+
+	__slots__ = ("_doc", "_node_id")
+
+	_doc:     'Optional[CodaDoc]'
+	_node_id: int
 
 	def __init__(self, doc: 'CodaDoc', node_id: int):
 		self._doc     = doc
 		self._node_id = node_id
 
-	def _check_valid(self):
+	@classmethod
+	def _wrap(cls, doc: 'CodaDoc', node_id: int) -> 'CodaNode':
+		"""Wrap an existing node_id without calling __init__."""
+		obj = cls.__new__(cls)
+		obj._doc     = doc
+		obj._node_id = node_id
+		return obj
+
+	def _materialize(self, doc: 'CodaDoc') -> None:
+		"""Allocate this pending node in *doc*. Subclasses override."""
+		raise NotImplementedError(f"{type(self).__name__} does not support doc-less construction")
+
+	def _check(self) -> 'CodaDoc':
+		if self._doc is None:
+			raise CodaException("CodaNode has not been attached to a document yet")
 		if self._doc._ptr is None:
 			raise CodaException("CodaDoc has been freed")
-
-	# ── Inspection ────────────────────────────────────────────────────────────
-
-	@property
-	def kind(self) -> int:
-		self._check_valid()
-		return _lib.coda_node_kind(self._doc._ptr, self._node_id)
-
-	def as_string(self) -> str:
-		self._check_valid()
-		return _lib.coda_string_get(self._doc._ptr, self._node_id).to_python()
-
-	def as_array(self) -> Iterator['Coda']:
-		self._check_valid()
-		if self.kind != CODA_NODE_ARRAY:
-			raise TypeError("node is not an array")
-		length = _lib.coda_array_len(self._doc._ptr, self._node_id)
-		for i in range(length):
-			child_id = _lib.coda_array_get(self._doc._ptr, self._node_id, i)
-			if child_id != 0:
-				yield Coda(self._doc, child_id)
-
-	def as_block(self) -> Iterator[Tuple[str, 'Coda']]:
-		self._check_valid()
-		if self.kind not in (CODA_NODE_FILE, CODA_NODE_BLOCK, CODA_NODE_TABLE):
-			raise TypeError("node is not a block or table")
-		length = _lib.coda_map_len(self._doc._ptr, self._node_id)
-		for i in range(length):
-			key      = _lib.coda_map_key_at(self._doc._ptr, self._node_id, i)
-			value_id = _lib.coda_map_value_at(self._doc._ptr, self._node_id, i)
-			if value_id != 0:
-				yield (key.to_python(), Coda(self._doc, value_id))
-
-	def as_table(self) -> Iterator[Tuple[str, 'Coda']]:
-		self._check_valid()
-		if self.kind != CODA_NODE_TABLE:
-			raise TypeError("node is not a table")
-		return self.as_block()
-
-	# ── Access ────────────────────────────────────────────────────────────────
-
-	@overload
-	def __getitem__(self, key: str) -> "Coda": ...
-	@overload
-	def __getitem__(self, key: int) -> "Coda": ...
-
-	def __getitem__(self, key: Union[str, int]) -> "Coda":
-		self._check_valid()
-		if isinstance(key, str):
-			key_bytes = key.encode("utf-8")
-			child_id  = _lib.coda_map_get(self._doc._ptr, self._node_id, key_bytes, len(key_bytes))
-			if child_id == 0:
-				raise KeyError(f"Key not found: {key}")
-			return Coda(self._doc, child_id)
-		if isinstance(key, int):
-			if self.kind != CODA_NODE_ARRAY:
-				raise TypeError("integer indexing only valid on arrays")
-			n = _lib.coda_array_len(self._doc._ptr, self._node_id)
-			i = key if key >= 0 else key + n
-			if i < 0 or i >= n:
-				raise IndexError("array index out of range")
-			child_id = _lib.coda_array_get(self._doc._ptr, self._node_id, i)
-			if child_id == 0:
-				raise IndexError("array element missing")
-			return Coda(self._doc, child_id)
-		raise TypeError("key must be str (map) or int (array)")
-
-	def __setitem__(self, key: str, value: Union[str, "Coda"]):
-		"""
-		Set a child node by key.
-		  node["key"] = "value"   — creates a new string node
-		  node["key"] = other     — attaches an existing Coda node
-		"""
-		self._check_valid()
-		if isinstance(value, str):
-			value_bytes = value.encode('utf-8')
-			value_id    = _lib.coda_new_string(self._doc._ptr, value_bytes, len(value_bytes))
-			if value_id == 0:
-				raise CodaException("Failed to create string node")
-		elif isinstance(value, Coda):
-			value_id = value._node_id
-		else:
-			raise TypeError(f"value must be str or Coda, not {type(value).__name__}")
-		key_bytes = key.encode('utf-8')
-		status    = _lib.coda_map_set(self._doc._ptr, self._node_id, key_bytes, len(key_bytes), value_id)
-		if status != CODA_OK:
-			raise CodaException(f"Failed to set key: {key}")
-
-	def get(self, key: str, default: Optional[str] = None) -> Optional[str]:
-		try:
-			return self[key].as_string()
-		except KeyError:
-			return default
-
-	def get_or_insert(self, key: str) -> 'Coda':
-		self._check_valid()
-		key_bytes = key.encode('utf-8')
-		child_id  = _lib.coda_map_get_or_insert(self._doc._ptr, self._node_id, key_bytes, len(key_bytes))
-		if child_id == 0:
-			raise CodaException(f"Failed to insert key: {key}")
-		return Coda(self._doc, child_id)
-
-	# ── Comments ──────────────────────────────────────────────────────────────
+		return self._doc
 
 	@property
 	def comment(self) -> str:
-		self._check_valid()
-		return _lib.coda_node_comment_get(self._doc._ptr, self._node_id).to_python()
+		doc = self._check()
+		return _lib.coda_node_comment_get(doc._ptr, self._node_id).to_python()
 
 	@comment.setter
 	def comment(self, value: str):
-		self._check_valid()
-		b      = value.encode("utf-8")
-		status = _lib.coda_node_comment_set(self._doc._ptr, self._node_id, b, len(b))
-		if status != CODA_OK:
+		doc = self._check()
+		b = _enc(value)
+		if _lib.coda_node_comment_set(doc._ptr, self._node_id, b, len(b)) != _CODA_OK:
 			raise CodaException("Failed to set comment")
+
+	def __repr__(self) -> str:
+		return f"{type(self).__name__}(node_id={self._node_id})"
+
+	def is_container(self) -> bool:
+		"""Return True if this node is a container (Block, Array, Table, KeyedTable)."""
+		doc = self._check()
+		return bool(_lib.coda_node_is_container(doc._ptr, self._node_id))
+
+	def serialize(self, indent: str = "\t") -> str:
+		"""Serialize this node to Coda text."""
+		doc = self._check()
+		ib = _enc(indent)
+		err = _CodaError()
+		res = _lib.coda_node_serialize(doc._ptr, self._node_id, ib, len(ib), ctypes.byref(err))
+		if res.ptr is None:
+			msg = err.message.to_python()
+			_lib.coda_error_clear(ctypes.byref(err))
+			raise CodaException(f"Serialization failed: {msg}")
+		out = res.to_python_and_free()
+		return out
+
+
+# ─── CodaString ───────────────────────────────────────────────────────────────
+
+class CodaString(CodaNode):
+	"""
+	A leaf string value.
+
+    Mirrors: std::string inside coda::detail::Value.
+
+        s = CodaString("hello")       # doc-less; materialized on insert
+        s = CodaString(doc, "hello")  # legacy: allocate immediately
+        s.value = "world"
+        str(s)   # → "world"
+	"""
+
+	def __init__(self, value_or_doc: 'Union[str, CodaDoc]' = "", value: str = ""):
+		if isinstance(value_or_doc, CodaDoc):
+			# Legacy API: CodaString(doc, "value")
+			doc = value_or_doc
+			doc._check()
+			b   = _enc(value)
+			nid = _lib.coda_new_string(doc._ptr, b, len(b))
+			if nid == 0:
+				raise CodaException("Failed to create string node")
+			super().__init__(doc, nid)
+		else:
+			# New API: CodaString("value") — pending until materialized
+			self._doc           = None
+			self._node_id       = None
+			self._pending_value = value_or_doc if value_or_doc is not None else ""
+
+	def _materialize(self, doc: 'CodaDoc') -> None:
+		"""Allocate this node in *doc*. Called automatically on insert/append."""
+		doc._check()
+		b   = _enc(self._pending_value)
+		nid = _lib.coda_new_string(doc._ptr, b, len(b))
+		if nid == 0:
+			raise CodaException("Failed to create string node")
+		self._doc     = doc
+		self._node_id = nid
+
+	@property
+	def value(self) -> str:
+		doc = self._check()
+		return _lib.coda_string_get(doc._ptr, self._node_id).to_python()
+
+	@value.setter
+	def value(self, v: str):
+		doc = self._check()
+		b = _enc(v)
+		if _lib.coda_string_set(doc._ptr, self._node_id, b, len(b)) != _CODA_OK:
+			raise CodaException("Failed to set string value")
+
+	def __str__(self) -> str:
+		return self.value
+
+	def __eq__(self, other) -> bool:
+		if isinstance(other, str):
+			return self.value == other
+		if isinstance(other, CodaString):
+			return self.value == other.value
+		return NotImplemented
+
+	def __repr__(self) -> str:
+		return f"CodaString({self.value!r})"
+
+
+# ─── CodaRow ──────────────────────────────────────────────────────────────────
+
+class CodaRow(CodaNode):
+	"""
+	A single row inside a CodaTable or CodaKeyedTable.
+	Fields are flat string→string (no sub-nodes).
+
+    Mirrors: coda::Row
+
+        row = CodaRow()           # doc-less; materialized on insert
+        row = CodaRow(doc)        # legacy
+        row["col1"] = "value"
+        row["col2"] = "other"
+	"""
+
+	def __init__(self, doc: 'Optional[CodaDoc]' = None):
+		if doc is not None:
+			# Legacy API: CodaRow(doc)
+			doc._check()
+			nid = _lib.coda_new_row(doc._ptr)
+			if nid == 0:
+				raise CodaException("Failed to create row node")
+			super().__init__(doc, nid)
+		else:
+			# New API: CodaRow() — pending
+			self._doc            = None
+			self._node_id        = None
+			self._pending_fields = {}  # ordered dict of field → value
+
+	def _materialize(self, doc: 'CodaDoc') -> None:
+		doc._check()
+		nid = _lib.coda_new_row(doc._ptr)
+		if nid == 0:
+			raise CodaException("Failed to create row node")
+		self._doc     = doc
+		self._node_id = nid
+		for col, val in self._pending_fields.items():
+			cb, vb = _enc(col), _enc(val)
+			_lib.coda_row_set(doc._ptr, nid, cb, len(cb), vb, len(vb))
+
+	# CodaRow uses its own comment API, not coda_node_comment_*
+	@property
+	def comment(self) -> str:
+		doc = self._check()
+		return _lib.coda_row_comment_get(doc._ptr, self._node_id).to_python()
+
+	@comment.setter
+	def comment(self, value: str):
+		doc = self._check()
+		b = _enc(value)
+		if _lib.coda_row_comment_set(doc._ptr, self._node_id, b, len(b)) != _CODA_OK:
+			raise CodaException("Failed to set row comment")
+
+	def __getitem__(self, col: str) -> str:
+		doc = self._check()
+		# Walk fields to verify the column exists (C returns "" for missing cols)
+		n = _lib.coda_row_col_count(doc._ptr, self._node_id)
+		for i in range(n):
+			if _lib.coda_row_col_name_at(doc._ptr, self._node_id, i).to_python() == col:
+				b = _enc(col)
+				return _lib.coda_row_get(doc._ptr, self._node_id, b, len(b)).to_python()
+		raise KeyError(col)
+
+	def __setitem__(self, col: str, value: str):
+		if doc is None:
+			self._pending_fields[col] = value
+			return
+		doc = self._check()
+		cb, vb = _enc(col), _enc(value)
+		if _lib.coda_row_set(doc._ptr, self._node_id,
+		                     cb, len(cb), vb, len(vb)) != _CODA_OK:
+			raise CodaException(f"Failed to set row field: {col}")
+
+	def __delitem__(self, col: str):
+		doc = self._check()
+		b  = _enc(col)
+		st = _lib.coda_row_remove(doc._ptr, self._node_id, b, len(b))
+		if st == _CODA_NOT_FOUND:
+			raise KeyError(col)
+		if st != _CODA_OK:
+			raise CodaException(f"Failed to remove row field: {col}")
+
+	def get(self, col: str, default: Optional[str] = None) -> Optional[str]:
+		try:
+			return self[col]
+		except KeyError:
+			return default
+
+	def __contains__(self, col: str) -> bool:
+		try:
+			self[col]
+			return True
+		except KeyError:
+			return False
+
+	def __iter__(self) -> Iterator[Tuple[str, str]]:
+		"""Yield (column_name, value) pairs in insertion order."""
+		doc = self._check()
+		n = _lib.coda_row_col_count(doc._ptr, self._node_id)
+		for i in range(n):
+			name  = _lib.coda_row_col_name_at(doc._ptr, self._node_id, i).to_python()
+			value = _lib.coda_row_col_value_at(doc._ptr, self._node_id, i).to_python()
+			yield name, value
+
+	def __len__(self) -> int:
+		doc = self._check()
+		return _lib.coda_row_col_count(doc._ptr, self._node_id)
+
+	def __repr__(self) -> str:
+		return f"CodaRow({dict(self)!r})"
+
+
+# ─── CodaBlock ────────────────────────────────────────────────────────────────
+
+# Type alias for anything that can be a value inside a block or array
+_AnyNode = Union['CodaString', 'CodaBlock', 'CodaArray', 'CodaTable', 'CodaKeyedTable']
+
+class CodaBlock(CodaNode):
+	"""
+	A { key value ... } block.
+
+    Mirrors: coda::Block
+
+        block = CodaBlock()
+        block.insert("name", CodaString("Alice"))
+        block["age"] = CodaString("30")    # same as insert
+	"""
+
+	def __init__(self, doc: 'Optional[CodaDoc]' = None):
+		if doc is not None:
+			# Legacy API: CodaBlock(doc)
+			doc._check()
+			nid = _lib.coda_new_block(doc._ptr)
+			if nid == 0:
+				raise CodaException("Failed to create block node")
+			super().__init__(doc, nid)
+		else:
+			# New API: CodaBlock() — pending
+			self._doc     = None
+			self._node_id = 0
+
+	def _materialize(self, doc: 'CodaDoc') -> None:
+		doc._check()
+		nid = _lib.coda_new_block(doc._ptr)
+		if nid == 0:
+			raise CodaException("Failed to create block node")
+		self._doc     = doc
+		self._node_id = nid
+
+	def insert(self, key: str, value: _AnyNode) -> _AnyNode:
+		"""Insert (or replace) a child node under key. Returns the value."""
+		doc = self._check()
+		_materialize(value, doc)
+		kb = _enc(key)
+		if _lib.coda_map_set(doc._ptr, self._node_id,
+		                     kb, len(kb), value._node_id) != _CODA_OK:
+			raise CodaException(f"Failed to insert key: {key}")
+		return value
+
+	def __setitem__(self, key: str, value: _AnyNode):
+		self.insert(key, value)
+
+	def __getitem__(self, key: str) -> CodaNode:
+		doc = self._check()
+		kb       = _enc(key)
+		child_id = _lib.coda_map_get(doc._ptr, self._node_id, kb, len(kb))
+		if child_id == 0:
+			raise KeyError(key)
+		return _node_from_id(doc, child_id)
+
+	def __delitem__(self, key: str):
+		doc = self._check()
+		kb = _enc(key)
+		st = _lib.coda_map_remove(doc._ptr, self._node_id, kb, len(kb))
+		if st == _CODA_NOT_FOUND:
+			raise KeyError(key)
+		if st != _CODA_OK:
+			raise CodaException(f"Failed to remove key: {key}")
+
+	def __contains__(self, key: str) -> bool:
+		doc = self._check()
+		kb = _enc(key)
+		return _lib.coda_map_get(doc._ptr, self._node_id, kb, len(kb)) != 0
+
+	def __iter__(self) -> Iterator[Tuple[str, CodaNode]]:
+		"""Yield (key, node) pairs in insertion order."""
+		doc = self._check()
+		n = _lib.coda_map_len(doc._ptr, self._node_id)
+		for i in range(n):
+			key      = _lib.coda_map_key_at(doc._ptr, self._node_id, i).to_python()
+			value_id = _lib.coda_map_value_at(doc._ptr, self._node_id, i)
+			yield key, _node_from_id(doc, value_id)
+
+	def __len__(self) -> int:
+		doc = self._check()
+		return _lib.coda_map_len(doc._ptr, self._node_id)
+
+	def get_or_insert(self, key: str) -> CodaNode:
+		"""Return the node for key, inserting an empty CodaString if absent."""
+		doc = self._check()
+		kb       = _enc(key)
+		child_id = _lib.coda_map_get_or_insert(doc._ptr, self._node_id, kb, len(kb))
+		if child_id == 0:
+			raise CodaException(f"Failed to get_or_insert key: {key}")
+		return _node_from_id(doc, child_id)
+
+	def order(self) -> None:
+		"""Reorder keys: scalars first, then containers; alphabetical within groups."""
+		doc = self._check()
+		_lib.coda_node_order(doc._ptr, self._node_id)
+
+	def order_weighted(self, weights: list[tuple[str, float]]) -> None:
+		"""Reorder keys by weight (higher weight → closer to top)."""
+		doc = self._check()
+		if not weights:
+			_lib.coda_node_order(doc._ptr, self._node_id)
+			return
+		keys = (c_char_p * len(weights))(*[_enc(k) for k, _ in weights])
+		vals = (ctypes.c_float * len(weights))(*[v for _, v in weights])
+		_lib.coda_node_order_weighted(doc._ptr, self._node_id, keys, vals, len(weights))
+
+
+# ─── CodaArray ────────────────────────────────────────────────────────────────
+
+class CodaArray(CodaNode):
+	"""
+	A [ ... ] array of ordered child nodes.
+
+    Mirrors: coda::Array
+
+        arr = CodaArray()
+        arr.append(CodaString("item"))
+        arr.append(CodaBlock())
+	"""
+
+	def __init__(self, doc: 'Optional[CodaDoc]' = None):
+		if doc is not None:
+			# Legacy API: CodaArray(doc)
+			doc._check()
+			nid = _lib.coda_new_array(doc._ptr)
+			if nid == 0:
+				raise CodaException("Failed to create array node")
+			super().__init__(doc, nid)
+		else:
+			# New API: CodaArray() — pending
+			self._doc     = None
+			self._node_id = 0
+
+	def _materialize(self, doc: 'CodaDoc') -> None:
+		doc._check()
+		nid = _lib.coda_new_array(doc._ptr)
+		if nid == 0:
+			raise CodaException("Failed to create array node")
+		self._doc     = doc
+		self._node_id = nid
 
 	@property
 	def header_comment(self) -> str:
-		"""Comment block before the header row of a table."""
-		self._check_valid()
-		return _lib.coda_node_header_comment_get(self._doc._ptr, self._node_id).to_python()
+		doc = self._check()
+		return _lib.coda_node_header_comment_get(doc._ptr, self._node_id).to_python()
 
 	@header_comment.setter
 	def header_comment(self, value: str):
-		self._check_valid()
-		b      = value.encode("utf-8")
-		status = _lib.coda_node_header_comment_set(self._doc._ptr, self._node_id, b, len(b))
-		if status == CODA_BAD_KIND:
-			raise TypeError("header_comment is only valid on table-like nodes")
-		if status != CODA_OK:
+		doc = self._check()
+		b  = _enc(value)
+		st = _lib.coda_node_header_comment_set(doc._ptr, self._node_id, b, len(b))
+		if st == _CODA_BAD_KIND:
+			raise TypeError("header_comment is only valid on array or table nodes")
+		if st != _CODA_OK:
 			raise CodaException("Failed to set header_comment")
 
-	# ── Construction helpers — insert into block/table ────────────────────────
-
-	def _map_set_node(self, key: str, node_id: int) -> "Coda":
-		key_bytes = key.encode("utf-8")
-		status    = _lib.coda_map_set(self._doc._ptr, self._node_id, key_bytes, len(key_bytes), node_id)
-		if status != CODA_OK:
-			raise CodaException(f"Failed to insert key: {key}")
-		return Coda(self._doc, node_id)
-
-	def insert_string(self, key: str, value: str) -> "Coda":
-		"""Create a string node and attach it under key."""
-		self._check_valid()
-		b       = value.encode("utf-8")
-		node_id = _lib.coda_new_string(self._doc._ptr, b, len(b))
-		return self._map_set_node(key, node_id)
-
-	def insert_block(self, key: str) -> "Coda":
-		"""Create a block node and attach it under key."""
-		self._check_valid()
-		return self._map_set_node(key, _lib.coda_new_block(self._doc._ptr))
-
-	def insert_array(self, key: str) -> "Coda":
-		"""Create an array node and attach it under key."""
-		self._check_valid()
-		return self._map_set_node(key, _lib.coda_new_array(self._doc._ptr))
-
-	def insert_table(self, key: str) -> "Coda":
-		"""Create a keyed table node and attach it under key."""
-		self._check_valid()
-		return self._map_set_node(key, _lib.coda_new_table(self._doc._ptr))
-
-	# ── Construction helpers — append to array ────────────────────────────────
-
-	def _array_push_node(self, node_id: int) -> "Coda":
-		status = _lib.coda_array_push(self._doc._ptr, self._node_id, node_id)
-		if status != CODA_OK:
+	def append(self, value: _AnyNode) -> _AnyNode:
+		"""Append a child node. Returns the value."""
+		doc = self._check()
+		_materialize(value, doc)
+		if _lib.coda_array_push(doc._ptr, self._node_id, value._node_id) != _CODA_OK:
 			raise CodaException("Failed to append to array")
-		return Coda(self._doc, node_id)
+		return value
 
-	def append_string(self, value: str) -> "Coda":
-		"""Append a string element to this array."""
-		self._check_valid()
-		b       = value.encode("utf-8")
-		node_id = _lib.coda_new_string(self._doc._ptr, b, len(b))
-		return self._array_push_node(node_id)
+	def __getitem__(self, idx: int) -> CodaNode:
+		doc = self._check()
+		n = _lib.coda_array_len(doc._ptr, self._node_id)
+		i = idx if idx >= 0 else idx + n
+		if i < 0 or i >= n:
+			raise IndexError("array index out of range")
+		child_id = _lib.coda_array_get(doc._ptr, self._node_id, i)
+		if child_id == 0:
+			raise IndexError("array element missing")
+		return _node_from_id(doc, child_id)
 
-	def append_block(self) -> "Coda":
-		"""Append a block element to this array."""
-		self._check_valid()
-		return self._array_push_node(_lib.coda_new_block(self._doc._ptr))
+	def __setitem__(self, idx: int, value: _AnyNode):
+		doc = self._check()
+		n = _lib.coda_array_len(doc._ptr, self._node_id)
+		i = idx if idx >= 0 else idx + n
+		if i < 0 or i >= n:
+			raise IndexError("array index out of range")
+		_materialize(value, doc)
+		if _lib.coda_array_set(doc._ptr, self._node_id, i, value._node_id) != _CODA_OK:
+			raise CodaException("Failed to set array element")
 
-	def append_array(self) -> "Coda":
-		"""Append a nested array element to this array."""
-		self._check_valid()
-		return self._array_push_node(_lib.coda_new_array(self._doc._ptr))
+	def __delitem__(self, idx: int):
+		doc = self._check()
+		n = _lib.coda_array_len(doc._ptr, self._node_id)
+		i = idx if idx >= 0 else idx + n
+		if i < 0 or i >= n:
+			raise IndexError("array index out of range")
+		if _lib.coda_array_remove(doc._ptr, self._node_id, i) != _CODA_OK:
+			raise CodaException("Failed to remove array element")
 
-	def append_table(self) -> "Coda":
-		"""Append a keyed table element to this array."""
-		self._check_valid()
-		return self._array_push_node(_lib.coda_new_table(self._doc._ptr))
+	def __iter__(self) -> Iterator[CodaNode]:
+		doc = self._check()
+		n = _lib.coda_array_len(doc._ptr, self._node_id)
+		for i in range(n):
+			child_id = _lib.coda_array_get(doc._ptr, self._node_id, i)
+			if child_id != 0:
+				yield _node_from_id(doc, child_id)
+
+	def __len__(self) -> int:
+		doc = self._check()
+		return _lib.coda_array_len(doc._ptr, self._node_id)
 
 
-# ------------------------- CodaDoc -------------------------
+# ─── CodaTable ────────────────────────────────────────────────────────────────
+
+class CodaTable(CodaNode):
+	"""
+	An anonymous-row plain table.
+
+    Mirrors: coda::Table
+
+        t = CodaTable(["col1", "col2"])
+        row = CodaRow()
+        row["col1"] = "a"
+        row["col2"] = "b"
+        t.append(row)
+
+        for row in t:           # yields CodaRow
+            print(row["col1"])
+        t[0]["col1"]            # index access
+	"""
+
+	def __init__(self, doc_or_columns: 'Union[CodaDoc, list[str], None]' = None,
+	             columns: 'list[str]' = []):
+		if isinstance(doc_or_columns, CodaDoc):
+			# Legacy API: CodaTable(doc, columns)
+			doc = doc_or_columns
+			cols = columns
+			doc._check()
+			nid = _lib.coda_new_table(doc._ptr)
+			if nid == 0:
+				raise CodaException("Failed to create table node")
+			super().__init__(doc, nid)
+			for col in cols:
+				self.append_col(col)
+		else:
+			# New API: CodaTable(["col1", "col2"]) or CodaTable()
+			self._doc              = None
+			self._node_id          = None
+			self._pending_columns  = doc_or_columns if isinstance(doc_or_columns, list) else []
+
+	def _materialize(self, doc: 'CodaDoc') -> None:
+		doc._check()
+		nid = _lib.coda_new_table(doc._ptr)
+		if nid == 0:
+			raise CodaException("Failed to create table node")
+		self._doc     = doc
+		self._node_id = nid
+		for col in self._pending_columns:
+			self.append_col(col)
+
+	@property
+	def header_comment(self) -> str:
+		doc = self._check()
+		return _lib.coda_node_header_comment_get(doc._ptr, self._node_id).to_python()
+
+	@header_comment.setter
+	def header_comment(self, value: str):
+		doc = self._check()
+		b = _enc(value)
+		if _lib.coda_node_header_comment_set(doc._ptr, self._node_id, b, len(b)) != _CODA_OK:
+			raise CodaException("Failed to set header_comment")
+
+	def columns(self) -> list[str]:
+		doc = self._check()
+		n = _lib.coda_table_col_count(doc._ptr, self._node_id)
+		return [_lib.coda_table_col_name(doc._ptr, self._node_id, i).to_python()
+		        for i in range(n)]
+
+	def append_col(self, name: str) -> 'CodaTable':
+		"""Append a column name. Returns self for chaining."""
+		doc = self._check()
+		b = _enc(name)
+		if _lib.coda_table_col_append(doc._ptr, self._node_id, b, len(b)) != _CODA_OK:
+			raise CodaException(f"Failed to append column: {name}")
+		return self
+
+	def append(self, row: CodaRow) -> 'CodaTable':
+		"""Append a CodaRow. Returns self for chaining."""
+		doc = self._check()
+		_materialize(row, doc)
+		if _lib.coda_table_row_append(doc._ptr, self._node_id, row._node_id) != _CODA_OK:
+			raise CodaException("Failed to append row")
+		return self
+
+	def __getitem__(self, idx: int) -> CodaRow:
+		doc = self._check()
+		n = _lib.coda_table_row_count(doc._ptr, self._node_id)
+		i = idx if idx >= 0 else idx + n
+		if i < 0 or i >= n:
+			raise IndexError("table row index out of range")
+		row_id = _lib.coda_table_row_at(doc._ptr, self._node_id, i)
+		if row_id == 0:
+			raise IndexError("table row missing")
+		return CodaRow._wrap(doc, row_id)
+
+	def __setitem__(self, idx: int, row: CodaRow):
+		doc = self._check()
+		n = _lib.coda_table_row_count(doc._ptr, self._node_id)
+		i = idx if idx >= 0 else idx + n
+		if i < 0 or i >= n:
+			raise IndexError("table row index out of range")
+		_materialize(row, doc)
+		if _lib.coda_table_row_set(doc._ptr, self._node_id, i, row._node_id) != _CODA_OK:
+			raise CodaException("Failed to set table row")
+
+	def __delitem__(self, idx: int):
+		doc = self._check()
+		n = _lib.coda_table_row_count(doc._ptr, self._node_id)
+		i = idx if idx >= 0 else idx + n
+		if i < 0 or i >= n:
+			raise IndexError("table row index out of range")
+		if _lib.coda_table_row_remove(doc._ptr, self._node_id, i) != _CODA_OK:
+			raise CodaException("Failed to remove table row")
+
+	def __iter__(self) -> Iterator[CodaRow]:
+		doc = self._check()
+		n = _lib.coda_table_row_count(doc._ptr, self._node_id)
+		for i in range(n):
+			row_id = _lib.coda_table_row_at(doc._ptr, self._node_id, i)
+			if row_id != 0:
+				yield CodaRow._wrap(doc, row_id)
+
+	def __len__(self) -> int:
+		doc = self._check()
+		return _lib.coda_table_row_count(doc._ptr, self._node_id)
+
+
+# ─── CodaKeyedTable ───────────────────────────────────────────────────────────
+
+class CodaKeyedTable(CodaNode):
+	"""
+	A key-indexed table.
+
+    Mirrors: coda::KeyedTable
+
+        kt = CodaKeyedTable(["col1", "col2"])
+        row = CodaRow()
+        row["col1"] = "a"
+        row["col2"] = "b"
+        kt.insert("mykey", row)
+
+        for key, row in kt:     # yields (str, CodaRow)
+            print(key, row["col1"])
+        kt["mykey"]["col1"]     # key + field access
+	"""
+
+	def __init__(self, doc_or_columns: 'Union[CodaDoc, list[str], None]' = None,
+	             columns: 'list[str]' = []):
+		if isinstance(doc_or_columns, CodaDoc):
+			# Legacy API: CodaKeyedTable(doc, columns)
+			doc = doc_or_columns
+			cols = columns
+			doc._check()
+			nid = _lib.coda_new_keyed_table(doc._ptr)
+			if nid == 0:
+				raise CodaException("Failed to create keyed table node")
+			super().__init__(doc, nid)
+			for col in cols:
+				self.append_col(col)
+		else:
+			# New API: CodaKeyedTable(["col1", "col2"]) or CodaKeyedTable()
+			self._doc             = None
+			self._node_id         = None
+			self._pending_columns = doc_or_columns if isinstance(doc_or_columns, list) else []
+
+	def _materialize(self, doc: 'CodaDoc') -> None:
+		doc._check()
+		nid = _lib.coda_new_keyed_table(doc._ptr)
+		if nid == 0:
+			raise CodaException("Failed to create keyed table node")
+		self._doc     = doc
+		self._node_id = nid
+		for col in self._pending_columns:
+			self.append_col(col)
+
+	@property
+	def header_comment(self) -> str:
+		doc = self._check()
+		return _lib.coda_node_header_comment_get(doc._ptr, self._node_id).to_python()
+
+	@header_comment.setter
+	def header_comment(self, value: str):
+		doc = self._check()
+		b = _enc(value)
+		if _lib.coda_node_header_comment_set(doc._ptr, self._node_id, b, len(b)) != _CODA_OK:
+			raise CodaException("Failed to set header_comment")
+
+	def columns(self) -> list[str]:
+		doc = self._check()
+		n = _lib.coda_keyed_table_col_count(doc._ptr, self._node_id)
+		return [_lib.coda_keyed_table_col_name(doc._ptr, self._node_id, i).to_python()
+		        for i in range(n)]
+
+	def append_col(self, name: str) -> 'CodaKeyedTable':
+		"""Append a column name. Returns self for chaining."""
+		doc = self._check()
+		b = _enc(name)
+		if _lib.coda_keyed_table_col_append(doc._ptr, self._node_id, b, len(b)) != _CODA_OK:
+			raise CodaException(f"Failed to append column: {name}")
+		return self
+
+	def insert(self, key: str, row: CodaRow) -> CodaRow:
+		"""Insert or replace a row by key. Returns the row."""
+		doc = self._check()
+		_materialize(row, doc)
+		kb = _enc(key)
+		if _lib.coda_keyed_table_row_set(doc._ptr, self._node_id,
+		                                 kb, len(kb), row._node_id) != _CODA_OK:
+			raise CodaException(f"Failed to insert row: {key}")
+		return row
+
+	def __setitem__(self, key: str, row: CodaRow):
+		self.insert(key, row)
+
+	def __getitem__(self, key: str) -> CodaRow:
+		doc = self._check()
+		kb     = _enc(key)
+		row_id = _lib.coda_keyed_table_row_get(doc._ptr, self._node_id, kb, len(kb))
+		if row_id == 0:
+			raise KeyError(key)
+		return CodaRow._wrap(doc, row_id)
+
+	def __delitem__(self, key: str):
+		doc = self._check()
+		kb = _enc(key)
+		st = _lib.coda_keyed_table_row_remove(doc._ptr, self._node_id, kb, len(kb))
+		if st == _CODA_NOT_FOUND:
+			raise KeyError(key)
+		if st != _CODA_OK:
+			raise CodaException(f"Failed to remove row: {key}")
+
+	def __contains__(self, key: str) -> bool:
+		doc = self._check()
+		kb = _enc(key)
+		return _lib.coda_keyed_table_row_get(doc._ptr, self._node_id, kb, len(kb)) != 0
+
+	def __iter__(self) -> Iterator[Tuple[str, CodaRow]]:
+		"""Yield (key, CodaRow) pairs in insertion order."""
+		doc = self._check()
+		n = _lib.coda_keyed_table_row_count(doc._ptr, self._node_id)
+		for i in range(n):
+			key    = _lib.coda_keyed_table_row_key_at(doc._ptr, self._node_id, i).to_python()
+			row_id = _lib.coda_keyed_table_row_at(doc._ptr, self._node_id, i)
+			if row_id != 0:
+				yield key, CodaRow._wrap(doc, row_id)
+
+	def __len__(self) -> int:
+		doc = self._check()
+		return _lib.coda_keyed_table_row_count(doc._ptr, self._node_id)
+
+	def order(self) -> None:
+		"""Reorder rows: alphabetically by key."""
+		doc = self._check()
+		_lib.coda_node_order(doc._ptr, self._node_id)
+
+	def order_weighted(self, weights: list[tuple[str, float]]) -> None:
+		"""Reorder rows by weight."""
+		doc = self._check()
+		if not weights:
+			_lib.coda_node_order(doc._ptr, self._node_id)
+			return
+		keys = (c_char_p * len(weights))(*[_enc(k) for k, _ in weights])
+		vals = (ctypes.c_float * len(weights))(*[v for _, v in weights])
+		_lib.coda_node_order_weighted(doc._ptr, self._node_id, keys, vals, len(weights))
+
+
+# ─── CodaFile ─────────────────────────────────────────────────────────────────
+
+class CodaFile(CodaBlock):
+	"""
+	The top-level document node — a Block without surrounding braces.
+
+    Mirrors: coda::File (which owns a Block root).
+
+    Returned by CodaDoc.file(). Shares the doc's arena; do not outlive the
+    CodaDoc that produced it.
+
+        with CodaDoc.parse(text) as doc:
+            file = doc.file()
+            name = file["name"]              # CodaString
+            file.insert("x", CodaString(doc, "y"))
+	"""
+
+	# Does NOT call coda_new_block — wraps the existing root FILE node.
+	def __init__(self, doc: 'CodaDoc'):
+		# Bypass CodaBlock.__init__ intentionally; root already exists.
+		self._doc     = doc
+		self._node_id = _lib.coda_doc_root(doc._ptr)
+
+
+# ─── CodaDoc ──────────────────────────────────────────────────────────────────
 
 class CodaDoc:
 	"""
-	A parsed Coda document.
+	The document arena. Owns all node memory.
 
-	Use as a context manager to ensure proper cleanup:
-	    with CodaDoc.parse(text) as doc:
-	        print(doc["name"].as_string())
+    All CodaNode objects produced from a doc share its arena and become
+    invalid after CodaDoc.free() / exiting the context manager.
+
+        with CodaDoc.parse(text) as doc:
+            file = doc.file()
+            ...
+
+        doc = CodaDoc.new()
+        file = doc.file()
+        file.insert("key", CodaString(doc, "value"))
+        doc.save("out.coda")
+        doc.free()
 	"""
 
-	def __init__(self, ptr: c_void_p):
+	def __init__(self, ptr):
 		self._ptr = ptr
+
+	def _check(self) -> 'CodaDoc':
+		if self._ptr is None:
+			raise CodaException("CodaDoc has been freed")
+		return self
+
+	# ── Lifecycle ─────────────────────────────────────────────────────────────
 
 	@classmethod
 	def parse(cls, text: str, filename: Optional[str] = None) -> 'CodaDoc':
-		text_bytes     = text.encode('utf-8')
-		filename_bytes = filename.encode('utf-8') if filename else None
-		err = CodaError()
-		ptr = _lib.coda_doc_parse(text_bytes, len(text_bytes), filename_bytes, ctypes.byref(err))
+		tb  = text.encode("utf-8")
+		fb  = filename.encode("utf-8") if filename else None
+		err = _CodaError()
+		ptr = _lib.coda_doc_parse(tb, len(tb), fb, ctypes.byref(err))
 		if ptr is None:
-			msg, code, line, col, offset = err.message.to_python(), err.code, err.line, err.col, err.offset
+			msg, code, line, col, offset = (err.message.to_python(), err.code,
+			                                err.line, err.col, err.offset)
 			_lib.coda_error_clear(ctypes.byref(err))
 			raise CodaParseError(msg, code=code, line=line, col=col, offset=offset)
 		return cls(ptr)
 
 	@classmethod
 	def parse_file(cls, path: str) -> 'CodaDoc':
-		path_bytes = path.encode('utf-8')
-		err = CodaError()
-		ptr = _lib.coda_doc_parse_file(path_bytes, ctypes.byref(err))
+		pb  = path.encode("utf-8")
+		err = _CodaError()
+		ptr = _lib.coda_doc_parse_file(pb, ctypes.byref(err))
 		if ptr is None:
-			msg, code, line, col, offset = err.message.to_python(), err.code, err.line, err.col, err.offset
+			msg, code, line, col, offset = (err.message.to_python(), err.code,
+			                                err.line, err.col, err.offset)
 			_lib.coda_error_clear(ctypes.byref(err))
 			raise CodaParseError(msg, code=code, line=line, col=col, offset=offset)
 		return cls(ptr)
@@ -496,13 +1079,13 @@ class CodaDoc:
 		"""Create a new empty document."""
 		ptr = _lib.coda_doc_new()
 		if ptr is None:
-			raise CodaException("Failed to create new document")
+			raise CodaException("Failed to create document")
 		return cls(ptr)
 
-	def __enter__(self) -> "CodaDoc":
+	def __enter__(self) -> 'CodaDoc':
 		return self
 
-	def __exit__(self, exc_type, exc_val, exc_tb):
+	def __exit__(self, *_):
 		self.free()
 		return False
 
@@ -514,95 +1097,73 @@ class CodaDoc:
 	def __del__(self):
 		self.free()
 
-	def root(self) -> Coda:
-		if self._ptr is None:
-			raise CodaException("CodaDoc has been freed")
-		return Coda(self, _lib.coda_doc_root(self._ptr))
+	# ── Root access ───────────────────────────────────────────────────────────
 
-	def __getitem__(self, key: str) -> Coda:
-		return self.root().__getitem__(key)
+	def file(self) -> CodaFile:
+		"""Return the root CodaFile node."""
+		doc = self._check()
+		return CodaFile(self)
 
-	def __setitem__(self, key: str, value: Union[str, Coda]):
-		self.root().__setitem__(key, value)
+	# ── Serialisation ─────────────────────────────────────────────────────────
 
 	def serialize(self, indent: str = "\t") -> str:
-		if self._ptr is None:
-			raise CodaException("CodaDoc has been freed")
-		indent_bytes = indent.encode('utf-8')
-		err    = CodaError()
-		result = _lib.coda_doc_serialize(self._ptr, indent_bytes, len(indent_bytes), ctypes.byref(err))
-		if result.ptr is None:
+		doc = self._check()
+		ib  = indent.encode("utf-8")
+		err = _CodaError()
+		res = _lib.coda_doc_serialize(self._ptr, ib, len(ib), ctypes.byref(err))
+		if res.ptr is None:
 			msg = err.message.to_python()
 			_lib.coda_error_clear(ctypes.byref(err))
 			raise CodaException(f"Serialization failed: {msg}")
-		text = result.to_python()
-		_lib.coda_owned_str_free(result)
+		text = res.to_python()
+		_lib.coda_owned_str_free(res)
 		return text
 
 	def save(self, path: str, indent: str = "\t"):
-		with open(path, 'w', encoding='utf-8') as f:
+		with open(path, "w", encoding="utf-8") as f:
 			f.write(self.serialize(indent))
 
 	def order(self) -> None:
-		if self._ptr is None:
-			raise CodaException("CodaDoc has been freed")
+		"""Reorder all keys: scalars first, then containers; alphabetical."""
+		doc = self._check()
 		_lib.coda_doc_order(self._ptr)
 
-	def order_weighted_and_serialize(self, weights: list[tuple[str, float]]) -> str:
-		if self._ptr is None:
-			raise CodaException("CodaDoc has been freed")
-		if weights:
-			keys = (c_char_p * len(weights))()
-			vals = (ctypes.c_float * len(weights))()
-			for i, (k, v) in enumerate(weights):
-				keys[i] = k.encode('utf-8')
-				vals[i] = v
-			_lib.coda_doc_order_weighted(self._ptr, keys, vals, len(weights))
-		else:
+	def order_weighted(self, weights: list[tuple[str, float]]) -> None:
+		"""Reorder keys by weight (higher weight → closer to top)."""
+		doc = self._check()
+		if not weights:
 			_lib.coda_doc_order(self._ptr)
-		return self.serialize("\t")
+			return
+		keys = (c_char_p * len(weights))()
+		vals = (ctypes.c_float * len(weights))()
+		for i, (k, v) in enumerate(weights):
+			keys[i] = k.encode("utf-8")
+			vals[i] = v
+		_lib.coda_doc_order_weighted(self._ptr, keys, vals, len(weights))
 
-	# ── Detached node factories ───────────────────────────────────────────────
-
-	def new_string(self, value: str) -> "Coda":
-		"""Create a detached string node."""
-		b = value.encode("utf-8")
-		return Coda(self, _lib.coda_new_string(self._ptr, b, len(b)))
-
-	def new_block(self) -> "Coda":
-		"""Create a detached block node."""
-		return Coda(self, _lib.coda_new_block(self._ptr))
-
-	def new_array(self) -> "Coda":
-		"""Create a detached array node."""
-		return Coda(self, _lib.coda_new_array(self._ptr))
-
-	def new_table(self) -> "Coda":
-		"""Create a detached keyed table node."""
-		return Coda(self, _lib.coda_new_table(self._ptr))
+	def order_weighted_and_serialize(self, weights: list[tuple[str, float]],
+	                                 indent: str = "\t") -> str:
+		self.order_weighted(weights)
+		return self.serialize(indent)
 
 
-# ------------------------- Test runner -------------------------
+# ─── Test runner ──────────────────────────────────────────────────────────────
 
 class CodaTestRunner:
 	"""Executes catalog-driven tests against a CodaDoc."""
 
 	def __init__(self, doc: CodaDoc):
-		self.doc = doc
+		self.doc  = doc
+		self.file = doc.file()
 
-	def _parse_bool(self, value: str) -> bool:
-		return value in ("true", "1", "yes")
+	def _bool(self, v: str) -> bool:   return v in ("true", "1", "yes")
+	def _int(self,  v: str) -> int:    return int(v)
+	def _float(self, v: str) -> float: return float(v)
 
-	def _parse_int(self, value: str) -> int:
-		return int(value)
+	def _strings(self, node: CodaArray) -> list[str]:
+		return [str(v) for v in node]
 
-	def _parse_float(self, value: str) -> float:
-		return float(value)
-
-	def _array_as_strings(self, arr: Coda) -> list[str]:
-		return [v.as_string() for v in arr.as_array()]
-
-	def _check_order_contains(self, text: str, order: list[str]) -> bool:
+	def _order_contains(self, text: str, order: list[str]) -> bool:
 		pos = 0
 		for needle in order:
 			found = text.find(needle, pos)
@@ -611,207 +1172,198 @@ class CodaTestRunner:
 			pos = found + len(needle)
 		return True
 
-	def run_check(self, check: Coda) -> bool:
-		op = check["op"].as_string()
+	def run_check(self, check: CodaBlock) -> bool:
+		# Dynamic catalog access — node types vary at runtime; bypass static checking.
+		file: Any = self.file
+		c:    Any = check
+		op = str(c["op"])
 
 		if op == "get_string":
-			return self.doc[check["field"].as_string()].as_string() == check["eq"].as_string()
+			return str(file[c["field"]]) == str(c["eq"])
 
 		if op == "get_string_path":
-			path = self._array_as_strings(check["path"])
-			node = self.doc[path[0]]
+			path = self._strings(c["path"])
+			node = file[path[0]]
 			for key in path[1:]:
 				node = node[key]
-			return node.as_string() == check["eq"].as_string()
+			return str(node) == str(c["eq"])
 
 		if op == "is_container":
-			node = self.doc[check["field"].as_string()]
-			return (node.kind in (CODA_NODE_BLOCK, CODA_NODE_ARRAY, CODA_NODE_TABLE)) == self._parse_bool(check["eq_bool"].as_string())
+			node = file[c["field"]]
+			return node.is_container() == self._bool(str(c["eq_bool"]))
 
 		if op == "has_key":
-			key = check["field"].as_string()
 			try:
-				_ = self.doc[key]
+				_ = file[c["field"]]
 				got = True
 			except KeyError:
 				got = False
-			return got == self._parse_bool(check["eq_bool"].as_string())
+			return got == self._bool(str(c["eq_bool"]))
 
 		if op == "map_len":
-			node = self.doc[check["field"].as_string()]
-			return len(list(node.as_block())) == self._parse_int(check["eq_int"].as_string())
+			node = file[c["field"]]
+			return len(node) == self._int(str(c["eq_int"]))
 
 		if op == "map_keys":
-			node = self.doc[check["field"].as_string()]
-			keys = [k for k, _ in node.as_block()]
-			return keys == self._array_as_strings(check["eq_list"])
+			node = file[c["field"]]
+			keys = [k for k, _ in node]
+			return keys == self._strings(c["eq_list"])
 
 		if op == "array_len":
-			node = self.doc[check["field"].as_string()]
-			return len(list(node.as_array())) == self._parse_int(check["eq_int"].as_string())
+			node = file[c["field"]]
+			return len(node) == self._int(str(c["eq_int"]))
 
 		if op == "array_element":
-			node = self.doc[check["field"].as_string()]
-			idx  = self._parse_int(check["idx"].as_string())
-			return list(node.as_array())[idx].as_string() == check["eq"].as_string()
+			node = file[c["field"]]
+			return str(node[self._int(str(c["idx"]))]) == str(c["eq"])
 
 		if op == "array_block_count":
-			node = self.doc[check["field"].as_string()]
-			return len(list(node.as_array())) == self._parse_int(check["eq_int"].as_string())
+			node = file[c["field"]]
+			return len(node) == self._int(str(c["eq_int"]))
 
 		if op == "array_block_field":
-			node  = self.doc[check["field"].as_string()]
-			idx   = self._parse_int(check["idx"].as_string())
-			field = check["field_name"].as_string()
-			return list(node.as_array())[idx][field].as_string() == check["eq"].as_string()
+			node  = file[c["field"]]
+			idx   = self._int(str(c["idx"]))
+			field = str(c["field_name"])
+			return str(node[idx][field]) == str(c["eq"])
 
 		if op == "array_index_throws":
-			node = self.doc[check["field"].as_string()]
-			idx  = self._parse_int(check["idx"].as_string())
+			node = file[c["field"]]
 			try:
-				_ = list(node.as_array())[idx]
+				_ = node[self._int(str(c["idx"]))]
 				got = False
-			except Exception:
+			except (IndexError, KeyError):
 				got = True
-			return got == self._parse_bool(check["eq_bool"].as_string())
+			return got == self._bool(str(c["eq_bool"]))
 
 		if op == "plain_table_cell":
-			table = self.doc[check["table"].as_string()]
-			idx   = self._parse_int(check["idx"].as_string())
-			col   = check["col"].as_string()
-			return list(table.as_array())[idx][col].as_string() == check["eq"].as_string()
+			table = file[c["table"]]
+			return table[self._int(str(c["idx"]))][str(c["col"])] == str(c["eq"])
 
 		if op == "table_cell":
-			table = self.doc[check["table"].as_string()]
-			return table[check["row"].as_string()][check["col"].as_string()].as_string() == check["eq"].as_string()
+			table = file[c["table"]]
+			return table[str(c["row"])][str(c["col"])] == str(c["eq"])
 
 		if op == "table_row_keys":
-			table = self.doc[check["table"].as_string()]
-			keys  = [k for k, _ in table.as_table()]
-			return keys == self._array_as_strings(check["eq_list"])
+			table = file[c["table"]]
+			keys  = [k for k, _ in table]
+			return keys == self._strings(c["eq_list"])
 
 		if op == "table_row_missing_inserts":
-			table = self.doc[check["table"].as_string()]
-			row   = check["row"].as_string()
+			table = file[c["table"]]
+			key   = str(c["row"])
 			try:
-				node = table.get_or_insert(row)
-				got  = node.as_string() == ""
+				node = table.get_or_insert(key)
+				got  = isinstance(node, CodaString) and str(node) == ""
 			except Exception:
 				got = False
-			return got == self._parse_bool(check["eq_bool"].as_string())
+			return got == self._bool(str(c["eq_bool"]))
 
 		if op == "table_row_missing_throws":
-			table = self.doc[check["table"].as_string()]
-			row   = check["row"].as_string()
+			table = file[c["table"]]
 			try:
-				_ = table[row]
+				_ = table[str(c["row"])]
 				got = False
 			except KeyError:
 				got = True
-			return got == self._parse_bool(check["eq_bool"].as_string())
+			return got == self._bool(str(c["eq_bool"]))
 
 		if op == "comment":
-			return self.doc[check["field"].as_string()].comment == check["eq"].as_string()
+			return file[c["field"]].comment == str(c["eq"])
 
 		if op == "header_comment":
-			return self.doc[check["field"].as_string()].header_comment == check["eq"].as_string()
+			return file[c["field"]].header_comment == str(c["eq"])
 
 		if op == "comment_path":
-			path = self._array_as_strings(check["path"])
-			node = self.doc[path[0]]
+			path = self._strings(c["path"])
+			node = file[path[0]]
 			for key in path[1:]:
 				node = node[key]
-			return node.comment == check["eq"].as_string()
+			return node.comment == str(c["eq"])
 
 		if op == "array_element_comment":
-			node = self.doc[check["field"].as_string()]
-			idx  = self._parse_int(check["idx"].as_string())
-			return list(node.as_array())[idx].comment == check["eq"].as_string()
+			node = file[c["field"]]
+			return node[self._int(str(c["idx"]))].comment == str(c["eq"])
 
 		if op == "table_row_comment":
-			table = self.doc[check["table"].as_string()]
-			return table[check["row"].as_string()].comment == check["eq"].as_string()
+			table = file[c["table"]]
+			return table[str(c["row"])].comment == str(c["eq"])
 
 		if op == "plain_table_row_comment":
-			table = self.doc[check["table"].as_string()]
-			idx   = self._parse_int(check["idx"].as_string())
-			return list(table.as_array())[idx].comment == check["eq"].as_string()
+			table = file[c["table"]]
+			return table[self._int(str(c["idx"]))].comment == str(c["eq"])
 
 		if op == "set_string":
-			self.doc[check["field"].as_string()] = check["value"].as_string()
-			return self.doc[check["field"].as_string()].as_string() == check["value"].as_string()
+			key = str(c["field"])
+			val = str(c["value"])
+			self.file.insert(key, CodaString(self.doc, val))
+			return str(file[key]) == val
 
 		if op == "set_string_path":
-			path = self._array_as_strings(check["path"])
-			node = self.doc[path[0]]
+			path = self._strings(c["path"])
+			node = file[path[0]]
 			for key in path[1:-1]:
 				node = node[key]
-			node[path[-1]] = check["value"].as_string()
-			return node[path[-1]].as_string() == check["value"].as_string()
+			val = str(c["value"])
+			node.insert(path[-1], CodaString(self.doc, val))
+			return str(node[path[-1]]) == val
 
 		if op == "string_index_on_scalar_throws":
 			try:
-				_ = self.doc[check["field"].as_string()][check["sub"].as_string()]
+				_ = file[c["field"]][str(c["sub"])]
 				got = False
-			except Exception:
+			except (TypeError, KeyError, CodaException):
 				got = True
-			return got == self._parse_bool(check["eq_bool"].as_string())
+			return got == self._bool(str(c["eq_bool"]))
 
 		if op == "int_index_on_block_throws":
 			try:
-				_ = list(self.doc[check["field"].as_string()].as_array())[self._parse_int(check["idx"].as_string())]
+				_ = file[c["field"]][self._int(str(c["idx"]))]
 				got = False
-			except Exception:
+			except (TypeError, IndexError, CodaException):
 				got = True
-			return got == self._parse_bool(check["eq_bool"].as_string())
+			return got == self._bool(str(c["eq_bool"]))
 
 		if op == "as_array_on_scalar_throws":
-			try:
-				_ = list(self.doc[check["field"].as_string()].as_array())
-				got = False
-			except Exception:
-				got = True
-			return got == self._parse_bool(check["eq_bool"].as_string())
+			node = file[c["field"]]
+			got  = not isinstance(node, CodaArray)
+			return got == self._bool(str(c["eq_bool"]))
 
 		if op == "as_block_on_array_throws":
-			try:
-				_ = list(self.doc[check["field"].as_string()].as_block())
-				got = False
-			except Exception:
-				got = True
-			return got == self._parse_bool(check["eq_bool"].as_string())
+			node = file[c["field"]]
+			got  = not isinstance(node, CodaBlock)
+			return got == self._bool(str(c["eq_bool"]))
 
 		if op == "as_table_on_block_throws":
-			try:
-				_ = list(self.doc[check["field"].as_string()].as_table())
-				got = False
-			except Exception:
-				got = True
-			return got == self._parse_bool(check["eq_bool"].as_string())
+			node = file[c["field"]]
+			got  = not isinstance(node, (CodaTable, CodaKeyedTable))
+			return got == self._bool(str(c["eq_bool"]))
 
 		if op == "const_missing_key_throws":
 			try:
-				_ = self.doc[check["field"].as_string()]
+				_ = file[c["field"]]
 				got = False
 			except KeyError:
 				got = True
-			return got == self._parse_bool(check["eq_bool"].as_string())
+			return got == self._bool(str(c["eq_bool"]))
 
 		if op == "order_default_contains_order":
-			order = self._array_as_strings(check["order"])
+			order = self._strings(c["order"])
 			self.doc.order()
-			return self._check_order_contains(self.doc.serialize(), order)
+			return self._order_contains(self.doc.serialize(), order)
 
 		if op == "order_weighted_contains_order":
-			order   = self._array_as_strings(check["order"])
+			order   = self._strings(c["order"])
 			weights = [
-				(entry["field"].as_string(), self._parse_float(entry["weight"].as_string()))
-				for entry in check["weights"].as_array()
+				(str(entry["field"]), self._float(str(entry["weight"])))
+				for entry in c["weights"]
 			]
-			return self._check_order_contains(self.doc.order_weighted_and_serialize(weights), order)
+			return self._order_contains(
+				self.doc.order_weighted_and_serialize(weights), order
+			)
 
 		if op == "serialize_contains":
-			return check["contains"].as_string() in self.doc.serialize(check["indent"].as_string())
+			return str(c["contains"]) in self.doc.serialize(str(c["indent"]))
 
 		return False
 
@@ -825,24 +1377,24 @@ def run_catalog_tests(catalog_path: str) -> None:
 	with open(catalog_path, "r", encoding="utf-8") as f:
 		catalog_text = f.read()
 
-	catalog = CodaDoc.parse(catalog_text)
-	try:
-		tests         = list(catalog["tests"].as_array())
-		passed        = 0
-		failed        = 0
+	with CodaDoc.parse(catalog_text) as catalog_doc:
+		catalog: Any  = catalog_doc.file()
+		tests: list[Any] = list(catalog["tests"])
+		passed  = 0
+		failed  = 0
 		current_suite = None
 
 		for test in tests:
-			suite = test["suite"].as_string()
-			name  = test["name"].as_string()
-			src   = test["src"].as_string()
+			suite = str(test["suite"])
+			name  = str(test["name"])
+			src   = str(test["src"])
 
 			if suite != current_suite:
 				current_suite = suite
 				print(f"\n{ansi_yellow}[{suite}]{ansi_reset}")
 
 			try:
-				action = test["action"].as_string()
+				action = str(test["action"])
 			except KeyError:
 				action = None
 
@@ -852,7 +1404,7 @@ def run_catalog_tests(catalog_path: str) -> None:
 					try:
 						CodaDoc.parse(src)
 					except CodaParseError as e:
-						needles = [v.as_string() for v in test["needles"].as_array()]
+						needles = [str(v) for v in test["needles"]]
 						ok = any(n in str(e) for n in needles) or not needles
 
 				elif action == "parse_fail_code":
@@ -860,18 +1412,13 @@ def run_catalog_tests(catalog_path: str) -> None:
 						CodaDoc.parse(src)
 					except CodaParseError as e:
 						code_map = {
-							"UnexpectedToken":    0,
-							"UnexpectedEOF":      1,
-							"DuplicateKey":       2,
-							"DuplicateField":     3,
-							"RaggedRow":          4,
-							"InvalidEscape":      5,
-							"UnterminatedString": 6,
-							"NestedBlock":        7,
-							"ContentAfterBrace":  8,
-							"KeyInBlock":         9,
+							"UnexpectedToken":    0, "UnexpectedEOF":      1,
+							"DuplicateKey":       2, "DuplicateField":     3,
+							"RaggedRow":          4, "InvalidEscape":      5,
+							"UnterminatedString": 6, "NestedBlock":        7,
+							"ContentAfterBrace":  8, "KeyInBlock":         9,
 						}
-						ok = int(e.code) == code_map.get(test["code"].as_string(), -1)
+						ok = int(e.code) == code_map.get(str(test["code"]), -1)
 
 				elif action == "roundtrip":
 					with CodaDoc.parse(src) as d1:
@@ -885,7 +1432,8 @@ def run_catalog_tests(catalog_path: str) -> None:
 						runner = CodaTestRunner(doc)
 						ok     = True
 						try:
-							checks = list(test["checks"].as_array())
+							_f: Any = doc.file()
+							checks: list[Any] = list(_f["checks"])
 						except KeyError:
 							checks = []
 						for check in checks:
@@ -902,7 +1450,6 @@ def run_catalog_tests(catalog_path: str) -> None:
 			else:
 				failed += 1
 				print(f"  {ansi_red}✗{ansi_reset}  {name}")
-				print("	  returned false")
 
 		print("\n══════════════════════════════")
 		print(f"  {ansi_green}Passed: {passed}{ansi_reset}")
@@ -910,20 +1457,25 @@ def run_catalog_tests(catalog_path: str) -> None:
 		print("══════════════════════════════")
 		if failed > 0:
 			raise SystemExit(1)
-	finally:
-		catalog.free()
 
 
-# ------------------------- Module-level utilities -------------------------
+# ─── Module-level utilities ───────────────────────────────────────────────────
 
 def get_abi_version() -> int:
 	return _lib.coda_ffi_abi_version()
 
 
 __all__ = [
-	'Coda',
-	'CodaDoc',
-	'CodaException',
-	'CodaParseError',
-	'get_abi_version',
+	"CodaDoc",
+	"CodaFile",
+	"CodaBlock",
+	"CodaArray",
+	"CodaTable",
+	"CodaKeyedTable",
+	"CodaRow",
+	"CodaString",
+	"CodaException",
+	"CodaParseError",
+	"get_abi_version",
+	"run_catalog_tests",
 ]

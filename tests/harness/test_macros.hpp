@@ -62,7 +62,7 @@ using namespace test_framework;
 // ─── Coda-specific parse helpers ─────────────────────────────────────────────
 
 // Convenience wrapper so helpers below don't repeat the construction.
-inline coda::CodaFile coda_parse(const std::string& src) {
+inline coda::File coda_parse(const std::string& src) {
 	return coda::detail::Parser(src).parse();
 }
 

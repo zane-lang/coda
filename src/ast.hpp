@@ -107,6 +107,7 @@ public:
 	Table(std::set<std::string> headers = {}) : headers(headers) {}
 
 	void setHeaderComment(const std::string& c) { headerComment = c; }
+	const std::string& getHeaderComment() const  { return headerComment; }
 
 	Table append(Row row) {
 		for (auto& [field, val] : row) {
@@ -121,6 +122,7 @@ public:
 	Row&       operator[](size_t i)       { return content.at(i); }
 
 	bool empty() const { return content.empty(); }
+	size_t size()  const { return content.size(); }
 	const Row& front() const { return content.front(); }
 
 	auto begin() const { return content.begin(); }
@@ -142,6 +144,7 @@ public:
 	KeyedTable(std::set<std::string> headers = {}) : headers(headers) {}
 
 	void setHeaderComment(const std::string& c) { headerComment = c; }
+	const std::string& getHeaderComment() const  { return headerComment; }
 
 	KeyedTable insert(const std::string& key, Row row) {
 		for (auto& [field, val] : row) {
@@ -214,11 +217,14 @@ public:
 	Array& operator=(Array&&) = default;
 
 	void setHeaderComment(const std::string& c) { headerComment = c; }
+	const std::string& getHeaderComment() const  { return headerComment; }
 
 	Array append(detail::Value value);
 
 	const detail::Value& operator[](size_t i) const;
 	detail::Value&       operator[](size_t i);
+
+	size_t size() const { return content.size(); }
 
 	auto begin() const { return content.begin(); }
 	auto begin()       { return content.begin(); }
@@ -237,15 +243,15 @@ public:
 	const detail::Value& operator[](const std::string& key) const { return root[key]; }
 	detail::Value&       operator[](const std::string& key)       { return root[key]; }
 
+	bool has(const std::string& key) const { return root.getContent().count(key) > 0; }
+
 	Block&       getRoot()       { return root; }
 	const Block& getRoot() const { return root; }
 
 	void order();
 	void order(const std::function<float(const std::string&)>& weightFn);
 
-	std::string serialize(const std::string& unit = "\t") const {
-		return root.serialize(0, unit);
-	}
+	std::string serialize(const std::string& unit = "\t") const;
 };
 
 // ─── Value ───────────────────────────────────────────────────────────────────
@@ -418,6 +424,10 @@ inline void orderMapWeighted(
 } // namespace detail (serializeMap / orderMap)
 
 // ─── serialize impls ──────────────────────────────────────────────────────────
+
+inline std::string File::serialize(const std::string& unit) const {
+	return detail::serializeMap(root.getContent(), 0, unit);
+}
 
 inline std::string Block::serialize(int indent, const std::string& unit) const {
 	return "{\n" + detail::serializeMap(getContent(), indent + 1, unit) + detail::pad(indent, unit) + "}";

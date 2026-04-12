@@ -151,7 +151,7 @@ static uint32_t intern_value(coda_doc& d, const coda::detail::Value& v) {
 		const coda::Array& a = v.asArray();
 		uint32_t id = d.new_node(K::Array);
 		d.get(id)->comment        = v.getComment();
-		d.get(id)->header_comment = "";  // Array doesn't expose headerComment publicly
+		d.get(id)->header_comment = a.getHeaderComment();
 		for (const auto& vp : a) {
 			uint32_t child = intern_value(d, *vp);
 			d.get(id)->arr.push_back(child);
@@ -164,7 +164,7 @@ static uint32_t intern_value(coda_doc& d, const coda::detail::Value& v) {
 		const coda::Table& t = v.asTable();
 		uint32_t id = d.new_node(K::Table);
 		d.get(id)->comment = v.getComment();
-		// d.get(id)->header_comment — Table doesn't expose it publicly yet; leave empty
+		d.get(id)->header_comment = t.getHeaderComment();
 
 		// Build column list from the first row (if any)
 		bool cols_built = false;
@@ -192,6 +192,7 @@ static uint32_t intern_value(coda_doc& d, const coda::detail::Value& v) {
 		const coda::KeyedTable& kt = v.asKeyedTable();
 		uint32_t id = d.new_node(K::KeyedTable);
 		d.get(id)->comment = v.getComment();
+		d.get(id)->header_comment = kt.getHeaderComment();
 
 		// Build column list from the first row
 		bool cols_built = false;
@@ -255,6 +256,7 @@ static coda::detail::Value emit_value(const coda_doc& d, uint32_t id) {
 
 		case coda_doc::Kind::Array: {
 			coda::Array a;
+			a.setHeaderComment(n->header_comment);
 			for (uint32_t child : n->arr)
 				a.append(emit_value(d, child));
 			coda::detail::Value v(std::move(a));
@@ -266,6 +268,7 @@ static coda::detail::Value emit_value(const coda_doc& d, uint32_t id) {
 			// Reconstruct a Table with headers derived from the stored col list.
 			std::set<std::string> hdrs(n->cols.begin(), n->cols.end());
 			coda::Table t(hdrs);
+			t.setHeaderComment(n->header_comment);
 			for (uint32_t rid : n->arr) {
 				const auto* rn = d.get(rid);
 				if (!rn || rn->kind != coda_doc::Kind::Row) continue;
@@ -283,6 +286,7 @@ static coda::detail::Value emit_value(const coda_doc& d, uint32_t id) {
 		case coda_doc::Kind::KeyedTable: {
 			std::set<std::string> hdrs(n->cols.begin(), n->cols.end());
 			coda::KeyedTable kt(hdrs);
+			kt.setHeaderComment(n->header_comment);
 			for (const auto& [rowKey, rid] : n->entries) {
 				const auto* rn = d.get(rid);
 				if (!rn || rn->kind != coda_doc::Kind::Row) continue;
@@ -351,7 +355,7 @@ extern "C" CODA_FFI_EXPORT void coda_error_clear(coda_error_t* err) {
 	*err = {};
 }
 
-extern "C" CODA_FFI_EXPORT uint32_t coda_ffi_abi_version(void) { return 2; }
+extern "C" CODA_FFI_EXPORT uint32_t coda_ffi_abi_version(void) { return 3; }
 
 // ─── C API — doc lifecycle ────────────────────────────────────────────────────
 
@@ -492,6 +496,127 @@ extern "C" CODA_FFI_EXPORT void coda_doc_order_weighted(
 
 extern "C" CODA_FFI_EXPORT coda_node_t coda_doc_root(const coda_doc_t* doc) {
 	return doc ? doc->root : 0;
+}
+
+// ─── C API — node-level serialize / order ────────────────────────────────────
+
+// Sort entries alphabetically and rebuild the index for a BLOCK/FILE/KEYED_TABLE node.
+static void sort_entries(coda_doc::Node* n) {
+	std::sort(n->entries.begin(), n->entries.end(),
+	          [](const auto& a, const auto& b) { return a.first < b.first; });
+	n->index.clear();
+	for (size_t i = 0; i < n->entries.size(); ++i)
+		n->index[n->entries[i].first] = i;
+}
+
+static void dom_order_node(coda_doc& d, uint32_t id,
+                           const std::function<float(const std::string&)>* wfn);
+
+static void dom_order_node(coda_doc& d, uint32_t id,
+                           const std::function<float(const std::string&)>* wfn) {
+	auto* n = d.get(id);
+	if (!n) return;
+
+	switch (n->kind) {
+		case coda_doc::Kind::File:
+		case coda_doc::Kind::Block:
+		case coda_doc::Kind::KeyedTable: {
+			if (wfn) {
+				std::stable_sort(n->entries.begin(), n->entries.end(),
+				    [&](const auto& a, const auto& b) {
+				        return (*wfn)(a.first) < (*wfn)(b.first);
+				    });
+			} else {
+				sort_entries(n);
+			}
+			// Rebuild index after sort
+			n->index.clear();
+			for (size_t i = 0; i < n->entries.size(); ++i)
+				n->index[n->entries[i].first] = i;
+			// Recurse into children
+			for (const auto& [k, child] : n->entries)
+				dom_order_node(d, child, wfn);
+			break;
+		}
+		case coda_doc::Kind::Array:
+			for (uint32_t child : n->arr)
+				dom_order_node(d, child, wfn);
+			break;
+		default:
+			break;
+	}
+}
+
+extern "C" CODA_FFI_EXPORT int coda_node_is_container(
+	const coda_doc_t* doc, coda_node_t n
+) {
+	if (!doc) return 0;
+	const auto* node = doc->get(n);
+	if (!node) return 0;
+	switch (node->kind) {
+		case coda_doc::Kind::Block:
+		case coda_doc::Kind::Array:
+		case coda_doc::Kind::Table:
+		case coda_doc::Kind::KeyedTable:
+			return 1;
+		default:
+			return 0;
+	}
+}
+
+extern "C" CODA_FFI_EXPORT coda_owned_str_t coda_node_serialize(
+	const coda_doc_t* doc,
+	coda_node_t       n,
+	const char*       indent_unit,
+	size_t            indent_unit_len,
+	coda_error_t*     err
+) {
+	if (err) coda_error_clear(err);
+	if (!doc) {
+		if (err) err->message = owned_from_std("doc is null");
+		return { nullptr, 0 };
+	}
+	try {
+		std::string unit = indent_unit ? std::string(indent_unit, indent_unit_len) : "\t";
+		const auto* node = doc->get(n);
+		// FILE node — serialize the whole document
+		if (!node || node->kind == coda_doc::Kind::File) {
+			coda::File f = emit_file(*doc);
+			return owned_from_std(f.serialize(unit));
+		}
+		coda::detail::Value v = emit_value(*doc, n);
+		return owned_from_std(v.serializeInline(0, unit));
+	} catch (const std::exception& e) {
+		if (err) err->message = owned_from_std(std::string("exception: ") + e.what());
+		return { nullptr, 0 };
+	} catch (...) {
+		if (err) err->message = owned_from_std("unknown exception");
+		return { nullptr, 0 };
+	}
+}
+
+extern "C" CODA_FFI_EXPORT void coda_node_order(coda_doc_t* doc, coda_node_t n) {
+	if (!doc) return;
+	dom_order_node(*doc, n, nullptr);
+}
+
+extern "C" CODA_FFI_EXPORT void coda_node_order_weighted(
+	coda_doc_t*  doc,
+	coda_node_t  n,
+	const char** keys,
+	const float* weights,
+	size_t       count
+) {
+	if (!doc) return;
+	std::unordered_map<std::string, float> wmap;
+	wmap.reserve(count);
+	for (size_t i = 0; i < count; ++i)
+		wmap[keys && keys[i] ? keys[i] : ""] = weights ? weights[i] : 0.0f;
+	auto wfn = std::function<float(const std::string&)>([&](const std::string& k) -> float {
+		auto it = wmap.find(k);
+		return it != wmap.end() ? it->second : 0.0f;
+	});
+	dom_order_node(*doc, n, &wfn);
 }
 
 // ─── C API — parse error code name ───────────────────────────────────────────

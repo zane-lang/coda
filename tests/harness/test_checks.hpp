@@ -115,35 +115,35 @@ inline std::string read_file(const std::string& path) {
 	return ss.str();
 }
 
-inline const coda::CodaValue& block_at(
-	const coda::CodaValue& v, const std::string& key) {
-	return v.asBlock().content.at(key);
+inline const coda::detail::Value& block_at(
+	const coda::detail::Value& v, const std::string& key) {
+	return *v.asBlock().getContent().at(key);
 }
 
-inline bool block_has(const coda::CodaValue& v, const std::string& key) {
-	return v.asBlock().content.count(key) > 0;
+inline bool block_has(const coda::detail::Value& v, const std::string& key) {
+	return v.asBlock().getContent().count(key) > 0;
 }
 
 inline std::string block_string(
-	const coda::CodaValue& v, const std::string& key) {
-	const auto& b = v.asBlock().content;
-	if (b.count(key) > 0) return b.at(key).asString();
-	if (b.count("field") > 0) return b.at("field").asString();
+	const coda::detail::Value& v, const std::string& key) {
+	const auto& b = v.asBlock().getContent();
+	if (b.count(key) > 0) return b.at(key)->asString();
+	if (b.count("field") > 0) return b.at("field")->asString();
 	return "";
 }
 
 inline std::vector<std::string> block_string_list(
-	const coda::CodaValue& v, const std::string& key) {
+	const coda::detail::Value& v, const std::string& key) {
 	std::vector<std::string> out;
-	for (const auto& item : block_at(v, key).asArray().content)
-		out.push_back(item.asString());
+	for (const auto& item_ptr : block_at(v, key).asArray())
+		out.push_back(item_ptr->asString());
 	return out;
 }
 
-inline std::vector<std::string> value_string_list(const coda::CodaValue& v) {
+inline std::vector<std::string> value_string_list(const coda::detail::Value& v) {
 	std::vector<std::string> out;
-	for (const auto& item : v.asArray().content)
-		out.push_back(item.asString());
+	for (const auto& item_ptr : v.asArray())
+		out.push_back(item_ptr->asString());
 	return out;
 }
 
@@ -171,7 +171,7 @@ inline bool check_order_contains(const std::string& s,
 	return true;
 }
 
-inline bool run_check(ParseAdapter& p, const coda::CodaValue& check) {
+inline bool run_check(ParseAdapter& p, const coda::detail::Value& check) {
 	const std::string op = block_string(check, "op");
 
 	if (op == "get_string") {
@@ -330,10 +330,10 @@ inline bool run_check(ParseAdapter& p, const coda::CodaValue& check) {
 	if (op == "order_weighted_contains_order") {
 		auto order = value_string_list(block_at(check, "order"));
 		std::vector<std::pair<std::string, float>> weights;
-		for (const auto& entry : block_at(check, "weights").asArray().content) {
+		for (const auto& entry_ptr : block_at(check, "weights").asArray()) {
 			weights.emplace_back(
-				block_string(entry, "field"),
-				parse_float(block_string(entry, "weight")));
+				block_string(*entry_ptr, "field"),
+				parse_float(block_string(*entry_ptr, "weight")));
 		}
 		std::string s = p.order_weighted_and_serialize(weights);
 		return check_order_contains(s, order);
@@ -375,16 +375,17 @@ inline TestCatalog build_catalog() {
 	}
 
 	try {
-		coda::CodaFile file = coda::detail::Parser(text, path).parse();
-		const auto& tests = file["tests"].asArray().content;
-		for (const auto& test : tests) {
+		coda::File file = coda::detail::Parser(text, path).parse();
+		const auto& tests_arr = file["tests"].asArray();
+		for (const auto& test_ptr : tests_arr) {
+			const coda::detail::Value& test = *test_ptr;
 			const std::string suite = block_string(test, "suite");
 			const std::string name = block_string(test, "name");
 			const std::string src = block_string(test, "src");
 			const bool has_action = block_has(test, "action");
 			const std::string action = has_action ? block_string(test, "action") : "";
 
-			coda::CodaValue test_copy = test;
+			coda::detail::Value test_copy = test;
 			t.push_back({ suite, name, [test_copy, src, action](ParseAdapter& p) {
 				if (!action.empty()) {
 					if (action == "parse_fail_msg") {
@@ -403,8 +404,8 @@ inline TestCatalog build_catalog() {
 
 				if (!p.parse(src.c_str())) return false;
 				if (!block_has(test_copy, "checks")) return true;
-				for (const auto& check : block_at(test_copy, "checks").asArray().content) {
-					if (!run_check(p, check)) return false;
+				for (const auto& check_ptr : block_at(test_copy, "checks").asArray()) {
+					if (!run_check(p, *check_ptr)) return false;
 				}
 				return true;
 			}});

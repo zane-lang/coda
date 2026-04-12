@@ -94,9 +94,7 @@ public:
 	}
 
 	bool is_container(const char* key) override {
-		int kind = coda_node_kind(doc_, get_node(key));
-		return kind == CODA_NODE_BLOCK || kind == CODA_NODE_ARRAY
-			|| kind == CODA_NODE_TABLE;
+		return coda_node_is_container(doc_, get_node(key)) != 0;
 	}
 
 	size_t get_map_len(const char* key) override {
@@ -119,7 +117,10 @@ public:
 	}
 
 	size_t get_array_len(const char* key) override {
-		return coda_array_len(doc_, get_node(key));
+		coda_node_t node = get_node(key);
+		int kind = coda_node_kind(doc_, node);
+		if (kind == CODA_NODE_TABLE) return coda_table_row_count(doc_, node);
+		return coda_array_len(doc_, node);
 	}
 
 	std::string get_array_element(const char* key, size_t idx) override {
@@ -149,49 +150,37 @@ public:
 	std::string get_table_cell(const char* table, const char* row,
 	                           const char* col) override {
 		coda_node_t tbl = get_node(table);
-		coda_node_t r = coda_map_get(doc_, tbl, row, std::strlen(row));
-		coda_node_t c = coda_map_get(doc_, r, col, std::strlen(col));
-		return to_str(coda_string_get(doc_, c));
+		coda_node_t r = coda_keyed_table_row_get(doc_, tbl, row, std::strlen(row));
+		return to_str(coda_row_get(doc_, r, col, std::strlen(col)));
 	}
 
 	std::vector<std::string> get_table_row_keys(const char* table) override {
 		std::vector<std::string> keys;
 		coda_node_t tbl = get_node(table);
-		size_t len = coda_map_len(doc_, tbl);
-		for (size_t i = 0; i < len; ++i) {
-			coda_str_t k = coda_map_key_at(doc_, tbl, i);
-			keys.push_back(to_str(k));
-		}
+		size_t len = coda_keyed_table_row_count(doc_, tbl);
+		for (size_t i = 0; i < len; ++i)
+			keys.push_back(to_str(coda_keyed_table_row_key_at(doc_, tbl, i)));
 		return keys;
 	}
 
 	bool table_row_missing_throws(const char* table, const char* row) override {
 		coda_node_t tbl = get_node(table);
-		coda_node_t r = coda_map_get(doc_, tbl, row, std::strlen(row));
-		return r == 0;  // FFI returns 0 for missing
+		return coda_keyed_table_row_get(doc_, tbl, row, std::strlen(row)) == 0;
 	}
 
 	bool table_row_missing_inserts(const char* table, const char* row) override {
-		// FFI doesn't support auto-insertion, so we test that the key is absent
-		// and treat this as "not applicable" → pass
-		// OR: if the FFI has a mutable insert API, use it here
 		coda_node_t tbl = get_node(table);
-		coda_node_t r = coda_map_get(doc_, tbl, row, std::strlen(row));
-		if (r != 0) return false;  // already exists, unexpected
-
-		// Insert a default empty string
-		coda_node_t empty = coda_new_string(doc_, "", 0);
-		coda_map_set(doc_, tbl, row, std::strlen(row), empty);
-		r = coda_map_get(doc_, tbl, row, std::strlen(row));
-		return r != 0 && to_str(coda_string_get(doc_, r)) == "";
+		if (coda_keyed_table_row_get(doc_, tbl, row, std::strlen(row)) != 0) return false;
+		coda_node_t r = coda_new_row(doc_);
+		coda_keyed_table_row_set(doc_, tbl, row, std::strlen(row), r);
+		return coda_keyed_table_row_get(doc_, tbl, row, std::strlen(row)) != 0;
 	}
 
 	std::string get_plain_table_cell(const char* table, size_t row,
 	                                 const char* col) override {
 		coda_node_t tbl = get_node(table);
-		coda_node_t r = coda_array_get(doc_, tbl, row);
-		coda_node_t c = coda_map_get(doc_, r, col, std::strlen(col));
-		return to_str(coda_string_get(doc_, c));
+		coda_node_t r = coda_table_row_at(doc_, tbl, row);
+		return to_str(coda_row_get(doc_, r, col, std::strlen(col)));
 	}
 
 	std::string get_comment(const char* key) override {
@@ -210,14 +199,14 @@ public:
 
 	std::string get_table_row_comment(const char* table, const char* row) override {
 		coda_node_t tbl = get_node(table);
-		coda_node_t r = coda_map_get(doc_, tbl, row, std::strlen(row));
-		return to_str(coda_node_comment_get(doc_, r));
+		coda_node_t r = coda_keyed_table_row_get(doc_, tbl, row, std::strlen(row));
+		return to_str(coda_row_comment_get(doc_, r));
 	}
 
 	std::string get_plain_table_row_comment(const char* table, size_t row) override {
 		coda_node_t tbl = get_node(table);
-		coda_node_t r = coda_array_get(doc_, tbl, row);
-		return to_str(coda_node_comment_get(doc_, r));
+		coda_node_t r = coda_table_row_at(doc_, tbl, row);
+		return to_str(coda_row_comment_get(doc_, r));
 	}
 
 	bool set_string(const char* key, const char* value) override {
