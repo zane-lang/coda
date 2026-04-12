@@ -103,8 +103,8 @@ deps [
 """
 
 with CodaDoc.parse(text) as doc:
-	file = doc.file()
-	deps = file["deps"].as_keyed_table()
+	root = doc.root()
+	deps = root["deps"].as_keyed_table()
 	print(deps.header_comment)              # "optional deps"
 	print(deps["plot"]["link"])             # "github.com/zane-lang/plot"
 ```
