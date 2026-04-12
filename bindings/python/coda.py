@@ -473,7 +473,7 @@ class CodaRow(CodaNode):
 		raise KeyError(col)
 
 	def __setitem__(self, col: str, value: str):
-		if doc is None:
+		if self._doc is None:
 			self._pending_fields[col] = value
 			return
 		doc = self._check()
