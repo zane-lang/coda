@@ -1127,10 +1127,6 @@ class CodaDoc:
 		doc = self._check()
 		return CodaBlock._wrap(self, _lib.coda_doc_root(doc._ptr))
 
-	def file(self) -> CodaBlock:
-		"""Return the root CodaBlock node. Alias for root()."""
-		return self.root()
-
 	# ── Serialisation ─────────────────────────────────────────────────────────
 
 	def serialize(self, indent: str = "\t") -> str:
