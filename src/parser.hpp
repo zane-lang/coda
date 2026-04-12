@@ -602,16 +602,16 @@ public:
 
 	// ── public interface ────────────────────────────────────────────────
 
-	coda::File parse() {
-		coda::File file;
+	coda::Block parse() {
+		coda::Block root;
 		skipNewlines();
 		while (current.type != TokenType::Eof) {
 			Token keyTok            = expectKey();
 			coda::detail::Value val = parseValue();
-			blockInsertChecked(file.getRoot(), keyTok.value, std::move(val), keyTok.loc);
+			blockInsertChecked(root, keyTok.value, std::move(val), keyTok.loc);
 			skipNewlines();
 		}
-		return file;
+		return root;
 	}
 
 };

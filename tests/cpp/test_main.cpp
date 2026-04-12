@@ -12,11 +12,11 @@ using namespace test_framework;
 // ─── C++ ParseAdapter ────────────────────────────────────────────────────────
 
 class CppAdapter : public ParseAdapter {
-	std::optional<coda::File> file_;
+	std::optional<coda::Block> file_;
 
-	coda::File& f() { return *file_; }
+	coda::Block& f() { return *file_; }
 
-	static coda::File do_parse(const char* src) {
+	static coda::Block do_parse(const char* src) {
 		return coda::detail::Parser(src).parse();
 	}
 

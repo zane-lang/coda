@@ -206,6 +206,8 @@ public:
 	const detail::Value& operator[](const std::string& key) const;
 	detail::Value&       operator[](const std::string& key);
 
+	bool has(const std::string& key) const { return content.contains(key); }
+
 	auto begin() const { return content.begin(); }
 	auto begin()       { return content.begin(); }
 	auto end()   const { return content.end(); }
@@ -214,7 +216,11 @@ public:
 	const detail::OrderedMap<std::string, std::unique_ptr<detail::Value>>& getContent() const { return content; }
 	detail::OrderedMap<std::string, std::unique_ptr<detail::Value>>&       getContent()       { return content; }
 
+	void order();
+	void order(const std::function<float(const std::string&)>& weightFn);
+
 	std::string serialize(int indent, const std::string& unit) const;
+	std::string serialize(const std::string& unit = "\t") const;
 };
 
 // ─── Array ───────────────────────────────────────────────────────────────────
@@ -246,26 +252,6 @@ public:
 	auto end()         { return content.end(); }
 
 	std::string serialize(int indent, const std::string& unit) const;
-};
-
-// ─── File ────────────────────────────────────────────────────────────────────
-
-class File {
-	Block root;
-
-public:
-	const detail::Value& operator[](const std::string& key) const { return root[key]; }
-	detail::Value&       operator[](const std::string& key)       { return root[key]; }
-
-	bool has(const std::string& key) const { return root.getContent().count(key) > 0; }
-
-	Block&       getRoot()       { return root; }
-	const Block& getRoot() const { return root; }
-
-	void order();
-	void order(const std::function<float(const std::string&)>& weightFn);
-
-	std::string serialize(const std::string& unit = "\t") const;
 };
 
 // ─── Value ───────────────────────────────────────────────────────────────────
@@ -439,8 +425,8 @@ inline void orderMapWeighted(
 
 // ─── serialize impls ──────────────────────────────────────────────────────────
 
-inline std::string File::serialize(const std::string& unit) const {
-	return detail::serializeMap(root.getContent(), 0, unit);
+inline std::string Block::serialize(const std::string& unit) const {
+	return detail::serializeMap(getContent(), 0, unit);
 }
 
 inline std::string Block::serialize(int indent, const std::string& unit) const {
@@ -510,7 +496,7 @@ inline std::string Array::serialize(int indent, const std::string& unit) const {
 	return out + detail::pad(indent, unit) + "]";
 }
 
-// ─── Value::order / File::order ───────────────────────────────────────────────
+// ─── Value::order / Block::order ──────────────────────────────────────────────
 
 namespace detail {
 
@@ -536,12 +522,12 @@ inline void Value::order(const std::function<float(const std::string&)>& weightF
 
 } // namespace detail
 
-inline void File::order() {
-	detail::orderMap(root.getContent());
+inline void Block::order() {
+	detail::orderMap(getContent());
 }
 
-inline void File::order(const std::function<float(const std::string&)>& weightFn) {
-	detail::orderMapWeighted(root.getContent(), weightFn);
+inline void Block::order(const std::function<float(const std::string&)>& weightFn) {
+	detail::orderMapWeighted(getContent(), weightFn);
 }
 
 } // namespace coda

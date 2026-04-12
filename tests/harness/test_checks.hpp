@@ -375,7 +375,7 @@ inline TestCatalog build_catalog() {
 	}
 
 	try {
-		coda::File file = coda::detail::Parser(text, path).parse();
+		coda::Block file = coda::detail::Parser(text, path).parse();
 		const auto& tests_arr = file["tests"].asArray();
 		for (const auto& test_ptr : tests_arr) {
 			const coda::detail::Value& test = *test_ptr;
