@@ -3,7 +3,7 @@
 
 int main (int argc, char *argv[]) {
 	Coda coda;
-	coda["test"] = coda::KeyedTable({ "age" })
+	coda.root()["test"] = coda::KeyedTable({ "age" })
 		.insert(
 			"hello",
 			coda::Row().insert("age", "20"))

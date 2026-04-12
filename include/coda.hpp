@@ -1427,7 +1427,7 @@ public:
 
 class Coda {
 	std::string indentUnit = "\t";
-	coda::Block root;
+	coda::Block rootBlock;
 
 public:
 	Coda() = default;
@@ -1436,12 +1436,12 @@ public:
 		if (!f) throw std::runtime_error("could not open: " + path);
 		std::ostringstream ss;
 		ss << f.rdbuf();
-		root = coda::detail::Parser(ss.str(), path).parse();
+		rootBlock = coda::detail::Parser(ss.str(), path).parse();
 	}
 
 	static Coda parse(std::string content, std::string filename = "") {
 		Coda coda;
-		coda.root = coda::detail::Parser(content, filename).parse();
+		coda.rootBlock = coda::detail::Parser(content, filename).parse();
 		return coda;
 	}
 
@@ -1450,7 +1450,7 @@ public:
 
 	/// Recursively sort all fields: scalars first (alphabetical),
 	/// then containers (alphabetical). Array element order is preserved.
-	void order() { root.order(); }
+	void order() { rootBlock.order(); }
 
 	/// Recursively sort all fields by a weight function.
 	/// Higher weight → closer to the top. Equal weight → alphabetical.
@@ -1463,13 +1463,13 @@ public:
 	///       return 0; // everything else alphabetical at the bottom
 	///   });
 	void order(const std::function<float(const std::string&)>& weightFn) {
-		root.order(weightFn);
+		rootBlock.order(weightFn);
 	}
 
 	void save(const std::string& path) const {
 		std::ofstream f(path);
 		if (!f) throw std::runtime_error("could not open: " + path);
-		f << root.serialize(indentUnit);
+		f << rootBlock.serialize(indentUnit);
 	}
 
 	void save(const std::string& path, const std::string& unit) {
@@ -1478,9 +1478,9 @@ public:
 	}
 	
 	std::string serialize() const {
-		return root.serialize(indentUnit);
+		return rootBlock.serialize(indentUnit);
 	}
 
-	const coda::detail::Value& operator[](const std::string& key) const { return root[key]; }
-	coda::detail::Value&       operator[](const std::string& key) { return root[key]; }
+	const coda::Block& root() const { return rootBlock; }
+	coda::Block&       root()       { return rootBlock; }
 };
