@@ -1,4 +1,4 @@
-from typing import Any, Iterator, Optional, Self, Tuple, Union
+from typing import Iterator, Optional, Tuple, Union
 
 # ─── Exceptions ───────────────────────────────────────────────────────────────
 
