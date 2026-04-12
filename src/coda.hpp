@@ -62,6 +62,6 @@ public:
 		return root.serialize(indentUnit);
 	}
 
-	const coda::detail::Value& operator[](const std::string& key) const { return root[key]; }
-	coda::detail::Value&       operator[](const std::string& key) { return root[key]; }
+	const coda::Block& root_node() const { return root; }
+	coda::Block&       root_node()       { return root; }
 };
