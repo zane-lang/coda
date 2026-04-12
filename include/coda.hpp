@@ -271,19 +271,16 @@ private:
 } // namespace detail
 } // namespace coda
 
+#include <set>
 #include <string>
 #include <vector>
 #include <functional>
 #include <stdexcept>
+#include <memory>
 
 namespace coda {
 
-struct CodaValue;
-struct CodaBlock;
-struct CodaArray;
-struct CodaTable;
-
-// ─── helpers ────────────────────────────────────────────────────────────────
+// ─── detail helpers (no Value dependency) ────────────────────────────────────
 
 namespace detail {
 
@@ -294,9 +291,7 @@ inline std::string pad(int level, const std::string& unit) {
 }
 
 inline std::string serializeToken(const std::string& s) {
-	if (s == "key") {
-		return "\"key\"";
-	}
+	if (s == "key") return "\"key\"";
 
 	auto isBareChar = [](unsigned char c) -> bool {
 		if (std::isspace(c)) return false;
@@ -311,11 +306,9 @@ inline std::string serializeToken(const std::string& s) {
 	};
 
 	bool needsQuotes = s.empty();
-	if (!needsQuotes) {
-		for (unsigned char c : s) {
+	if (!needsQuotes)
+		for (unsigned char c : s)
 			if (!isBareChar(c)) { needsQuotes = true; break; }
-		}
-	}
 
 	if (!needsQuotes) return s;
 
@@ -330,147 +323,222 @@ inline std::string serializeToken(const std::string& s) {
 			default:   out += c;
 		}
 	}
-	out += '"';
-	return out;
+	return out + '"';
 }
 
 inline std::string serializeComment(const std::string& comment, int indent, const std::string& unit) {
 	if (comment.empty()) return "";
-	std::string out;
-	std::string line;
+	std::string out, line;
 	for (char c : comment) {
-		if (c == '\n') {
-			out += pad(indent, unit) + "# " + line + "\n";
-			line.clear();
-		} else {
-			line += c;
-		}
+		if (c == '\n') { out += pad(indent, unit) + "# " + line + "\n"; line.clear(); }
+		else           { line += c; }
 	}
-	if (!line.empty())
-		out += pad(indent, unit) + "# " + line + "\n";
+	if (!line.empty()) out += pad(indent, unit) + "# " + line + "\n";
 	return out;
 }
 
-inline std::string serializeMap(
-		const OrderedMap<std::string, CodaValue>& m,
-		int indent,
-		const std::string& unit);
-
-inline bool isKeyedTable(const CodaTable& t);
-inline std::vector<std::string> fieldsOf(const CodaTable& t);
-
-inline void orderMap(OrderedMap<std::string, CodaValue>& m);
-inline void orderMapWeighted(
-		OrderedMap<std::string, CodaValue>& m,
-		const std::function<float(const std::string&)>& weightFn);
-
 } // namespace detail
 
-// ─── node types ─────────────────────────────────────────────────────────────
+// ─── Row ─────────────────────────────────────────────────────────────────────
 
-struct CodaTable {
-	detail::OrderedMap<std::string, CodaValue> content;
-	std::string headerComment;
-
-	const CodaValue& operator[](const std::string& key) const;
-	CodaValue&       operator[](const std::string& key);
-
-	auto begin() const;
-	auto begin();
-	auto end() const;
-	auto end();
-
-	std::string serializeRow(const std::vector<std::string>& fields) const;
-	std::string serialize(int indent, const std::string& unit) const;
-};
-
-struct CodaBlock {
-	detail::OrderedMap<std::string, CodaValue> content;
-
-	const CodaValue& operator[](const std::string& key) const;
-	CodaValue&       operator[](const std::string& key);
-
-	auto begin() const;
-	auto begin();
-	auto end() const;
-	auto end();
-
-	std::string serialize(int indent, const std::string& unit) const;
-};
-
-struct CodaArray {
-	std::vector<CodaValue> content;
-	std::string headerComment;
-
-	const CodaValue& operator[](size_t i) const;
-	CodaValue&       operator[](size_t i);
-
-	auto begin() const;
-	auto begin();
-	auto end() const;
-	auto end();
-
-	std::string serialize(int indent, const std::string& unit) const;
-};
-
-// ─── CodaValue ──────────────────────────────────────────────────────────────
-
-struct CodaValue {
-	Variant<
-		std::string,
-		CodaBlock,
-		CodaArray,
-		CodaTable
-	> content;
+class Row {
+	detail::OrderedMap<std::string, std::string> content;
 	std::string comment;
 
-	CodaValue() : content(std::string("")) {}
-	CodaValue(std::string str)  : content(std::move(str))  {}
-	CodaValue(CodaBlock  block) : content(std::move(block)) {}
-	CodaValue(CodaArray  arr)   : content(std::move(arr))   {}
-	CodaValue(CodaTable  table) : content(std::move(table)) {}
-	CodaValue(const char* str)  : content(std::string(str)) {}
+public:
+	Row() {}
 
-	CodaValue& operator=(std::string  str)   { content = std::move(str);   return *this; }
-	CodaValue& operator=(CodaBlock    block) { content = std::move(block); return *this; }
-	CodaValue& operator=(CodaArray    arr)   { content = std::move(arr);   return *this; }
-	CodaValue& operator=(CodaTable    table) { content = std::move(table); return *this; }
-	CodaValue& operator=(const char* str)   { content = std::string(str); return *this; }
+	void setComment(const std::string& c) { comment = c; }
+	const std::string& getComment() const  { return comment; }
 
-	const CodaValue& operator[](const std::string& key) const {
-		return content.match(
-			[&](const CodaBlock& b) -> const CodaValue& { return b[key]; },
-			[&](const CodaTable& t) -> const CodaValue& { return t[key]; },
-			[](const auto&)         -> const CodaValue& {
-				throw std::runtime_error("type does not support string indexing");
-			}
-		);
-	}
-	CodaValue& operator[](const std::string& key) {
-		return content.match(
-			[&](CodaBlock& b) -> CodaValue& { return b[key]; },
-			[&](CodaTable& t) -> CodaValue& { return t[key]; },
-			[](auto&)         -> CodaValue& {
-				throw std::runtime_error("type does not support string indexing");
-			}
-		);
+	Row insert(const std::string& key, std::string value) {
+		content[key] = value;
+		return *this;
 	}
 
-	const CodaValue& operator[](size_t i) const {
-		return content.match(
-			[&](const CodaArray& a) -> const CodaValue& { return a[i]; },
-			[](const auto&)         -> const CodaValue& {
-				throw std::runtime_error("type does not support integer indexing");
-			}
-		);
+	const std::string& operator[](const std::string& key) const { return content.at(key); }
+	std::string&       operator[](const std::string& key)       { return content[key]; }
+
+	auto begin() const { return content.begin(); }
+	auto begin()       { return content.begin(); }
+	auto end()   const { return content.end(); }
+	auto end()         { return content.end(); }
+};
+
+// ─── Table ───────────────────────────────────────────────────────────────────
+
+class Table {
+	std::vector<Row> content;
+	std::string headerComment;
+	std::set<std::string> headers;
+
+public:
+	Table(std::set<std::string> headers = {}) : headers(headers) {}
+
+	void setHeaderComment(const std::string& c) { headerComment = c; }
+
+	Table append(Row row) {
+		for (auto& [field, val] : row) {
+			if (headers.find(field) == headers.end())
+				throw std::invalid_argument("Table::append — unknown field '" + field + "'");
+		}
+		content.push_back(row);
+		return *this;
 	}
-	CodaValue& operator[](size_t i) {
-		return content.match(
-			[&](CodaArray& a) -> CodaValue& { return a[i]; },
-			[](auto&)         -> CodaValue& {
-				throw std::runtime_error("type does not support integer indexing");
-			}
-		);
+
+	const Row& operator[](size_t i) const { return content.at(i); }
+	Row&       operator[](size_t i)       { return content.at(i); }
+
+	bool empty() const { return content.empty(); }
+	const Row& front() const { return content.front(); }
+
+	auto begin() const { return content.begin(); }
+	auto begin()       { return content.begin(); }
+	auto end()   const { return content.end(); }
+	auto end()         { return content.end(); }
+
+	std::string serialize(int indent, const std::string& unit) const;
+};
+
+// ─── KeyedTable ──────────────────────────────────────────────────────────────
+
+class KeyedTable {
+	detail::OrderedMap<std::string, Row> content;
+	std::string headerComment;
+	std::set<std::string> headers;
+
+public:
+	KeyedTable(std::set<std::string> headers = {}) : headers(headers) {}
+
+	void setHeaderComment(const std::string& c) { headerComment = c; }
+
+	KeyedTable insert(const std::string& key, Row row) {
+		for (auto& [field, val] : row) {
+			if (headers.find(field) == headers.end())
+				throw std::invalid_argument("KeyedTable::insert — unknown field '" + field + "'");
+		}
+		content[key] = std::move(row);
+		return *this;
+	}
+
+	const Row& operator[](const std::string& key) const { return content.at(key); }
+	Row&       operator[](const std::string& key)       { return content[key]; }
+
+	bool empty() const { return content.empty(); }
+
+	auto begin() const { return content.begin(); }
+	auto begin()       { return content.begin(); }
+	auto end()   const { return content.end(); }
+	auto end()         { return content.end(); }
+
+	const detail::OrderedMap<std::string, Row>& getContent() const { return content; }
+	detail::OrderedMap<std::string, Row>&       getContent()       { return content; }
+
+	std::string serialize(int indent, const std::string& unit) const;
+};
+
+// ─── Value (forward) ─────────────────────────────────────────────────────────
+
+namespace detail { class Value; }
+
+// ─── Block ───────────────────────────────────────────────────────────────────
+
+class Block {
+	detail::OrderedMap<std::string, std::unique_ptr<detail::Value>> content;
+
+public:
+	Block() {}
+	Block(const Block& o);
+	Block(Block&&) = default;
+	Block& operator=(const Block& o);
+	Block& operator=(Block&&) = default;
+
+	Block insert(const std::string& key, detail::Value value);
+
+	const detail::Value& operator[](const std::string& key) const;
+	detail::Value&       operator[](const std::string& key);
+
+	auto begin() const { return content.begin(); }
+	auto begin()       { return content.begin(); }
+	auto end()   const { return content.end(); }
+	auto end()         { return content.end(); }
+
+	const detail::OrderedMap<std::string, std::unique_ptr<detail::Value>>& getContent() const { return content; }
+	detail::OrderedMap<std::string, std::unique_ptr<detail::Value>>&       getContent()       { return content; }
+
+	std::string serialize(int indent, const std::string& unit) const;
+};
+
+// ─── Array ───────────────────────────────────────────────────────────────────
+
+class Array {
+	std::vector<std::unique_ptr<detail::Value>> content;
+	std::string headerComment;
+
+public:
+	Array() {}
+	Array(const Array& o);
+	Array(Array&&) = default;
+	Array& operator=(const Array& o);
+	Array& operator=(Array&&) = default;
+
+	void setHeaderComment(const std::string& c) { headerComment = c; }
+
+	Array append(detail::Value value);
+
+	const detail::Value& operator[](size_t i) const;
+	detail::Value&       operator[](size_t i);
+
+	auto begin() const { return content.begin(); }
+	auto begin()       { return content.begin(); }
+	auto end()   const { return content.end(); }
+	auto end()         { return content.end(); }
+
+	std::string serialize(int indent, const std::string& unit) const;
+};
+
+// ─── File ────────────────────────────────────────────────────────────────────
+
+class File {
+	Block root;
+
+public:
+	const detail::Value& operator[](const std::string& key) const { return root[key]; }
+	detail::Value&       operator[](const std::string& key)       { return root[key]; }
+
+	Block&       getRoot()       { return root; }
+	const Block& getRoot() const { return root; }
+
+	void order();
+	void order(const std::function<float(const std::string&)>& weightFn);
+
+	std::string serialize(const std::string& unit = "\t") const {
+		return root.serialize(0, unit);
+	}
+};
+
+// ─── Value ───────────────────────────────────────────────────────────────────
+
+namespace detail {
+
+class Value {
+	Variant<std::string, Block, Array, Table, KeyedTable> content;
+	std::string comment;
+
+public:
+	void setComment(const std::string& c) { comment = c; }
+	const std::string& getComment() const  { return comment; }
+
+	Value() : content(std::string("")) {}
+	Value(std::string   str)   : content(std::move(str))   {}
+	Value(Block         block) : content(std::move(block)) {}
+	Value(Array         arr)   : content(std::move(arr))   {}
+	Value(Table         table) : content(std::move(table)) {}
+	Value(KeyedTable    table) : content(std::move(table)) {}
+	Value(const char*   str)   : content(std::string(str)) {}
+
+	bool isContainer() const {
+		return !std::holds_alternative<std::string>(content.value);
 	}
 
 	const std::string& asString() const {
@@ -482,83 +550,49 @@ struct CodaValue {
 		throw std::runtime_error("CodaValue::asString() — value is not a string");
 	}
 
-	const CodaBlock& asBlock() const {
-		if (auto* p = std::get_if<CodaBlock>(&content.value)) return *p;
+	const Block& asBlock() const {
+		if (auto* p = std::get_if<Block>(&content.value)) return *p;
 		throw std::runtime_error("CodaValue::asBlock() — value is not a block");
 	}
-	CodaBlock& asBlock() {
-		if (auto* p = std::get_if<CodaBlock>(&content.value)) return *p;
+	Block& asBlock() {
+		if (auto* p = std::get_if<Block>(&content.value)) return *p;
 		throw std::runtime_error("CodaValue::asBlock() — value is not a block");
 	}
 
-	const CodaArray& asArray() const {
-		if (auto* p = std::get_if<CodaArray>(&content.value)) return *p;
+	const Array& asArray() const {
+		if (auto* p = std::get_if<Array>(&content.value)) return *p;
 		throw std::runtime_error("CodaValue::asArray() — value is not an array");
 	}
-	CodaArray& asArray() {
-		if (auto* p = std::get_if<CodaArray>(&content.value)) return *p;
+	Array& asArray() {
+		if (auto* p = std::get_if<Array>(&content.value)) return *p;
 		throw std::runtime_error("CodaValue::asArray() — value is not an array");
 	}
 
-	const CodaTable& asTable() const {
-		if (auto* p = std::get_if<CodaTable>(&content.value)) return *p;
+	const Table& asTable() const {
+		if (auto* p = std::get_if<Table>(&content.value)) return *p;
 		throw std::runtime_error("CodaValue::asTable() — value is not a table");
 	}
-	CodaTable& asTable() {
-		if (auto* p = std::get_if<CodaTable>(&content.value)) return *p;
+	Table& asTable() {
+		if (auto* p = std::get_if<Table>(&content.value)) return *p;
 		throw std::runtime_error("CodaValue::asTable() — value is not a table");
 	}
 
-	bool isContainer() const {
-		return std::holds_alternative<CodaBlock>(content.value) ||
-			std::holds_alternative<CodaArray>(content.value) ||
-			std::holds_alternative<CodaTable>(content.value);
+	const KeyedTable& asKeyedTable() const {
+		if (auto* p = std::get_if<KeyedTable>(&content.value)) return *p;
+		throw std::runtime_error("CodaValue::asKeyedTable() — value is not a keyed table");
 	}
-
-	operator std::string() const {
-		if (auto* s = std::get_if<std::string>(&content.value)) return *s;
-		throw std::runtime_error("CodaValue is not a string");
-	}
-	operator std::string() {
-		if (auto* s = std::get_if<std::string>(&content.value)) return *s;
-		throw std::runtime_error("CodaValue is not a string");
-	}
-
-	operator const CodaBlock&() const {
-		if (auto* b = std::get_if<CodaBlock>(&content.value)) return *b;
-		throw std::runtime_error("CodaValue: Expected Block");
-	}
-	operator CodaBlock&() {
-		if (auto* b = std::get_if<CodaBlock>(&content.value)) return *b;
-		throw std::runtime_error("CodaValue: Expected Block");
-	}
-
-	operator const CodaArray&() const {
-		if (auto* a = std::get_if<CodaArray>(&content.value)) return *a;
-		throw std::runtime_error("CodaValue: Expected Array");
-	}
-	operator CodaArray&() {
-		if (auto* a = std::get_if<CodaArray>(&content.value)) return *a;
-		throw std::runtime_error("CodaValue: Expected Array");
-	}
-
-	operator const CodaTable&() const {
-		if (auto* t = std::get_if<CodaTable>(&content.value)) return *t;
-		throw std::runtime_error("CodaValue: Expected Table");
-	}
-	operator CodaTable&() {
-		if (auto* t = std::get_if<CodaTable>(&content.value)) return *t;
-		throw std::runtime_error("CodaValue: Expected Table");
+	KeyedTable& asKeyedTable() {
+		if (auto* p = std::get_if<KeyedTable>(&content.value)) return *p;
+		throw std::runtime_error("CodaValue::asKeyedTable() — value is not a keyed table");
 	}
 
 	std::string serializeInline(int indent, const std::string& unit) const {
 		return content.match(
-			[](const std::string& s) -> std::string {
-				return detail::serializeToken(s);
-			},
-			[&](const CodaBlock&  b) -> std::string { return b.serialize(indent, unit); },
-			[&](const CodaArray&  a) -> std::string { return a.serialize(indent, unit); },
-			[&](const CodaTable&  t) -> std::string { return t.serialize(indent, unit); }
+			[](const std::string& s) { return detail::serializeToken(s); },
+			[&](const Block&      b) { return b.serialize(indent, unit); },
+			[&](const Array&      a) { return a.serialize(indent, unit); },
+			[&](const Table&      t) { return t.serialize(indent, unit); },
+			[&](const KeyedTable& t) { return t.serialize(indent, unit); }
 		);
 	}
 
@@ -566,221 +600,193 @@ struct CodaValue {
 	void order(const std::function<float(const std::string&)>& weightFn);
 };
 
-// ─── CodaFile ────────────────────────────────────────────────────────────────
+} // namespace detail
 
-struct CodaFile {
-	detail::OrderedMap<std::string, CodaValue> statements;
+// ─── Block/Array out-of-line (Value now complete) ─────────────────────────────
 
-	const CodaValue& operator[](const std::string& key) const { return statements.at(key); }
-	CodaValue&       operator[](const std::string& key) { return statements[key]; }
+inline Block::Block(const Block& o) {
+	for (const auto& [k, v] : o.content)
+		content[k] = std::make_unique<detail::Value>(*v);
+}
+inline Block& Block::operator=(const Block& o) {
+	content.clear();
+	for (const auto& [k, v] : o.content)
+		content[k] = std::make_unique<detail::Value>(*v);
+	return *this;
+}
+inline Block Block::insert(const std::string& key, detail::Value value) {
+	content[key] = std::make_unique<detail::Value>(std::move(value));
+	return *this;
+}
+inline const detail::Value& Block::operator[](const std::string& key) const { return *content.at(key); }
+inline detail::Value&       Block::operator[](const std::string& key) {
+	if (!content.count(key)) content[key] = std::make_unique<detail::Value>();
+	return *content[key];
+}
 
-	bool has(const std::string& key) const { return statements.count(key) > 0; }
+inline Array::Array(const Array& o) {
+	for (const auto& v : o.content)
+		content.push_back(std::make_unique<detail::Value>(*v));
+}
+inline Array& Array::operator=(const Array& o) {
+	content.clear();
+	for (const auto& v : o.content)
+		content.push_back(std::make_unique<detail::Value>(*v));
+	return *this;
+}
+inline Array Array::append(detail::Value value) {
+	content.push_back(std::make_unique<detail::Value>(std::move(value)));
+	return *this;
+}
+inline const detail::Value& Array::operator[](size_t i) const { return *content.at(i); }
+inline detail::Value&       Array::operator[](size_t i)       { return *content.at(i); }
 
-	void order();
-	void order(const std::function<float(const std::string&)>& weightFn);
-
-	std::string serialize(const std::string& unit = "\t") const;
-};
-
-// ─── detail method bodies ────────────────────────────────────────────────────
+// ─── serializeMap ─────────────────────────────────────────────────────────────
 
 namespace detail {
 
 inline std::string serializeMap(
-		const OrderedMap<std::string, CodaValue>& m,
+		const OrderedMap<std::string, std::unique_ptr<Value>>& m,
 		int indent,
 		const std::string& unit) {
-
 	std::string out;
-	for (const auto& [k, v] : m) {
-		if (v.isContainer() && !out.empty())
-			out += "\n";
-		out += serializeComment(v.comment, indent, unit);
+	for (const auto& [k, vp] : m) {
+		const Value& v = *vp;
+		if (v.isContainer() && !out.empty()) out += "\n";
+		out += serializeComment(v.getComment(), indent, unit);
 		out += pad(indent, unit) + serializeToken(k) + " "
 			+ v.serializeInline(indent, unit) + "\n";
 	}
 	return out;
 }
 
-inline bool isKeyedTable(const CodaTable& t) {
-	if (t.content.empty()) return false;
-	return std::holds_alternative<CodaTable>(t.content.begin()->second.content.value);
+// ─── orderMap ────────────────────────────────────────────────────────────────
+
+inline void orderMap(OrderedMap<std::string, std::unique_ptr<Value>>& m) {
+	for (auto& [k, v] : m) v->order();
+	m.sort([](const std::unique_ptr<Value>& v) { return v->isContainer(); });
 }
 
-inline std::vector<std::string> fieldsOf(const CodaTable& t) {
-	std::vector<std::string> fields;
-	if (t.content.empty()) return fields;
-	for (const auto& [k, _] : t.content.begin()->second.asTable().content)
-		fields.push_back(k);
-	return fields;
-}
-
-inline void orderMap(OrderedMap<std::string, CodaValue>& m) {
-	for (auto& [k, v] : m)
-		v.order();
-	m.sort([](const CodaValue& v) { return v.isContainer(); });
+inline void orderMap(OrderedMap<std::string, Row>& /*m*/) {
+	// Rows have no sub-ordering
 }
 
 inline void orderMapWeighted(
-		OrderedMap<std::string, CodaValue>& m,
+		OrderedMap<std::string, std::unique_ptr<Value>>& m,
 		const std::function<float(const std::string&)>& weightFn) {
-	for (auto& [k, v] : m)
-		v.order(weightFn);
+	for (auto& [k, v] : m) v->order(weightFn);
 	m.sortByWeight(weightFn);
+}
+
+inline void orderMapWeighted(
+		OrderedMap<std::string, Row>& /*m*/,
+		const std::function<float(const std::string&)>& /*weightFn*/) {
+	// Rows have no sub-ordering
+}
+
+} // namespace detail (serializeMap / orderMap)
+
+// ─── serialize impls ──────────────────────────────────────────────────────────
+
+inline std::string Block::serialize(int indent, const std::string& unit) const {
+	return "{\n" + detail::serializeMap(getContent(), indent + 1, unit) + detail::pad(indent, unit) + "}";
+}
+
+inline std::string KeyedTable::serialize(int indent, const std::string& unit) const {
+	if (content.empty()) return "[]";
+
+	std::vector<std::string> fields;
+	for (const auto& [k, _] : content.begin()->second)
+		fields.push_back(k);
+
+	std::string out = "[\n";
+	out += detail::serializeComment(headerComment, indent + 1, unit);
+	out += detail::pad(indent + 1, unit) + "key";
+	for (const auto& f : fields)
+		out += " " + detail::serializeToken(f);
+	out += "\n";
+
+	for (const auto& [rowKey, row] : content) {
+		out += detail::serializeComment(row.getComment(), indent + 1, unit);
+		out += detail::pad(indent + 1, unit) + detail::serializeToken(rowKey);
+		for (const auto& f : fields)
+			out += " " + detail::serializeToken(row[f]);
+		out += "\n";
+	}
+
+	return out + detail::pad(indent, unit) + "]";
+}
+
+inline std::string Table::serialize(int indent, const std::string& unit) const {
+	if (content.empty()) return "[]";
+
+	std::vector<std::string> fields;
+	for (const auto& [k, _] : content.front())
+		fields.push_back(k);
+
+	std::string out = "[\n";
+	out += detail::serializeComment(headerComment, indent + 1, unit);
+	out += detail::pad(indent + 1, unit);
+	for (size_t i = 0; i < fields.size(); ++i)
+		out += detail::serializeToken(fields[i]) + (i < fields.size() - 1 ? " " : "");
+	out += "\n";
+
+	for (const auto& row : content) {
+		out += detail::serializeComment(row.getComment(), indent + 1, unit);
+		out += detail::pad(indent + 1, unit);
+		for (size_t i = 0; i < fields.size(); ++i)
+			out += detail::serializeToken(row[fields[i]]) + (i < fields.size() - 1 ? " " : "");
+		out += "\n";
+	}
+
+	return out + detail::pad(indent, unit) + "]";
+}
+
+inline std::string Array::serialize(int indent, const std::string& unit) const {
+	if (content.empty()) return "[]";
+
+	std::string out = "[\n";
+	out += detail::serializeComment(headerComment, indent + 1, unit);
+	for (const auto& vp : content) {
+		out += detail::serializeComment(vp->getComment(), indent + 1, unit);
+		out += detail::pad(indent + 1, unit) + vp->serializeInline(indent + 1, unit) + "\n";
+	}
+
+	return out + detail::pad(indent, unit) + "]";
+}
+
+// ─── Value::order / File::order ───────────────────────────────────────────────
+
+namespace detail {
+
+inline void Value::order() {
+	content.match(
+		[](std::string&)  {},
+		[](Block& b)      { detail::orderMap(b.getContent()); },
+		[](Array& a)      { for (auto& v : a) v->order(); },
+		[](Table&)        {},
+		[](KeyedTable& t) { detail::orderMap(t.getContent()); }
+	);
+}
+
+inline void Value::order(const std::function<float(const std::string&)>& weightFn) {
+	content.match(
+		[](std::string&)   {},
+		[&](Block& b)      { detail::orderMapWeighted(b.getContent(), weightFn); },
+		[&](Array& a)      { for (auto& v : a) v->order(weightFn); },
+		[&](Table&)        {},
+		[&](KeyedTable&)   {}
+	);
 }
 
 } // namespace detail
 
-// iterator helpers (defined here so CodaValue is complete for libc++)
-inline auto CodaTable::begin() const { return content.begin(); }
-inline auto CodaTable::begin()       { return content.begin(); }
-inline auto CodaTable::end()   const { return content.end(); }
-inline auto CodaTable::end()         { return content.end(); }
-
-inline auto CodaBlock::begin() const { return content.begin(); }
-inline auto CodaBlock::begin()       { return content.begin(); }
-inline auto CodaBlock::end()   const { return content.end(); }
-inline auto CodaBlock::end()         { return content.end(); }
-
-inline auto CodaArray::begin() const { return content.begin(); }
-inline auto CodaArray::begin()       { return content.begin(); }
-inline auto CodaArray::end()   const { return content.end(); }
-inline auto CodaArray::end()         { return content.end(); }
-
-// ─── CodaValue method bodies ─────────────────────────────────────────────────
-
-inline void CodaValue::order() {
-	content.match(
-		[](std::string&) {},
-		[](CodaBlock& b) { detail::orderMap(b.content); },
-		[](CodaArray& a) {
-			for (auto& v : a.content)
-				v.order();
-		},
-		[](CodaTable& t) { detail::orderMap(t.content); }
-	);
+inline void File::order() {
+	detail::orderMap(root.getContent());
 }
 
-inline void CodaValue::order(const std::function<float(const std::string&)>& weightFn) {
-	content.match(
-		[](std::string&) {},
-		[&](CodaBlock& b) { detail::orderMapWeighted(b.content, weightFn); },
-		[&](CodaArray& a) {
-			for (auto& v : a.content)
-				v.order(weightFn);
-		},
-		[&](CodaTable& t) { detail::orderMapWeighted(t.content, weightFn); }
-	);
-}
-
-// ─── CodaBlock method bodies ──────────────────────────────────────────────────
-
-inline const CodaValue& CodaBlock::operator[](const std::string& key) const { return content.at(key); }
-inline CodaValue&       CodaBlock::operator[](const std::string& key)       { return content[key]; }
-
-inline std::string CodaBlock::serialize(int indent, const std::string& unit) const {
-	std::string out = "{\n";
-	out += detail::serializeMap(content, indent + 1, unit);
-	out += detail::pad(indent, unit) + "}";
-	return out;
-}
-
-// ─── CodaTable method bodies ──────────────────────────────────────────────────
-
-inline const CodaValue& CodaTable::operator[](const std::string& key) const { return content.at(key); }
-inline CodaValue&       CodaTable::operator[](const std::string& key)       { return content[key]; }
-
-inline std::string CodaTable::serializeRow(
-		const std::vector<std::string>& fields) const {
-	std::string out;
-	for (size_t i = 0; i < fields.size(); ++i) {
-		out += detail::serializeToken(content.at(fields[i]).asString());
-		if (i < fields.size() - 1) out += " ";
-	}
-	return out;
-}
-
-inline std::string CodaTable::serialize(int indent, const std::string& unit) const {
-	if (content.empty()) return "[]";
-
-	if (detail::isKeyedTable(*this)) {
-		auto fields = detail::fieldsOf(*this);
-		std::string out = "[\n";
-
-		out += detail::serializeComment(headerComment, indent + 1, unit);
-		out += detail::pad(indent + 1, unit) + "key";
-		for (const auto& f : fields) out += " " + detail::serializeToken(f);
-		out += "\n";
-
-		for (const auto& [rowKey, rowVal] : content) {
-			out += detail::serializeComment(rowVal.comment, indent + 1, unit);
-			out += detail::pad(indent + 1, unit) + detail::serializeToken(rowKey);
-			const CodaTable& row = rowVal.asTable();
-			for (const auto& f : fields)
-				out += " " + detail::serializeToken(row.content.at(f).asString());
-			out += "\n";
-		}
-
-		out += detail::pad(indent, unit) + "]";
-		return out;
-	}
-
-	std::string out;
-	for (auto it = content.begin(); it != content.end(); ++it) {
-		out += it->second.serializeInline(0, unit);
-		if (std::next(it) != content.end()) out += " ";
-	}
-	return out;
-}
-
-// ─── CodaArray method bodies ──────────────────────────────────────────────────
-
-inline const CodaValue& CodaArray::operator[](size_t i) const { return content.at(i); }
-inline CodaValue& CodaArray::operator[](size_t i) { return content.at(i); }
-
-inline std::string CodaArray::serialize(int indent, const std::string& unit) const {
-	if (content.empty()) return "[]";
-
-	std::string out = "[\n";
-
-	if (std::holds_alternative<CodaTable>(content[0].content.value)) {
-		const CodaTable& firstRow = content[0].asTable();
-		std::vector<std::string> fields;
-		for (const auto& [k, _] : firstRow.content) fields.push_back(k);
-
-		out += detail::serializeComment(headerComment, indent + 1, unit);
-		out += detail::pad(indent + 1, unit);
-		for (size_t i = 0; i < fields.size(); ++i)
-			out += detail::serializeToken(fields[i]) + (i < fields.size() - 1 ? " " : "");
-		out += "\n";
-
-		for (const auto& rowVal : content) {
-			out += detail::serializeComment(rowVal.comment, indent + 1, unit);
-			out += detail::pad(indent + 1, unit) + rowVal.asTable().serializeRow(fields) + "\n";
-		}
-	} else {
-		for (const auto& v : content) {
-			out += detail::serializeComment(v.comment, indent + 1, unit);
-			out += detail::pad(indent + 1, unit) + v.serializeInline(indent + 1, unit) + "\n";
-		}
-	}
-
-	out += detail::pad(indent, unit) + "]";
-	return out;
-}
-
-// ─── CodaFile method bodies ───────────────────────────────────────────────────
-
-inline void CodaFile::order() {
-	detail::orderMap(statements);
-}
-
-inline void CodaFile::order(const std::function<float(const std::string&)>& weightFn) {
-	detail::orderMapWeighted(statements, weightFn);
-}
-
-inline std::string CodaFile::serialize(const std::string& unit) const {
-	return detail::serializeMap(statements, 0, unit);
+inline void File::order(const std::function<float(const std::string&)>& weightFn) {
+	detail::orderMapWeighted(root.getContent(), weightFn);
 }
 
 } // namespace coda
@@ -909,8 +915,6 @@ class Lexer {
 		if (c == '\n') {
 			++line_; lineStart = pos;
 		} else if (c == '\r') {
-			// CR-only or CR+LF: treat as newline.
-			// Consume the following \n of a CRLF pair so it isn't counted twice.
 			if (pos < src.size() && src[pos] == '\n') ++pos;
 			++line_; lineStart = pos;
 		}
@@ -1029,9 +1033,6 @@ class Parser {
 
 	// ── token helpers ───────────────────────────────────────────────────
 
-	// If the current token is a lexer Error, translate its message into the
-	// appropriate typed ParseErrorCode and throw.  Called from advance() and
-	// from any parse path that inspects current.type before consuming it.
 	void checkNotError() {
 		if (current.type != TokenType::Error) return;
 		coda::ParseErrorCode code;
@@ -1159,21 +1160,35 @@ class Parser {
 		return c;
 	}
 
-	CodaValue withComment(CodaValue v) {
-		v.comment = takeComment();
-		return v;
-	}
+	// ── duplicate-key guard for Block ───────────────────────────────────
 
-	// ── duplicate-key guards ────────────────────────────────────────────
-
-	void insertChecked(OrderedMap<std::string, CodaValue>& map,
-	                   const std::string& key, CodaValue value,
-	                   const SourceLoc& loc)
+	// Inserts directly into the Block's underlying map so we can check for
+	// duplicates.  Block::operator[] auto-inserts without a duplicate check,
+	// and Block::insert() doesn't report whether the key already existed, so
+	// we access getContent() directly here.
+	void blockInsertChecked(coda::Block& block,
+	                        const std::string& key,
+	                        coda::detail::Value value,
+	                        const SourceLoc& loc)
 	{
-		auto [it, inserted] = map.insert(key, std::move(value));
-		if (!inserted)
+		auto& map = block.getContent();
+		if (map.count(key))
 			fatalError(coda::ParseErrorCode::DuplicateKey,
 			           "duplicate key '" + key + "'", loc);
+		map[key] = std::make_unique<coda::detail::Value>(std::move(value));
+	}
+
+	// Same guard for KeyedTable rows.
+	void keyedTableInsertChecked(coda::KeyedTable& table,
+	                             const std::string& key,
+	                             coda::Row row,
+	                             const SourceLoc& loc)
+	{
+		auto& map = table.getContent();
+		if (map.count(key))
+			fatalError(coda::ParseErrorCode::DuplicateKey,
+			           "duplicate key '" + key + "'", loc);
+		map[key] = std::move(row);
 	}
 
 	void checkUniqueFields(const std::vector<Token>& fieldToks) {
@@ -1201,16 +1216,14 @@ class Parser {
 
 	// ── value parsing ───────────────────────────────────────────────────
 
-	CodaValue parseValue() {
+	coda::detail::Value parseValue() {
 		std::string comment = takeComment();
 
-		// Surface lexer errors (unterminated string, bad escape) with their
-		// proper typed ParseErrorCode before doing any type dispatch.
 		checkNotError();
 
-		CodaValue v;
+		coda::detail::Value v;
 		if (current.type == TokenType::LBrace) {
-			v = parseBlock();
+			v = coda::detail::Value(parseBlock());
 		} else if (current.type == TokenType::LBracket) {
 			v = parseArray();
 		} else if (current.type == TokenType::Ident
@@ -1218,33 +1231,32 @@ class Parser {
 		        || current.type == TokenType::Key) {
 			// TokenType::Key ('key') is reserved as a table header marker, but
 			// when it appears in a value position it is just the string "key".
-			v = advance().value;
+			v = coda::detail::Value(advance().value);
 		} else {
-			// Newline, RBrace, RBracket, Eof, Key — no value present
 			fatalError(coda::ParseErrorCode::UnexpectedToken,
 			           "expected value (string, identifier, block, or array), got "
 			           + tokenToString.at(current.type),
 			           current.loc);
 		}
 
-		v.comment = std::move(comment);
+		v.setComment(std::move(comment));
 		return v;
 	}
 
-	CodaBlock parseBlock() {
+	coda::Block parseBlock() {
 		expect(TokenType::LBrace);
 		expectLineEnd();
 
-		CodaBlock block;
+		coda::Block block;
 		while (current.type != TokenType::RBrace && current.type != TokenType::Eof) {
 			if (current.type == TokenType::Key)
 				fatalError(coda::ParseErrorCode::KeyInBlock,
 				           "'key' header not allowed inside block — use [] for tables",
 				           current.loc);
 
-			Token keyTok  = expectKey();
-			CodaValue val = parseValue();
-			insertChecked(block.content, keyTok.value, std::move(val), keyTok.loc);
+			Token keyTok = expectKey();
+			coda::detail::Value val = parseValue();
+			blockInsertChecked(block, keyTok.value, std::move(val), keyTok.loc);
 			skipNewlines();
 		}
 
@@ -1254,20 +1266,21 @@ class Parser {
 
 	// ── array / table parsing ───────────────────────────────────────────
 
-	CodaValue parseArray() {
+	coda::detail::Value parseArray() {
 		expect(TokenType::LBracket);
 		expectLineEnd();
 
 		if (current.type == TokenType::Key) {
 			std::string headerComment = takeComment();
-				return parseKeyedTable(std::move(headerComment));
+			return parseKeyedTable(std::move(headerComment));
 		}
 		if (current.type == TokenType::LBrace || current.type == TokenType::LBracket)
 			return parseNestedList();
 		return parseAutoList();
 	}
 
-	CodaValue parseKeyedTable(std::string headerComment) {
+	// Produces a KeyedTable: rows are indexed by their first token ("key" column).
+	coda::detail::Value parseKeyedTable(std::string headerComment) {
 		advance(); // consume 'key'
 
 		std::vector<Token> fieldToks;
@@ -1276,105 +1289,115 @@ class Parser {
 		checkUniqueFields(fieldToks);
 		skipNewlines();
 
-		CodaTable table;
-		table.headerComment = std::move(headerComment);
+		coda::KeyedTable table;
+		table.setHeaderComment(std::move(headerComment));
+
 		while (current.type != TokenType::RBracket && current.type != TokenType::Eof) {
 			std::string comment = takeComment();
-			auto row = collectFlatRow();
+			auto rowTokens = collectFlatRow();
 			skipNewlines();
-			if (row.empty()) continue;
+			if (rowTokens.empty()) continue;
 
-			if (row.size() - 1 != fieldToks.size())
+			if (rowTokens.size() - 1 != fieldToks.size())
 				fatalError(
 					coda::ParseErrorCode::RaggedRow,
-					"row '" + row[0].value + "' has " + std::to_string(row.size() - 1) + " value(s), expected " + std::to_string(fieldToks.size()),
-					row[0].loc
+					"row '" + rowTokens[0].value + "' has "
+					+ std::to_string(rowTokens.size() - 1) + " value(s), expected "
+					+ std::to_string(fieldToks.size()),
+					rowTokens[0].loc
 				);
 
-			CodaTable entry;
-			for (size_t i = 0; i < fieldToks.size() && (i + 1) < row.size(); ++i)
-				entry.content[fieldToks[i].value] = CodaValue(row[i + 1].value);
+			coda::Row row;
+			row.setComment(std::move(comment));
+			for (size_t i = 0; i < fieldToks.size(); ++i)
+				row[fieldToks[i].value] = rowTokens[i + 1].value;
 
-			CodaValue entryVal{std::move(entry)};
-			entryVal.comment = std::move(comment);
-			insertChecked(table.content, row[0].value, std::move(entryVal), row[0].loc);
+			keyedTableInsertChecked(table, rowTokens[0].value, std::move(row), rowTokens[0].loc);
 		}
 
 		expect(TokenType::RBracket);
-		return CodaValue{std::move(table)};
+		return coda::detail::Value(std::move(table));
 	}
 
-	CodaValue parseNestedList() {
-		CodaArray array;
+	// Produces an Array of nested blocks/arrays.
+	coda::detail::Value parseNestedList() {
+		coda::Array array;
 		while (current.type != TokenType::RBracket && current.type != TokenType::Eof) {
 			skipNewlines();
 			if (current.type == TokenType::RBracket) break;
-			array.content.push_back(parseValue());
+			array.append(parseValue());
 			skipNewlines();
 		}
 
 		expect(TokenType::RBracket);
-		return CodaValue{std::move(array)};
+		return coda::detail::Value(std::move(array));
 	}
 
-	CodaValue parseAutoList() {
+	// Dispatches to either parsePlainTable (multi-column header row) or
+	// parseBareList (single-column / no header).
+	coda::detail::Value parseAutoList() {
 		std::string firstComment = takeComment();
 		auto firstRow = collectFlatRow();
 		skipNewlines();
 
-		if (firstRow.size() > 1) {
+		if (firstRow.size() > 1)
 			return parsePlainTable(std::move(firstRow), std::move(firstComment));
-		}
 		return parseBareList(std::move(firstRow), std::move(firstComment));
 	}
 
-	CodaValue parsePlainTable(std::vector<Token> header, std::string headerComment) {
+	// Produces a Table: the first row is the column-name header; subsequent
+	// rows become Row objects appended in order.
+	coda::detail::Value parsePlainTable(std::vector<Token> header, std::string headerComment) {
 		checkUniqueFields(header);
-		CodaArray array;
-		array.headerComment = std::move(headerComment);
+
+		coda::Table table;
+		table.setHeaderComment(std::move(headerComment));
+
 		while (current.type != TokenType::RBracket && current.type != TokenType::Eof) {
 			std::string comment = takeComment();
-			auto row = collectFlatRow();
+			auto rowTokens = collectFlatRow();
 			skipNewlines();
-			if (row.empty()) continue;
+			if (rowTokens.empty()) continue;
 
-			if (row.size() != header.size())
+			if (rowTokens.size() != header.size())
 				fatalError(
 					coda::ParseErrorCode::RaggedRow,
-					"row has " + std::to_string(row.size()) + " value(s), expected " + std::to_string(header.size()),
-					row[0].loc
+					"row has " + std::to_string(rowTokens.size())
+					+ " value(s), expected " + std::to_string(header.size()),
+					rowTokens[0].loc
 				);
 
-			CodaTable entry;
-			for (size_t i = 0; i < header.size() && i < row.size(); ++i)
-				entry.content[header[i].value] = CodaValue(row[i].value);
+			coda::Row row;
+			row.setComment(std::move(comment));
+			for (size_t i = 0; i < header.size(); ++i)
+				row[header[i].value] = rowTokens[i].value;
 
-			CodaValue entryVal{std::move(entry)};
-			entryVal.comment = std::move(comment);
-			array.content.push_back(std::move(entryVal));
+			table.append(std::move(row));
 		}
 
 		expect(TokenType::RBracket);
-		return CodaValue{std::move(array)};
+		return coda::detail::Value(std::move(table));
 	}
 
-	CodaValue parseBareList(std::vector<Token> firstRow, std::string firstComment) {
-		CodaArray array;
+	// Produces an Array of string Values (bare list, one token per line).
+	coda::detail::Value parseBareList(std::vector<Token> firstRow, std::string firstComment) {
+		coda::Array array;
+
 		if (!firstRow.empty()) {
-			CodaValue firstVal{firstRow[0].value};
-			firstVal.comment = std::move(firstComment);
-			array.content.push_back(std::move(firstVal));
+			coda::detail::Value firstVal(firstRow[0].value);
+			firstVal.setComment(std::move(firstComment));
+			array.append(std::move(firstVal));
 		}
 
 		while (current.type != TokenType::RBracket && current.type != TokenType::Eof) {
 			skipNewlines();
 			if (current.type == TokenType::RBracket) break;
-			array.content.push_back(parseValue());
+			array.append(parseValue());
 			skipNewlines();
 		}
 
 		expect(TokenType::RBracket);
-		return CodaValue{std::move(array)};
+		return coda::detail::Value(std::move(array));
 	}
 
 public:
@@ -1390,13 +1413,13 @@ public:
 
 	// ── public interface ────────────────────────────────────────────────
 
-	CodaFile parse() {
-		CodaFile file;
+	coda::File parse() {
+		coda::File file;
 		skipNewlines();
 		while (current.type != TokenType::Eof) {
-			Token keyTok  = expectKey();
-			CodaValue val = parseValue();
-			insertChecked(file.statements, keyTok.value, std::move(val), keyTok.loc);
+			Token keyTok            = expectKey();
+			coda::detail::Value val = parseValue();
+			blockInsertChecked(file.getRoot(), keyTok.value, std::move(val), keyTok.loc);
 			skipNewlines();
 		}
 		return file;
@@ -1417,7 +1440,7 @@ public:
 
 class Coda {
 	std::string indentUnit = "\t";
-	coda::CodaFile file;
+	coda::File file;
 
 public:
 	Coda() = default;
@@ -1471,6 +1494,6 @@ public:
 		return file.serialize(indentUnit);
 	}
 
-	const coda::CodaValue& operator[](const std::string& key) const { return file[key]; }
-	coda::CodaValue&       operator[](const std::string& key) { return file[key]; }
+	const coda::detail::Value& operator[](const std::string& key) const { return file[key]; }
+	coda::detail::Value&       operator[](const std::string& key) { return file[key]; }
 };

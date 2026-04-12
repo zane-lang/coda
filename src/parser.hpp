@@ -110,7 +110,6 @@ struct Token {
 	SourceLoc   loc;
 };
 
-
 // ─── Lexer ──────────────────────────────────────────────────────────────────
 
 class Lexer {
@@ -126,8 +125,6 @@ class Lexer {
 		if (c == '\n') {
 			++line_; lineStart = pos;
 		} else if (c == '\r') {
-			// CR-only or CR+LF: treat as newline.
-			// Consume the following \n of a CRLF pair so it isn't counted twice.
 			if (pos < src.size() && src[pos] == '\n') ++pos;
 			++line_; lineStart = pos;
 		}
@@ -246,9 +243,6 @@ class Parser {
 
 	// ── token helpers ───────────────────────────────────────────────────
 
-	// If the current token is a lexer Error, translate its message into the
-	// appropriate typed ParseErrorCode and throw.  Called from advance() and
-	// from any parse path that inspects current.type before consuming it.
 	void checkNotError() {
 		if (current.type != TokenType::Error) return;
 		coda::ParseErrorCode code;
@@ -376,21 +370,35 @@ class Parser {
 		return c;
 	}
 
-	CodaValue withComment(CodaValue v) {
-		v.comment = takeComment();
-		return v;
-	}
+	// ── duplicate-key guard for Block ───────────────────────────────────
 
-	// ── duplicate-key guards ────────────────────────────────────────────
-
-	void insertChecked(OrderedMap<std::string, CodaValue>& map,
-	                   const std::string& key, CodaValue value,
-	                   const SourceLoc& loc)
+	// Inserts directly into the Block's underlying map so we can check for
+	// duplicates.  Block::operator[] auto-inserts without a duplicate check,
+	// and Block::insert() doesn't report whether the key already existed, so
+	// we access getContent() directly here.
+	void blockInsertChecked(coda::Block& block,
+	                        const std::string& key,
+	                        coda::detail::Value value,
+	                        const SourceLoc& loc)
 	{
-		auto [it, inserted] = map.insert(key, std::move(value));
-		if (!inserted)
+		auto& map = block.getContent();
+		if (map.count(key))
 			fatalError(coda::ParseErrorCode::DuplicateKey,
 			           "duplicate key '" + key + "'", loc);
+		map[key] = std::make_unique<coda::detail::Value>(std::move(value));
+	}
+
+	// Same guard for KeyedTable rows.
+	void keyedTableInsertChecked(coda::KeyedTable& table,
+	                             const std::string& key,
+	                             coda::Row row,
+	                             const SourceLoc& loc)
+	{
+		auto& map = table.getContent();
+		if (map.count(key))
+			fatalError(coda::ParseErrorCode::DuplicateKey,
+			           "duplicate key '" + key + "'", loc);
+		map[key] = std::move(row);
 	}
 
 	void checkUniqueFields(const std::vector<Token>& fieldToks) {
@@ -418,16 +426,14 @@ class Parser {
 
 	// ── value parsing ───────────────────────────────────────────────────
 
-	CodaValue parseValue() {
+	coda::detail::Value parseValue() {
 		std::string comment = takeComment();
 
-		// Surface lexer errors (unterminated string, bad escape) with their
-		// proper typed ParseErrorCode before doing any type dispatch.
 		checkNotError();
 
-		CodaValue v;
+		coda::detail::Value v;
 		if (current.type == TokenType::LBrace) {
-			v = parseBlock();
+			v = coda::detail::Value(parseBlock());
 		} else if (current.type == TokenType::LBracket) {
 			v = parseArray();
 		} else if (current.type == TokenType::Ident
@@ -435,33 +441,32 @@ class Parser {
 		        || current.type == TokenType::Key) {
 			// TokenType::Key ('key') is reserved as a table header marker, but
 			// when it appears in a value position it is just the string "key".
-			v = advance().value;
+			v = coda::detail::Value(advance().value);
 		} else {
-			// Newline, RBrace, RBracket, Eof, Key — no value present
 			fatalError(coda::ParseErrorCode::UnexpectedToken,
 			           "expected value (string, identifier, block, or array), got "
 			           + tokenToString.at(current.type),
 			           current.loc);
 		}
 
-		v.comment = std::move(comment);
+		v.setComment(std::move(comment));
 		return v;
 	}
 
-	CodaBlock parseBlock() {
+	coda::Block parseBlock() {
 		expect(TokenType::LBrace);
 		expectLineEnd();
 
-		CodaBlock block;
+		coda::Block block;
 		while (current.type != TokenType::RBrace && current.type != TokenType::Eof) {
 			if (current.type == TokenType::Key)
 				fatalError(coda::ParseErrorCode::KeyInBlock,
 				           "'key' header not allowed inside block — use [] for tables",
 				           current.loc);
 
-			Token keyTok  = expectKey();
-			CodaValue val = parseValue();
-			insertChecked(block.content, keyTok.value, std::move(val), keyTok.loc);
+			Token keyTok = expectKey();
+			coda::detail::Value val = parseValue();
+			blockInsertChecked(block, keyTok.value, std::move(val), keyTok.loc);
 			skipNewlines();
 		}
 
@@ -471,20 +476,21 @@ class Parser {
 
 	// ── array / table parsing ───────────────────────────────────────────
 
-	CodaValue parseArray() {
+	coda::detail::Value parseArray() {
 		expect(TokenType::LBracket);
 		expectLineEnd();
 
 		if (current.type == TokenType::Key) {
 			std::string headerComment = takeComment();
-				return parseKeyedTable(std::move(headerComment));
+			return parseKeyedTable(std::move(headerComment));
 		}
 		if (current.type == TokenType::LBrace || current.type == TokenType::LBracket)
 			return parseNestedList();
 		return parseAutoList();
 	}
 
-	CodaValue parseKeyedTable(std::string headerComment) {
+	// Produces a KeyedTable: rows are indexed by their first token ("key" column).
+	coda::detail::Value parseKeyedTable(std::string headerComment) {
 		advance(); // consume 'key'
 
 		std::vector<Token> fieldToks;
@@ -493,105 +499,115 @@ class Parser {
 		checkUniqueFields(fieldToks);
 		skipNewlines();
 
-		CodaTable table;
-		table.headerComment = std::move(headerComment);
+		coda::KeyedTable table;
+		table.setHeaderComment(std::move(headerComment));
+
 		while (current.type != TokenType::RBracket && current.type != TokenType::Eof) {
 			std::string comment = takeComment();
-			auto row = collectFlatRow();
+			auto rowTokens = collectFlatRow();
 			skipNewlines();
-			if (row.empty()) continue;
+			if (rowTokens.empty()) continue;
 
-			if (row.size() - 1 != fieldToks.size())
+			if (rowTokens.size() - 1 != fieldToks.size())
 				fatalError(
 					coda::ParseErrorCode::RaggedRow,
-					"row '" + row[0].value + "' has " + std::to_string(row.size() - 1) + " value(s), expected " + std::to_string(fieldToks.size()),
-					row[0].loc
+					"row '" + rowTokens[0].value + "' has "
+					+ std::to_string(rowTokens.size() - 1) + " value(s), expected "
+					+ std::to_string(fieldToks.size()),
+					rowTokens[0].loc
 				);
 
-			CodaTable entry;
-			for (size_t i = 0; i < fieldToks.size() && (i + 1) < row.size(); ++i)
-				entry.content[fieldToks[i].value] = CodaValue(row[i + 1].value);
+			coda::Row row;
+			row.setComment(std::move(comment));
+			for (size_t i = 0; i < fieldToks.size(); ++i)
+				row[fieldToks[i].value] = rowTokens[i + 1].value;
 
-			CodaValue entryVal{std::move(entry)};
-			entryVal.comment = std::move(comment);
-			insertChecked(table.content, row[0].value, std::move(entryVal), row[0].loc);
+			keyedTableInsertChecked(table, rowTokens[0].value, std::move(row), rowTokens[0].loc);
 		}
 
 		expect(TokenType::RBracket);
-		return CodaValue{std::move(table)};
+		return coda::detail::Value(std::move(table));
 	}
 
-	CodaValue parseNestedList() {
-		CodaArray array;
+	// Produces an Array of nested blocks/arrays.
+	coda::detail::Value parseNestedList() {
+		coda::Array array;
 		while (current.type != TokenType::RBracket && current.type != TokenType::Eof) {
 			skipNewlines();
 			if (current.type == TokenType::RBracket) break;
-			array.content.push_back(parseValue());
+			array.append(parseValue());
 			skipNewlines();
 		}
 
 		expect(TokenType::RBracket);
-		return CodaValue{std::move(array)};
+		return coda::detail::Value(std::move(array));
 	}
 
-	CodaValue parseAutoList() {
+	// Dispatches to either parsePlainTable (multi-column header row) or
+	// parseBareList (single-column / no header).
+	coda::detail::Value parseAutoList() {
 		std::string firstComment = takeComment();
 		auto firstRow = collectFlatRow();
 		skipNewlines();
 
-		if (firstRow.size() > 1) {
+		if (firstRow.size() > 1)
 			return parsePlainTable(std::move(firstRow), std::move(firstComment));
-		}
 		return parseBareList(std::move(firstRow), std::move(firstComment));
 	}
 
-	CodaValue parsePlainTable(std::vector<Token> header, std::string headerComment) {
+	// Produces a Table: the first row is the column-name header; subsequent
+	// rows become Row objects appended in order.
+	coda::detail::Value parsePlainTable(std::vector<Token> header, std::string headerComment) {
 		checkUniqueFields(header);
-		CodaArray array;
-		array.headerComment = std::move(headerComment);
+
+		coda::Table table;
+		table.setHeaderComment(std::move(headerComment));
+
 		while (current.type != TokenType::RBracket && current.type != TokenType::Eof) {
 			std::string comment = takeComment();
-			auto row = collectFlatRow();
+			auto rowTokens = collectFlatRow();
 			skipNewlines();
-			if (row.empty()) continue;
+			if (rowTokens.empty()) continue;
 
-			if (row.size() != header.size())
+			if (rowTokens.size() != header.size())
 				fatalError(
 					coda::ParseErrorCode::RaggedRow,
-					"row has " + std::to_string(row.size()) + " value(s), expected " + std::to_string(header.size()),
-					row[0].loc
+					"row has " + std::to_string(rowTokens.size())
+					+ " value(s), expected " + std::to_string(header.size()),
+					rowTokens[0].loc
 				);
 
-			CodaTable entry;
-			for (size_t i = 0; i < header.size() && i < row.size(); ++i)
-				entry.content[header[i].value] = CodaValue(row[i].value);
+			coda::Row row;
+			row.setComment(std::move(comment));
+			for (size_t i = 0; i < header.size(); ++i)
+				row[header[i].value] = rowTokens[i].value;
 
-			CodaValue entryVal{std::move(entry)};
-			entryVal.comment = std::move(comment);
-			array.content.push_back(std::move(entryVal));
+			table.append(std::move(row));
 		}
 
 		expect(TokenType::RBracket);
-		return CodaValue{std::move(array)};
+		return coda::detail::Value(std::move(table));
 	}
 
-	CodaValue parseBareList(std::vector<Token> firstRow, std::string firstComment) {
-		CodaArray array;
+	// Produces an Array of string Values (bare list, one token per line).
+	coda::detail::Value parseBareList(std::vector<Token> firstRow, std::string firstComment) {
+		coda::Array array;
+
 		if (!firstRow.empty()) {
-			CodaValue firstVal{firstRow[0].value};
-			firstVal.comment = std::move(firstComment);
-			array.content.push_back(std::move(firstVal));
+			coda::detail::Value firstVal(firstRow[0].value);
+			firstVal.setComment(std::move(firstComment));
+			array.append(std::move(firstVal));
 		}
 
 		while (current.type != TokenType::RBracket && current.type != TokenType::Eof) {
 			skipNewlines();
 			if (current.type == TokenType::RBracket) break;
-			array.content.push_back(parseValue());
+			array.append(parseValue());
 			skipNewlines();
 		}
 
 		expect(TokenType::RBracket);
-		return CodaValue{std::move(array)};
+		return coda::detail::Value(std::move(array));
 	}
 
 public:
@@ -607,13 +623,13 @@ public:
 
 	// ── public interface ────────────────────────────────────────────────
 
-	CodaFile parse() {
-		CodaFile file;
+	coda::File parse() {
+		coda::File file;
 		skipNewlines();
 		while (current.type != TokenType::Eof) {
-			Token keyTok  = expectKey();
-			CodaValue val = parseValue();
-			insertChecked(file.statements, keyTok.value, std::move(val), keyTok.loc);
+			Token keyTok            = expectKey();
+			coda::detail::Value val = parseValue();
+			blockInsertChecked(file.getRoot(), keyTok.value, std::move(val), keyTok.loc);
 			skipNewlines();
 		}
 		return file;

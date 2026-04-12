@@ -8,7 +8,7 @@
 
 class Coda {
 	std::string indentUnit = "\t";
-	coda::CodaFile file;
+	coda::File file;
 
 public:
 	Coda() = default;
@@ -62,6 +62,6 @@ public:
 		return file.serialize(indentUnit);
 	}
 
-	const coda::CodaValue& operator[](const std::string& key) const { return file[key]; }
-	coda::CodaValue&       operator[](const std::string& key) { return file[key]; }
+	const coda::detail::Value& operator[](const std::string& key) const { return file[key]; }
+	coda::detail::Value&       operator[](const std::string& key) { return file[key]; }
 };
