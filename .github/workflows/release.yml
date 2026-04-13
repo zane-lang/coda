@@ -10,32 +10,10 @@ permissions:
   id-token: write   # PyPI trusted publishing (OIDC)
 
 jobs:
-  # ── Build one wheel per platform ──────────────────────────────────────────────
+  # ── Build all platform wheels in one go ───────────────────────────────────────
   build-wheels:
-    name: Build wheel (${{ matrix.zig_target }})
+    name: Build wheels
     runs-on: ubuntu-latest
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - zig_target: x86_64-linux-gnu
-            wheel_plat: manylinux_2_17_x86_64
-            lib_file: libcoda_ffi.so
-          - zig_target: x86_64-linux-musl
-            wheel_plat: musllinux_1_2_x86_64
-            lib_file: libcoda_ffi.so
-          - zig_target: aarch64-linux-gnu
-            wheel_plat: manylinux_2_17_aarch64
-            lib_file: libcoda_ffi.so
-          - zig_target: aarch64-linux-musl
-            wheel_plat: musllinux_1_2_aarch64
-            lib_file: libcoda_ffi.so
-          - zig_target: x86_64-windows-gnu
-            wheel_plat: win_amd64
-            lib_file: libcoda_ffi.dll
-          - zig_target: aarch64-windows-gnu
-            wheel_plat: win_arm64
-            lib_file: libcoda_ffi.dll
 
     steps:
       - uses: actions/checkout@v4
@@ -53,24 +31,45 @@ jobs:
       - name: Install build tools
         run: pip install build wheel
 
-      - name: Cross-compile FFI library
-        run: rake cross[${{ matrix.zig_target }}]
+      - name: Cross-compile all FFI libraries
+        run: rake cross-all
 
-      - name: Bundle library into package
-        run: cp dist/${{ matrix.zig_target }}/${{ matrix.lib_file }} bindings/python/
-
-      - name: Build wheel
-        run: python -m build --wheel --outdir wheelhouse/
-
-      - name: Retag wheel for target platform
+      - name: Build platform wheels
         run: |
-          cd wheelhouse
-          python -m wheel tags --platform-tag ${{ matrix.wheel_plat }} --remove *.whl
+          declare -A WHEEL_PLAT=(
+            [x86_64-linux-gnu]=manylinux_2_17_x86_64
+            [x86_64-linux-musl]=musllinux_1_2_x86_64
+            [aarch64-linux-gnu]=manylinux_2_17_aarch64
+            [aarch64-linux-musl]=musllinux_1_2_aarch64
+            [x86_64-windows-gnu]=win_amd64
+            [aarch64-windows-gnu]=win_arm64
+          )
+          declare -A LIB_FILE=(
+            [x86_64-linux-gnu]=libcoda_ffi.so
+            [x86_64-linux-musl]=libcoda_ffi.so
+            [aarch64-linux-gnu]=libcoda_ffi.so
+            [aarch64-linux-musl]=libcoda_ffi.so
+            [x86_64-windows-gnu]=libcoda_ffi.dll
+            [aarch64-windows-gnu]=libcoda_ffi.dll
+          )
+          mkdir -p wheelhouse
+          for target in "${!WHEEL_PLAT[@]}"; do
+            plat="${WHEEL_PLAT[$target]}"
+            lib="${LIB_FILE[$target]}"
+            cp "dist/${target}/${lib}" bindings/python/
+            tmpdir=$(mktemp -d)
+            python -m build --wheel --outdir "$tmpdir/"
+            pushd "$tmpdir"
+            python -m wheel tags --platform-tag "${plat}" --remove *.whl
+            mv *.whl "$GITHUB_WORKSPACE/wheelhouse/"
+            popd
+            rm -f "bindings/python/${lib}"
+          done
 
-      - name: Upload wheel artifact
+      - name: Upload wheel artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: wheel-${{ matrix.zig_target }}
+          name: wheels
           path: wheelhouse/*.whl
 
   # ── Publish to PyPI and create a GitHub Release ───────────────────────────────
@@ -86,9 +85,8 @@ jobs:
       - name: Download all wheels
         uses: actions/download-artifact@v4
         with:
-          pattern: wheel-*
+          name: wheels
           path: dist/
-          merge-multiple: true
 
       - name: Publish to PyPI
         uses: pypa/gh-action-pypi-publish@release/v1
