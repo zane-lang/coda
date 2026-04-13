@@ -558,7 +558,7 @@ class Row(Node):
 # ─── Block ────────────────────────────────────────────────────────────────
 
 # Type alias for anything that can be a value inside a block or array
-_AnyNode = Union['String', 'Block', 'Array', 'Table', 'KeyedTable']
+_AnyNode = Union[str, 'String', 'Block', 'Array', 'Table', 'KeyedTable']
 
 class Block(Node):
 	"""
@@ -567,8 +567,8 @@ class Block(Node):
     Mirrors: coda::Block
 
         block = Block()
-        block.insert("name", String("Alice"))
-        block["age"] = String("30")    # same as insert
+        block.insert("name", "Alice")
+        block["age"] = "30"    # same as insert
 	"""
 
 	def __init__(self, doc: 'Optional[Doc]' = None):
@@ -594,6 +594,8 @@ class Block(Node):
 
 	def insert(self, key: str, value: _AnyNode) -> _AnyNode:
 		"""Insert (or replace) a child node under key. Returns the value."""
+		if isinstance(value, str):
+			value = String(value)
 		doc = self._check()
 		_materialize(value, doc)
 		kb = _enc(key)
@@ -720,6 +722,8 @@ class Array(Node):
 
 	def append(self, value: _AnyNode) -> _AnyNode:
 		"""Append a child node. Returns the value."""
+		if isinstance(value, str):
+			value = String(value)
 		doc = self._check()
 		_materialize(value, doc)
 		if _lib.coda_array_push(doc._ptr, self._node_id, value._node_id) != _CODA_OK:
@@ -738,6 +742,8 @@ class Array(Node):
 		return _node_from_id(doc, child_id)
 
 	def __setitem__(self, idx: int, value: _AnyNode):
+		if isinstance(value, str):
+			value = String(value)
 		doc = self._check()
 		n = _lib.coda_array_len(doc._ptr, self._node_id)
 		i = idx if idx >= 0 else idx + n

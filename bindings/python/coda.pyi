@@ -57,7 +57,7 @@ class Row(Node):
 
 # ─── Block ────────────────────────────────────────────────────────────────
 
-_AnyNode = Union[String, "Block", "Array", "Table", "KeyedTable"]
+_AnyNode = Union[str, String, "Block", "Array", "Table", "KeyedTable"]
 
 class Block(Node):
 	def __init__(self, doc: "Optional[Doc]" = None) -> None: ...
