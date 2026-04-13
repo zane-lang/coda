@@ -6,24 +6,26 @@
 #include <string>
 #include <functional>
 
-class Coda {
+namespace coda {
+
+class Doc {
 	std::string indentUnit = "\t";
-	coda::Block rootBlock;
+	Block rootBlock;
 
 public:
-	Coda() = default;
-	Coda(const std::string& path) {
+	Doc() = default;
+	Doc(const std::string& path) {
 		std::ifstream f(path, std::ios::binary);
 		if (!f) throw std::runtime_error("could not open: " + path);
 		std::ostringstream ss;
 		ss << f.rdbuf();
-		rootBlock = coda::detail::Parser(ss.str(), path).parse();
+		rootBlock = detail::Parser(ss.str(), path).parse();
 	}
 
-	static Coda parse(std::string content, std::string filename = "") {
-		Coda coda;
-		coda.rootBlock = coda::detail::Parser(content, filename).parse();
-		return coda;
+	static Doc parse(std::string content, std::string filename = "") {
+		Doc doc;
+		doc.rootBlock = detail::Parser(content, filename).parse();
+		return doc;
 	}
 
 	void useTabs()              { indentUnit = "\t"; }
@@ -38,7 +40,7 @@ public:
 	/// Array element order is preserved; their children are still sorted.
 	///
 	/// Example:
-	///   coda.order([](const std::string& field) -> float {
+	///   doc.order([](const std::string& field) -> float {
 	///       if (field == "name") return 100;
 	///       if (field == "type") return 50;
 	///       return 0; // everything else alphabetical at the bottom
@@ -57,11 +59,13 @@ public:
 		indentUnit = unit;
 		save(path);
 	}
-	
+
 	std::string serialize() const {
 		return rootBlock.serialize(indentUnit);
 	}
 
-	const coda::Block& root() const { return rootBlock; }
-	coda::Block&       root()       { return rootBlock; }
+	const Block& root() const { return rootBlock; }
+	Block&       root()       { return rootBlock; }
 };
+
+} // namespace coda

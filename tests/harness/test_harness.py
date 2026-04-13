@@ -12,15 +12,15 @@ import sys
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..")))
 
 from bindings.python.coda import (
-	CodaDoc,
-	CodaBlock,
-	CodaArray,
-	CodaTable,
-	CodaKeyedTable,
-	CodaString,
-	CodaNode,
-	CodaException,
-	CodaParseError,
+	Doc,
+	Block,
+	Array,
+	Table,
+	KeyedTable,
+	String,
+	Node,
+	Error,
+	ParseError,
 )
 
 from typing import Optional
@@ -36,9 +36,9 @@ _ansi_reset  = "\033[0m"
 # ─── Test runner ──────────────────────────────────────────────────────────────
 
 class CodaTestRunner:
-	"""Executes catalog-driven tests against a CodaDoc."""
+	"""Executes catalog-driven tests against a Doc."""
 
-	def __init__(self, doc: CodaDoc):
+	def __init__(self, doc: Doc):
 		self.doc  = doc
 		self.root = doc.root()
 
@@ -46,7 +46,7 @@ class CodaTestRunner:
 	def _int(self,  v: str) -> int:    return int(v)
 	def _float(self, v: str) -> float: return float(v)
 
-	def _strings(self, node: CodaNode) -> list[str]:
+	def _strings(self, node: Node) -> list[str]:
 		return [str(v) for v in node.as_array()]
 
 	def _order_contains(self, text: str, order: list[str]) -> bool:
@@ -58,9 +58,9 @@ class CodaTestRunner:
 			pos = found + len(needle)
 		return True
 
-	def _path_walk(self, start_key: str, keys: list[str]) -> CodaNode:
+	def _path_walk(self, start_key: str, keys: list[str]) -> Node:
 		"""Walk a path of keys, returning the final node."""
-		node: CodaNode = self.root[start_key]
+		node: Node = self.root[start_key]
 		for key in keys:
 			node = node.as_block()[key]
 		return node
@@ -78,20 +78,20 @@ class CodaTestRunner:
 		try:
 			fn()
 			return False
-		except (TypeError, IndexError, KeyError, CodaException):
+		except (TypeError, IndexError, KeyError, Error):
 			return True
 
-	def _get_header_comment(self, node: CodaNode) -> Optional[str]:
+	def _get_header_comment(self, node: Node) -> Optional[str]:
 		"""Get header_comment if node supports it."""
-		if isinstance(node, CodaArray):
+		if isinstance(node, Array):
 			return node.header_comment
-		if isinstance(node, CodaTable):
+		if isinstance(node, Table):
 			return node.header_comment
-		if isinstance(node, CodaKeyedTable):
+		if isinstance(node, KeyedTable):
 			return node.header_comment
 		return None
 
-	def run_check(self, check: CodaBlock) -> bool:
+	def run_check(self, check: Block) -> bool:
 		op = str(check["op"])
 
 		if op == "get_string":
@@ -153,7 +153,7 @@ class CodaTestRunner:
 			block = self.root[str(check["table"])].as_block()
 			try:
 				node = block.get_or_insert(str(check["row"]))
-				got  = isinstance(node, CodaString) and str(node) == ""
+				got  = isinstance(node, String) and str(node) == ""
 			except Exception:
 				got = False
 			return got == self._bool(str(check["eq_bool"]))
@@ -191,7 +191,7 @@ class CodaTestRunner:
 		if op == "set_string":
 			key = str(check["field"])
 			val = str(check["value"])
-			self.root.insert(key, CodaString(self.doc, val))
+			self.root.insert(key, String(self.doc, val))
 			return str(self.root[key]) == val
 
 		if op == "set_string_path":
@@ -200,7 +200,7 @@ class CodaTestRunner:
 			for key in path[1:-1]:
 				block = block[key].as_block()
 			val = str(check["value"])
-			block.insert(path[-1], CodaString(self.doc, val))
+			block.insert(path[-1], String(self.doc, val))
 			return str(block[path[-1]]) == val
 
 		if op == "string_index_on_scalar_throws":
@@ -213,17 +213,17 @@ class CodaTestRunner:
 
 		if op == "as_array_on_scalar_throws":
 			node = self.root[str(check["field"])]
-			got  = not isinstance(node, CodaArray)
+			got  = not isinstance(node, Array)
 			return got == self._bool(str(check["eq_bool"]))
 
 		if op == "as_block_on_array_throws":
 			node = self.root[str(check["field"])]
-			got  = not isinstance(node, CodaBlock)
+			got  = not isinstance(node, Block)
 			return got == self._bool(str(check["eq_bool"]))
 
 		if op == "as_table_on_block_throws":
 			node = self.root[str(check["field"])]
-			got  = not isinstance(node, (CodaTable, CodaKeyedTable))
+			got  = not isinstance(node, (Table, KeyedTable))
 			return got == self._bool(str(check["eq_bool"]))
 
 		if op == "const_missing_key_throws":
@@ -252,15 +252,15 @@ class CodaTestRunner:
 
 
 def run_catalog_tests(catalog_path: str) -> None:
-	def test_parse_fail_msg(src: str, test: CodaBlock) -> bool:
+	def test_parse_fail_msg(src: str, test: Block) -> bool:
 		try:
-			CodaDoc.parse(src)
-		except CodaParseError as e:
+			Doc.parse(src)
+		except ParseError as e:
 			needles = [str(v) for v in test["needles"].as_array()]
 			return any(n in str(e) for n in needles) or not needles
 		return False
 
-	def test_parse_fail_code(src: str, test: CodaBlock) -> bool:
+	def test_parse_fail_code(src: str, test: Block) -> bool:
 		code_map = {
 			"UnexpectedToken":    0, "UnexpectedEOF":      1,
 			"DuplicateKey":       2, "DuplicateField":     3,
@@ -269,20 +269,20 @@ def run_catalog_tests(catalog_path: str) -> None:
 			"ContentAfterBrace":  8, "KeyInBlock":         9,
 		}
 		try:
-			CodaDoc.parse(src)
-		except CodaParseError as e:
+			Doc.parse(src)
+		except ParseError as e:
 			return int(e.code) == code_map.get(str(test["code"]), -1)
 		return False
 
-	def test_roundtrip(src: str, test: CodaBlock) -> bool:
-		with CodaDoc.parse(src) as d1:
+	def test_roundtrip(src: str, test: Block) -> bool:
+		with Doc.parse(src) as d1:
 			s1 = d1.serialize()
-		with CodaDoc.parse(s1) as d2:
+		with Doc.parse(s1) as d2:
 			s2 = d2.serialize()
 		return s1 == s2
 
-	def test_check_all(src: str, test: CodaBlock) -> bool:
-		with CodaDoc.parse(src) as doc:
+	def test_check_all(src: str, test: Block) -> bool:
+		with Doc.parse(src) as doc:
 			runner = CodaTestRunner(doc)
 			try:
 				checks = list(doc.root()["checks"].as_array())
@@ -296,7 +296,7 @@ def run_catalog_tests(catalog_path: str) -> None:
 	with open(catalog_path, "r", encoding="utf-8") as f:
 		catalog_text = f.read()
 
-	with CodaDoc.parse(catalog_text) as catalog_doc:
+	with Doc.parse(catalog_text) as catalog_doc:
 		catalog = catalog_doc.root()
 		tests   = list(catalog["tests"].as_array())
 		passed  = 0

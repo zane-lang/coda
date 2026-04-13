@@ -12,8 +12,8 @@ The Python wrapper uses `ctypes` to talk to `libcoda_ffi` and exposes a class hi
 2. Import the module:
    ```python
    from bindings.python.coda import (
-       CodaDoc, CodaBlock, CodaString, CodaArray,
-       CodaTable, CodaKeyedTable, CodaRow,
+       Doc, Block, String, Array,
+       Table, KeyedTable, Row,
    )
    ```
 
@@ -23,30 +23,30 @@ The Python wrapper uses `ctypes` to talk to `libcoda_ffi` and exposes a class hi
 
 ```python
 # From a string (use as a context manager to auto-free)
-with CodaDoc.parse(text) as doc:
+with Doc.parse(text) as doc:
     ...
 
 # From a string with an optional filename hint for error messages
-with CodaDoc.parse(text, filename="project.coda") as doc:
+with Doc.parse(text, filename="project.coda") as doc:
     ...
 
 # From a file path
-with CodaDoc.parse_file("project.coda") as doc:
+with Doc.parse_file("project.coda") as doc:
     ...
 
 # Create an empty document
-doc = CodaDoc.new()
+doc = Doc.new()
 ```
 
 ---
 
 ## Reading values
 
-`doc.root()` returns a `CodaBlock` — the top-level map. From there, index with `[]` to reach child nodes and cast them with `as_*()`.
+`doc.root()` returns a `Block` — the top-level map. From there, index with `[]` to reach child nodes and cast them with `as_*()`.
 
 ```python
-with CodaDoc.parse(text) as doc:
-    root = doc.root()                          # CodaBlock
+with Doc.parse(text) as doc:
+    root = doc.root()                          # Block
 
     # Scalar string
     name  = root["name"].as_string().value     # "myproject"
@@ -70,7 +70,7 @@ with CodaDoc.parse(text) as doc:
     # Keyed table (rows by key)
     deps = root["deps"].as_keyed_table()
     print(deps.header_comment)                 # "optional deps"
-    plot_row = deps["plot"]                    # CodaRow
+    plot_row = deps["plot"]                    # Row
     print(plot_row["link"])                    # "github.com/zane-lang/plot"
 ```
 
@@ -79,15 +79,15 @@ with CodaDoc.parse(text) as doc:
 ## Creating and modifying
 
 ```python
-doc  = CodaDoc.new()
+doc  = Doc.new()
 root = doc.root()
 
 # Insert a scalar
-root["name"] = CodaString(doc, "myproject")
+root["name"] = String(doc, "myproject")
 
 # Insert a block
-compiler = CodaBlock(doc)
-compiler["debug"] = CodaString(doc, "false")
+compiler = Block(doc)
+compiler["debug"] = String(doc, "false")
 root["compiler"] = compiler
 
 # Modify an existing scalar
@@ -121,23 +121,23 @@ doc.save("out.coda", indent="  ")
 
 ## Class reference
 
-### `CodaDoc`
+### `Doc`
 
 | Method / attribute | Description |
 |---|---|
-| `CodaDoc.parse(text, filename?)` | Parse UTF-8 text; returns `CodaDoc` |
-| `CodaDoc.parse_file(path)` | Parse from a file |
-| `CodaDoc.new()` | Create an empty document |
-| `root()` | Return the root `CodaBlock` |
+| `Doc.parse(text, filename?)` | Parse UTF-8 text; returns `Doc` |
+| `Doc.parse_file(path)` | Parse from a file |
+| `Doc.new()` | Create an empty document |
+| `root()` | Return the root `Block` |
 | `serialize(indent?)` | Return Coda text as `str` |
 | `save(path, indent?)` | Write to disk |
 | `order()` | Sort all keys alphabetically |
 | `order_weighted(weights)` | Sort by `[(key, float), …]` weight list |
 | `free()` | Explicitly free the document (auto-called by context manager) |
 
-### `CodaBlock`
+### `Block`
 
-Ordered map of `str → CodaNode`.
+Ordered map of `str → Node`.
 
 | Operation | Description |
 |---|---|
@@ -152,19 +152,19 @@ Ordered map of `str → CodaNode`.
 | `node.order_weighted(weights)` | Sort by weight |
 | `node.comment` | Pre-node comment string (get/set) |
 
-### `CodaString`
+### `String`
 
 Leaf string value.
 
 | Operation | Description |
 |---|---|
-| `CodaString(doc, "value")` | Create a new string node |
+| `String(doc, "value")` | Create a new string node |
 | `node.value` | Get/set the string value |
 | `str(node)` | Equivalent to `node.value` |
 
-### `CodaArray`
+### `Array`
 
-Ordered list of `CodaNode`.
+Ordered list of `Node`.
 
 | Operation | Description |
 |---|---|
@@ -176,29 +176,29 @@ Ordered list of `CodaNode`.
 | `len(node)` | Length |
 | `node.header_comment` | Comment before the first element (get/set) |
 
-### `CodaTable`
+### `Table`
 
 Plain (anonymous-row) table.
 
 | Operation | Description |
 |---|---|
-| `node[i]` | Get row by index (returns `CodaRow`) |
+| `node[i]` | Get row by index (returns `Row`) |
 | `node[i] = row` | Replace row |
 | `del node[i]` | Remove row |
 | `for row in node` | Iterate rows |
 | `len(node)` | Row count |
 | `node.columns()` | List of column name strings |
 | `node.append_col(name)` | Add a column |
-| `node.append(row)` | Append a `CodaRow` |
+| `node.append(row)` | Append a `Row` |
 | `node.header_comment` | Comment before the header row (get/set) |
 
-### `CodaKeyedTable`
+### `KeyedTable`
 
 Keyed table — rows indexed by their key string.
 
 | Operation | Description |
 |---|---|
-| `node["key"]` | Get row by key (returns `CodaRow`) |
+| `node["key"]` | Get row by key (returns `Row`) |
 | `node["key"] = row` | Insert or replace row |
 | `del node["key"]` | Remove row |
 | `"key" in node` | Membership test |
@@ -210,7 +210,7 @@ Keyed table — rows indexed by their key string.
 | `node.order()` | Sort rows alphabetically by key |
 | `node.order_weighted(weights)` | Sort rows by weight |
 
-### `CodaRow`
+### `Row`
 
 A single table row — flat map of column name → string value.
 
@@ -229,7 +229,7 @@ A single table row — flat map of column name → string value.
 
 ## Comments
 
-Every node class exposes a `.comment` property for the `#` lines that appear directly above it in the source file. `CodaArray`, `CodaTable`, and `CodaKeyedTable` additionally expose `.header_comment` for the comment that appears before the header row / first element.
+Every node class exposes a `.comment` property for the `#` lines that appear directly above it in the source file. `Array`, `Table`, and `KeyedTable` additionally expose `.header_comment` for the comment that appears before the header row / first element.
 
 ```python
 deps = root["deps"].as_keyed_table()
