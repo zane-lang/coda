@@ -143,6 +143,7 @@ Ordered map of `str → Node`.
 |---|---|
 | `node["key"]` | Look up child node |
 | `node["key"] = value` | Insert or replace a child |
+| `node.insert("key", value)` | Insert or replace a child; returns `node` for chaining |
 | `del node["key"]` | Remove a child |
 | `"key" in node` | Membership test |
 | `for key, child in node` | Iterate in insertion order |
