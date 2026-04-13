@@ -21,8 +21,5 @@ jobs:
         with:
           version: "0.14.0"
 
-      - name: Run C++ tests
-        run: rake test-cpp
-
-      - name: Run C FFI tests
-        run: rake test-c-ffi
+      - name: Run tests
+        run: rake test
