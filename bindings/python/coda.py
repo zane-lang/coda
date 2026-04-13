@@ -8,7 +8,7 @@ One class per AST node type, mirroring the C++ architecture:
     Table       ← [ col1 col2 \n ... ] anonymous-row plain table
     KeyedTable  ← [ key col1 col2 \n rowkey val1 val2 ] keyed table
     Row         ← one row inside a Table or KeyedTable
-    String      ← a leaf string value
+    _String     ← a leaf string value (internal)
 
 Usage mirrors C++:
 
@@ -260,7 +260,7 @@ def _node_from_id(doc: 'Doc', node_id: int) -> 'Node':
 	"""Wrap a raw node_id in the correct Python class."""
 	kind = _lib.coda_node_kind(doc._ptr, node_id)
 	if kind == _NODE_STRING:
-		return String._wrap(doc, node_id)
+		return _String._wrap(doc, node_id)
 	if kind == _NODE_BLOCK:
 		return Block._wrap(doc, node_id)
 	if kind == _NODE_ARRAY:
@@ -346,10 +346,10 @@ class Node:
 		out = res.to_python_and_free()
 		return out
 
-	def as_string(self) -> 'String':
-		"""Narrow this node to String, raising TypeError if it is not one."""
-		if not isinstance(self, String):
-			raise TypeError(f"Expected String, got {type(self).__name__}")
+	def as_string(self) -> '_String':
+		"""Narrow this node to _String, raising TypeError if it is not one."""
+		if not isinstance(self, _String):
+			raise TypeError(f"Expected _String, got {type(self).__name__}")
 		return self
 
 	def as_block(self) -> 'Block':
@@ -379,33 +379,21 @@ class Node:
 
 # ─── String ───────────────────────────────────────────────────────────────
 
-class String(Node):
+class _String(Node):
 	"""
-	A leaf string value.
+	A leaf string value (internal implementation detail).
 
     Mirrors: std::string inside coda::detail::Value.
 
-        s = String("hello")       # doc-less; materialized on insert
-        s = String(doc, "hello")  # legacy: allocate immediately
+        s = _String("hello")  # pending until materialized into a doc
         s.value = "world"
         str(s)   # → "world"
 	"""
 
-	def __init__(self, value_or_doc: 'Union[str, Doc]' = "", value: str = ""):
-		if isinstance(value_or_doc, Doc):
-			# Legacy API: String(doc, "value")
-			doc = value_or_doc
-			doc._check()
-			b   = _enc(value)
-			nid = _lib.coda_new_string(doc._ptr, b, len(b))
-			if nid == 0:
-				raise Error("Failed to create string node")
-			super().__init__(doc, nid)
-		else:
-			# New API: String("value") — pending until materialized
-			self._doc           = None
-			self._node_id       = None
-			self._pending_value = value_or_doc if value_or_doc is not None else ""
+	def __init__(self, value: str = ""):
+		self._doc           = None
+		self._node_id       = None
+		self._pending_value = value if value is not None else ""
 
 	def _materialize(self, doc: 'Doc') -> None:
 		"""Allocate this node in *doc*. Called automatically on insert/append."""
@@ -435,12 +423,12 @@ class String(Node):
 	def __eq__(self, other) -> bool:
 		if isinstance(other, str):
 			return self.value == other
-		if isinstance(other, String):
+		if isinstance(other, _String):
 			return self.value == other.value
 		return NotImplemented
 
 	def __repr__(self) -> str:
-		return f"String({self.value!r})"
+		return f"_String({self.value!r})"
 
 
 # ─── Row ──────────────────────────────────────────────────────────────────
@@ -452,25 +440,15 @@ class Row(Node):
 
     Mirrors: coda::Row
 
-        row = Row()           # doc-less; materialized on insert
-        row = Row(doc)        # legacy
+        row = Row()
         row["col1"] = "value"
         row["col2"] = "other"
 	"""
 
-	def __init__(self, doc: 'Optional[Doc]' = None):
-		if doc is not None:
-			# Legacy API: Row(doc)
-			doc._check()
-			nid = _lib.coda_new_row(doc._ptr)
-			if nid == 0:
-				raise Error("Failed to create row node")
-			super().__init__(doc, nid)
-		else:
-			# New API: Row() — pending
-			self._doc            = None
-			self._node_id        = None
-			self._pending_fields = {}  # ordered dict of field → value
+	def __init__(self):
+		self._doc            = None
+		self._node_id        = None
+		self._pending_fields = {}  # ordered dict of field → value
 
 	def _materialize(self, doc: 'Doc') -> None:
 		doc._check()
@@ -558,7 +536,7 @@ class Row(Node):
 # ─── Block ────────────────────────────────────────────────────────────────
 
 # Type alias for anything that can be a value inside a block or array
-_AnyNode = Union['String', 'Block', 'Array', 'Table', 'KeyedTable']
+_AnyNode = Union[str, '_String', 'Block', 'Array', 'Table', 'KeyedTable']
 
 class Block(Node):
 	"""
@@ -567,22 +545,13 @@ class Block(Node):
     Mirrors: coda::Block
 
         block = Block()
-        block.insert("name", String("Alice"))
-        block["age"] = String("30")    # same as insert
+        block.insert("name", "Alice")
+        block["age"] = "30"    # same as insert
 	"""
 
-	def __init__(self, doc: 'Optional[Doc]' = None):
-		if doc is not None:
-			# Legacy API: Block(doc)
-			doc._check()
-			nid = _lib.coda_new_block(doc._ptr)
-			if nid == 0:
-				raise Error("Failed to create block node")
-			super().__init__(doc, nid)
-		else:
-			# New API: Block() — pending
-			self._doc     = None
-			self._node_id = 0
+	def __init__(self):
+		self._doc     = None
+		self._node_id = 0
 
 	def _materialize(self, doc: 'Doc') -> None:
 		doc._check()
@@ -594,6 +563,8 @@ class Block(Node):
 
 	def insert(self, key: str, value: _AnyNode) -> _AnyNode:
 		"""Insert (or replace) a child node under key. Returns the value."""
+		if isinstance(value, str):
+			value = _String(value)
 		doc = self._check()
 		_materialize(value, doc)
 		kb = _enc(key)
@@ -678,22 +649,13 @@ class Array(Node):
     Mirrors: coda::Array
 
         arr = Array()
-        arr.append(String("item"))
+        arr.append("item")
         arr.append(Block())
 	"""
 
-	def __init__(self, doc: 'Optional[Doc]' = None):
-		if doc is not None:
-			# Legacy API: Array(doc)
-			doc._check()
-			nid = _lib.coda_new_array(doc._ptr)
-			if nid == 0:
-				raise Error("Failed to create array node")
-			super().__init__(doc, nid)
-		else:
-			# New API: Array() — pending
-			self._doc     = None
-			self._node_id = 0
+	def __init__(self):
+		self._doc     = None
+		self._node_id = 0
 
 	def _materialize(self, doc: 'Doc') -> None:
 		doc._check()
@@ -720,6 +682,8 @@ class Array(Node):
 
 	def append(self, value: _AnyNode) -> _AnyNode:
 		"""Append a child node. Returns the value."""
+		if isinstance(value, str):
+			value = _String(value)
 		doc = self._check()
 		_materialize(value, doc)
 		if _lib.coda_array_push(doc._ptr, self._node_id, value._node_id) != _CODA_OK:
@@ -738,6 +702,8 @@ class Array(Node):
 		return _node_from_id(doc, child_id)
 
 	def __setitem__(self, idx: int, value: _AnyNode):
+		if isinstance(value, str):
+			value = _String(value)
 		doc = self._check()
 		n = _lib.coda_array_len(doc._ptr, self._node_id)
 		i = idx if idx >= 0 else idx + n
@@ -788,24 +754,10 @@ class Table(Node):
         t[0]["col1"]            # index access
 	"""
 
-	def __init__(self, doc_or_columns: 'Union[Doc, list[str], None]' = None,
-	             columns: 'list[str]' = []):
-		if isinstance(doc_or_columns, Doc):
-			# Legacy API: Table(doc, columns)
-			doc = doc_or_columns
-			cols = columns
-			doc._check()
-			nid = _lib.coda_new_table(doc._ptr)
-			if nid == 0:
-				raise Error("Failed to create table node")
-			super().__init__(doc, nid)
-			for col in cols:
-				self.append_col(col)
-		else:
-			# New API: Table(["col1", "col2"]) or Table()
-			self._doc              = None
-			self._node_id          = None
-			self._pending_columns  = doc_or_columns if isinstance(doc_or_columns, list) else []
+	def __init__(self, columns: 'list[str]' = []):
+		self._doc              = None
+		self._node_id          = None
+		self._pending_columns  = columns
 
 	def _materialize(self, doc: 'Doc') -> None:
 		doc._check()
@@ -913,24 +865,10 @@ class KeyedTable(Node):
         kt["mykey"]["col1"]     # key + field access
 	"""
 
-	def __init__(self, doc_or_columns: 'Union[Doc, list[str], None]' = None,
-	             columns: 'list[str]' = []):
-		if isinstance(doc_or_columns, Doc):
-			# Legacy API: KeyedTable(doc, columns)
-			doc = doc_or_columns
-			cols = columns
-			doc._check()
-			nid = _lib.coda_new_keyed_table(doc._ptr)
-			if nid == 0:
-				raise Error("Failed to create keyed table node")
-			super().__init__(doc, nid)
-			for col in cols:
-				self.append_col(col)
-		else:
-			# New API: KeyedTable(["col1", "col2"]) or KeyedTable()
-			self._doc             = None
-			self._node_id         = None
-			self._pending_columns = doc_or_columns if isinstance(doc_or_columns, list) else []
+	def __init__(self, columns: 'list[str]' = []):
+		self._doc             = None
+		self._node_id         = None
+		self._pending_columns = columns
 
 	def _materialize(self, doc: 'Doc') -> None:
 		doc._check()
@@ -1048,7 +986,7 @@ class Doc:
 
         doc = Doc.new()
         root = doc.root()
-        root.insert("key", String("value"))
+        root.insert("key", "value")
         doc.save("out.coda")
         doc.free()
 	"""
@@ -1183,7 +1121,6 @@ __all__ = [
 	"Table",
 	"KeyedTable",
 	"Row",
-	"String",
 	"Error",
 	"ParseError",
 	"get_abi_version",

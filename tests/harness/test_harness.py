@@ -17,7 +17,7 @@ from bindings.python.coda import (
 	Array,
 	Table,
 	KeyedTable,
-	String,
+	_String,
 	Node,
 	Error,
 	ParseError,
@@ -153,7 +153,7 @@ class CodaTestRunner:
 			block = self.root[str(check["table"])].as_block()
 			try:
 				node = block.get_or_insert(str(check["row"]))
-				got  = isinstance(node, String) and str(node) == ""
+				got  = isinstance(node, _String) and str(node) == ""
 			except Exception:
 				got = False
 			return got == self._bool(str(check["eq_bool"]))
@@ -191,7 +191,7 @@ class CodaTestRunner:
 		if op == "set_string":
 			key = str(check["field"])
 			val = str(check["value"])
-			self.root.insert(key, String(self.doc, val))
+			self.root.insert(key, val)
 			return str(self.root[key]) == val
 
 		if op == "set_string_path":
@@ -200,7 +200,7 @@ class CodaTestRunner:
 			for key in path[1:-1]:
 				block = block[key].as_block()
 			val = str(check["value"])
-			block.insert(path[-1], String(self.doc, val))
+			block.insert(path[-1], val)
 			return str(block[path[-1]]) == val
 
 		if op == "string_index_on_scalar_throws":
