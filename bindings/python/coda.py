@@ -8,7 +8,7 @@ One class per AST node type, mirroring the C++ architecture:
     Table       ← [ col1 col2 \n ... ] anonymous-row plain table
     KeyedTable  ← [ key col1 col2 \n rowkey val1 val2 ] keyed table
     Row         ← one row inside a Table or KeyedTable
-    String      ← a leaf string value
+    _String     ← a leaf string value (internal)
 
 Usage mirrors C++:
 
@@ -260,7 +260,7 @@ def _node_from_id(doc: 'Doc', node_id: int) -> 'Node':
 	"""Wrap a raw node_id in the correct Python class."""
 	kind = _lib.coda_node_kind(doc._ptr, node_id)
 	if kind == _NODE_STRING:
-		return String._wrap(doc, node_id)
+		return _String._wrap(doc, node_id)
 	if kind == _NODE_BLOCK:
 		return Block._wrap(doc, node_id)
 	if kind == _NODE_ARRAY:
@@ -346,10 +346,10 @@ class Node:
 		out = res.to_python_and_free()
 		return out
 
-	def as_string(self) -> 'String':
-		"""Narrow this node to String, raising TypeError if it is not one."""
-		if not isinstance(self, String):
-			raise TypeError(f"Expected String, got {type(self).__name__}")
+	def as_string(self) -> '_String':
+		"""Narrow this node to _String, raising TypeError if it is not one."""
+		if not isinstance(self, _String):
+			raise TypeError(f"Expected _String, got {type(self).__name__}")
 		return self
 
 	def as_block(self) -> 'Block':
@@ -379,21 +379,21 @@ class Node:
 
 # ─── String ───────────────────────────────────────────────────────────────
 
-class String(Node):
+class _String(Node):
 	"""
-	A leaf string value.
+	A leaf string value (internal implementation detail).
 
     Mirrors: std::string inside coda::detail::Value.
 
-        s = String("hello")       # doc-less; materialized on insert
-        s = String(doc, "hello")  # legacy: allocate immediately
+        s = _String("hello")       # doc-less; materialized on insert
+        s = _String(doc, "hello")  # legacy: allocate immediately
         s.value = "world"
         str(s)   # → "world"
 	"""
 
 	def __init__(self, value_or_doc: 'Union[str, Doc]' = "", value: str = ""):
 		if isinstance(value_or_doc, Doc):
-			# Legacy API: String(doc, "value")
+			# Legacy API: _String(doc, "value")
 			doc = value_or_doc
 			doc._check()
 			b   = _enc(value)
@@ -402,7 +402,7 @@ class String(Node):
 				raise Error("Failed to create string node")
 			super().__init__(doc, nid)
 		else:
-			# New API: String("value") — pending until materialized
+			# New API: _String("value") — pending until materialized
 			self._doc           = None
 			self._node_id       = None
 			self._pending_value = value_or_doc if value_or_doc is not None else ""
@@ -435,12 +435,12 @@ class String(Node):
 	def __eq__(self, other) -> bool:
 		if isinstance(other, str):
 			return self.value == other
-		if isinstance(other, String):
+		if isinstance(other, _String):
 			return self.value == other.value
 		return NotImplemented
 
 	def __repr__(self) -> str:
-		return f"String({self.value!r})"
+		return f"_String({self.value!r})"
 
 
 # ─── Row ──────────────────────────────────────────────────────────────────
@@ -558,7 +558,7 @@ class Row(Node):
 # ─── Block ────────────────────────────────────────────────────────────────
 
 # Type alias for anything that can be a value inside a block or array
-_AnyNode = Union[str, 'String', 'Block', 'Array', 'Table', 'KeyedTable']
+_AnyNode = Union[str, '_String', 'Block', 'Array', 'Table', 'KeyedTable']
 
 class Block(Node):
 	"""
@@ -595,7 +595,7 @@ class Block(Node):
 	def insert(self, key: str, value: _AnyNode) -> _AnyNode:
 		"""Insert (or replace) a child node under key. Returns the value."""
 		if isinstance(value, str):
-			value = String(value)
+			value = _String(value)
 		doc = self._check()
 		_materialize(value, doc)
 		kb = _enc(key)
@@ -680,7 +680,7 @@ class Array(Node):
     Mirrors: coda::Array
 
         arr = Array()
-        arr.append(String("item"))
+        arr.append("item")
         arr.append(Block())
 	"""
 
@@ -723,7 +723,7 @@ class Array(Node):
 	def append(self, value: _AnyNode) -> _AnyNode:
 		"""Append a child node. Returns the value."""
 		if isinstance(value, str):
-			value = String(value)
+			value = _String(value)
 		doc = self._check()
 		_materialize(value, doc)
 		if _lib.coda_array_push(doc._ptr, self._node_id, value._node_id) != _CODA_OK:
@@ -743,7 +743,7 @@ class Array(Node):
 
 	def __setitem__(self, idx: int, value: _AnyNode):
 		if isinstance(value, str):
-			value = String(value)
+			value = _String(value)
 		doc = self._check()
 		n = _lib.coda_array_len(doc._ptr, self._node_id)
 		i = idx if idx >= 0 else idx + n
@@ -1054,7 +1054,7 @@ class Doc:
 
         doc = Doc.new()
         root = doc.root()
-        root.insert("key", String("value"))
+        root.insert("key", "value")
         doc.save("out.coda")
         doc.free()
 	"""
@@ -1189,7 +1189,6 @@ __all__ = [
 	"Table",
 	"KeyedTable",
 	"Row",
-	"String",
 	"Error",
 	"ParseError",
 	"get_abi_version",
