@@ -111,7 +111,7 @@ jobs:
         run: |
           mkdir -p release_assets
           cp dist/*.whl release_assets/
-          for target_dir in libs/dist/*/; do
+          for target_dir in libs/*/; do
             target=$(basename "$target_dir")
             for f in "$target_dir"*; do
               [ -f "$f" ] || continue
