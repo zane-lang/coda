@@ -3,9 +3,7 @@ import sys
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..")))
 
-from bindings.python.coda import *
+from tests.harness.test_harness import run_catalog_tests
 
-data = CodaDoc.parse("")
-data.root().insert("hello", CodaString("hello"))
-f = open("tests/catalog/example.coda")
-print(f.read())
+catalog_path = os.path.join(os.path.dirname(__file__), "..", "catalog", "catalog.coda")
+run_catalog_tests(os.path.abspath(catalog_path))
