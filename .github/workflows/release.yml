@@ -109,7 +109,9 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
+          mkdir -p release_assets
+          cp dist/*.whl release_assets/
+          find libs/ -type f \( -name "*.so" -o -name "*.a" -o -name "*.dll" -o -name "*.lib" \) -exec cp {} release_assets/ \;
           gh release create ${{ github.ref_name }} \
             --generate-notes \
-            dist/*.whl \
-            libs/**/*
+            release_assets/*
