@@ -77,18 +77,10 @@ jobs:
         with:
           name: libs
           path: |
-            dist/x86_64-linux-gnu/libcoda_ffi.so
-            dist/x86_64-linux-gnu/libcoda_ffi.a
-            dist/x86_64-linux-musl/libcoda_ffi.so
-            dist/x86_64-linux-musl/libcoda_ffi.a
-            dist/aarch64-linux-gnu/libcoda_ffi.so
-            dist/aarch64-linux-gnu/libcoda_ffi.a
-            dist/aarch64-linux-musl/libcoda_ffi.so
-            dist/aarch64-linux-musl/libcoda_ffi.a
-            dist/x86_64-windows-gnu/libcoda_ffi.dll
-            dist/x86_64-windows-gnu/libcoda_ffi.lib
-            dist/aarch64-windows-gnu/libcoda_ffi.dll
-            dist/aarch64-windows-gnu/libcoda_ffi.lib
+            dist/**/*.so
+            dist/**/*.a
+            dist/**/*.dll
+            dist/**/*.lib
 
   # ── Publish to PyPI and create a GitHub Release ───────────────────────────────
   publish:
