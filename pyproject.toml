@@ -29,10 +29,10 @@ Repository = "https://github.com/zane-lang/coda"
 Issues = "https://github.com/zane-lang/coda/issues"
 
 [tool.setuptools]
-packages = ["coda_format"]
+packages = ["coda"]
 
 [tool.setuptools.package-dir]
-coda_format = "bindings/python"
+coda = "bindings/python"
 
 [tool.setuptools.package-data]
-coda_format = ["*.so", "*.dylib", "*.dll", "*.pyi", "py.typed"]
+coda = ["*.so", "*.dylib", "*.dll", "*.pyi", "py.typed"]

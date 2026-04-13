@@ -2,8 +2,8 @@
 #include <iostream>
 
 int main (int argc, char *argv[]) {
-	Coda coda;
-	coda.root()["test"] = coda::KeyedTable({ "age" })
+	coda::Doc doc;
+	doc.root()["test"] = coda::KeyedTable({ "age" })
 		.insert(
 			"hello",
 			coda::Row().insert("age", "20"))
@@ -11,6 +11,6 @@ int main (int argc, char *argv[]) {
 			"bye",
 			coda::Row().insert("age", "20"))
 	;
-	std::cout << coda.serialize();
+	std::cout << doc.serialize();
 	return 0;
 }

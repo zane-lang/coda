@@ -12,11 +12,11 @@ Coda is a **header-only** library. Copy `include/coda.hpp` into your project and
 
 ```cpp
 // From file
-Coda coda("project.coda");
+coda::Doc doc("project.coda");
 
 // From string
-Coda coda = Coda::parse("name myproject\n");
-Coda coda = Coda::parse(source, "optional-filename.coda");
+coda::Doc doc = coda::Doc::parse("name myproject\n");
+coda::Doc doc = coda::Doc::parse(source, "optional-filename.coda");
 ```
 
 ---
@@ -115,7 +115,7 @@ root["compiler"].asBlock().order();
 | Member | Description |
 |---|---|
 | `Coda(path)` | Load and parse a `.coda` file |
-| `Coda::parse(text, filename?)` | Parse from a `std::string` |
+| `coda::Doc::parse(text, filename?)` | Parse from a `std::string` |
 | `root()` | Return the root `coda::Block&` |
 | `order()` | Sort all keys alphabetically (scalars first) |
 | `order(fn)` | Sort by a `float(key)` weight function |

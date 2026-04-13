@@ -30,9 +30,9 @@ pip install coda-format
 ```
 
 ```python
-from coda_format import CodaDoc
+import coda
 
-with CodaDoc.parse_file("config.coda") as doc:
+with coda.Doc.parse_file("config.coda") as doc:
     print(doc.root()["key"])
 ```
 
