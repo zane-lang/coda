@@ -6,10 +6,10 @@ from .coda import (
 	CodaKeyedTable,
 	CodaRow,
 	CodaString,
+	CodaNode,
 	CodaException,
 	CodaParseError,
 	get_abi_version,
-	run_catalog_tests,
 )
 
 __all__ = [
@@ -20,8 +20,8 @@ __all__ = [
 	"CodaKeyedTable",
 	"CodaRow",
 	"CodaString",
+	"CodaNode",
 	"CodaException",
 	"CodaParseError",
 	"get_abi_version",
-	"run_catalog_tests",
 ]
