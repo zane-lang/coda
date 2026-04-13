@@ -111,7 +111,14 @@ jobs:
         run: |
           mkdir -p release_assets
           cp dist/*.whl release_assets/
-          find libs/ -type f \( -name "*.so" -o -name "*.a" -o -name "*.dll" -o -name "*.lib" \) -exec cp {} release_assets/ \;
+          for target_dir in libs/dist/*/; do
+            target=$(basename "$target_dir")
+            for f in "$target_dir"*; do
+              [ -f "$f" ] || continue
+              ext="${f##*.}"
+              cp "$f" "release_assets/libcoda_ffi-${target}.${ext}"
+            done
+          done
           gh release create ${{ github.ref_name }} \
             --generate-notes \
             release_assets/*
