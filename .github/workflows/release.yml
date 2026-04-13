@@ -72,6 +72,16 @@ jobs:
           name: wheels
           path: wheelhouse/*.whl
 
+      - name: Upload raw library artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: libs
+          path: |
+            dist/**/*.so
+            dist/**/*.a
+            dist/**/*.dll
+            dist/**/*.lib
+
   # ── Publish to PyPI and create a GitHub Release ───────────────────────────────
   publish:
     name: Publish
@@ -88,6 +98,12 @@ jobs:
           name: wheels
           path: dist/
 
+      - name: Download raw libraries
+        uses: actions/download-artifact@v4
+        with:
+          name: libs
+          path: libs/
+
       - name: Publish to PyPI
         uses: pypa/gh-action-pypi-publish@release/v1
 
@@ -97,4 +113,5 @@ jobs:
         run: |
           gh release create ${{ github.ref_name }} \
             --generate-notes \
-            dist/*.whl
+            dist/*.whl \
+            libs/**/*
