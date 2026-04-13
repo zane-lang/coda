@@ -1,0 +1,100 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write   # create GitHub release
+  id-token: write   # PyPI trusted publishing (OIDC)
+
+jobs:
+  # ── Build all platform wheels in one go ───────────────────────────────────────
+  build-wheels:
+    name: Build wheels
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Zig
+        uses: goto-bus-stop/setup-zig@v2
+        with:
+          version: "0.14.0"
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.x"
+
+      - name: Install build tools
+        run: pip install build wheel quom
+
+      - name: Cross-compile all FFI libraries
+        run: rake cross-all
+
+      - name: Build platform wheels
+        run: |
+          declare -A WHEEL_PLAT=(
+            [x86_64-linux-gnu]=manylinux_2_17_x86_64
+            [x86_64-linux-musl]=musllinux_1_2_x86_64
+            [aarch64-linux-gnu]=manylinux_2_17_aarch64
+            [aarch64-linux-musl]=musllinux_1_2_aarch64
+            [x86_64-windows-gnu]=win_amd64
+            [aarch64-windows-gnu]=win_arm64
+          )
+          declare -A LIB_FILE=(
+            [x86_64-linux-gnu]=libcoda_ffi.so
+            [x86_64-linux-musl]=libcoda_ffi.so
+            [aarch64-linux-gnu]=libcoda_ffi.so
+            [aarch64-linux-musl]=libcoda_ffi.so
+            [x86_64-windows-gnu]=libcoda_ffi.dll
+            [aarch64-windows-gnu]=libcoda_ffi.dll
+          )
+          mkdir -p wheelhouse
+          for target in "${!WHEEL_PLAT[@]}"; do
+            plat="${WHEEL_PLAT[$target]}"
+            lib="${LIB_FILE[$target]}"
+            cp "dist/${target}/${lib}" bindings/python/
+            tmpdir=$(mktemp -d)
+            python -m build --wheel --outdir "$tmpdir/"
+            pushd "$tmpdir"
+            python -m wheel tags --platform-tag "${plat}" --remove *.whl
+            mv *.whl "$GITHUB_WORKSPACE/wheelhouse/"
+            popd
+            rm -f "bindings/python/${lib}"
+          done
+
+      - name: Upload wheel artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: wheels
+          path: wheelhouse/*.whl
+
+  # ── Publish to PyPI and create a GitHub Release ───────────────────────────────
+  publish:
+    name: Publish
+    needs: build-wheels
+    runs-on: ubuntu-latest
+    environment: release
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download all wheels
+        uses: actions/download-artifact@v4
+        with:
+          name: wheels
+          path: dist/
+
+      - name: Publish to PyPI
+        uses: pypa/gh-action-pypi-publish@release/v1
+
+      - name: Create GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create ${{ github.ref_name }} \
+            --generate-notes \
+            dist/*.whl

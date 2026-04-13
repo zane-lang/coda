@@ -23,13 +23,26 @@ Coda has three structural constructs: **blocks** `{}`, **arrays** `[]`, and **ta
 
 ## Installation
 
-Coda is a **header-only C++ library**. To use it in your project, copy or symlink `include/coda.hpp` and `#include` it directly — no build step required.
+**Python** — install the pre-built package from PyPI (includes the compiled native library):
+
+```bash
+pip install coda-format
+```
+
+```python
+from coda_format import CodaDoc
+
+with CodaDoc.parse_file("config.coda") as doc:
+    print(doc.root()["key"])
+```
+
+**C++** — Coda is a **header-only library**. Copy or symlink `include/coda.hpp` and `#include` it directly — no build step required.
 
 ```cpp
 #include "path/to/coda.hpp"
 ```
 
-For Python or any other language via C FFI, build the shared library with `rake build` (see [Building & testing](#building--testing) below).
+**C FFI / other languages** — build the shared library with `rake build` (see [Building & testing](#building--testing) below).
 
 ---
 

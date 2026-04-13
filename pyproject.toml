@@ -1,0 +1,38 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "coda-format"
+version = "0.1.0"
+description = "Python bindings for the Coda configuration format"
+readme = "README.md"
+license = "MIT"
+requires-python = ">=3.9"
+keywords = ["coda", "configuration", "parser", "format"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Software Development :: Libraries",
+    "Topic :: Software Development :: Libraries :: Python Modules",
+]
+
+[project.urls]
+Homepage = "https://github.com/zane-lang/coda"
+Repository = "https://github.com/zane-lang/coda"
+Issues = "https://github.com/zane-lang/coda/issues"
+
+[tool.setuptools]
+packages = ["coda_format"]
+
+[tool.setuptools.package-dir]
+coda_format = "bindings/python"
+
+[tool.setuptools.package-data]
+coda_format = ["*.so", "*.dylib", "*.dll", "*.pyi", "py.typed"]
