@@ -561,8 +561,8 @@ class Block(Node):
 		self._doc     = doc
 		self._node_id = nid
 
-	def insert(self, key: str, value: _AnyNode) -> _AnyNode:
-		"""Insert (or replace) a child node under key. Returns the value."""
+	def insert(self, key: str, value: _AnyNode) -> 'Block':
+		"""Insert (or replace) a child node under key. Returns self for chaining."""
 		if isinstance(value, str):
 			value = _String(value)
 		doc = self._check()
@@ -571,7 +571,7 @@ class Block(Node):
 		if _lib.coda_map_set(doc._ptr, self._node_id,
 		                     kb, len(kb), value._node_id) != _CODA_OK:
 			raise Error(f"Failed to insert key: {key}")
-		return value
+		return self
 
 	def __setitem__(self, key: str, value: _AnyNode):
 		self.insert(key, value)
@@ -680,15 +680,15 @@ class Array(Node):
 		if st != _CODA_OK:
 			raise Error("Failed to set header_comment")
 
-	def append(self, value: _AnyNode) -> _AnyNode:
-		"""Append a child node. Returns the value."""
+	def append(self, value: _AnyNode) -> 'Array':
+		"""Append a child node. Returns self for chaining."""
 		if isinstance(value, str):
 			value = _String(value)
 		doc = self._check()
 		_materialize(value, doc)
 		if _lib.coda_array_push(doc._ptr, self._node_id, value._node_id) != _CODA_OK:
 			raise Error("Failed to append to array")
-		return value
+		return self
 
 	def __getitem__(self, idx: int) -> Node:
 		doc = self._check()
@@ -906,15 +906,15 @@ class KeyedTable(Node):
 			raise Error(f"Failed to append column: {name}")
 		return self
 
-	def insert(self, key: str, row: Row) -> Row:
-		"""Insert or replace a row by key. Returns the row."""
+	def insert(self, key: str, row: Row) -> 'KeyedTable':
+		"""Insert or replace a row by key. Returns self for chaining."""
 		doc = self._check()
 		_materialize(row, doc)
 		kb = _enc(key)
 		if _lib.coda_keyed_table_row_set(doc._ptr, self._node_id,
 		                                 kb, len(kb), row._node_id) != _CODA_OK:
 			raise Error(f"Failed to insert row: {key}")
-		return row
+		return self
 
 	def __setitem__(self, key: str, row: Row):
 		self.insert(key, row)
