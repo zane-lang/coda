@@ -65,7 +65,7 @@ end
 desc "Build and run sample"
 task run: :generate do
 	mkdir_p "build"
-	sh! "#{ZIG_CXX} #{TEST_FLAGS} -I. tests/run/cpp.cpp -o build/run"
+	sh! "#{ZIG_CXX} #{TEST_FLAGS} -I. examples/cpp.cpp -o build/run"
 	sh! "./build/run"
 end
 

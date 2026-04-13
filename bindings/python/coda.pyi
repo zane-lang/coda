@@ -156,6 +156,5 @@ class CodaDoc:
 # ─── Module-level ─────────────────────────────────────────────────────────────
 
 def get_abi_version() -> int: ...
-def run_catalog_tests(catalog_path: str) -> None: ...
 
 __all__: list[str]
