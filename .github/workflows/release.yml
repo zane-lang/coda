@@ -115,8 +115,10 @@ jobs:
             target=$(basename "$target_dir")
             for f in "$target_dir"*; do
               [ -f "$f" ] || continue
-              ext="${f##*.}"
-              cp "$f" "release_assets/libcoda_ffi-${target}.${ext}"
+              filename=$(basename "$f")
+              ext="${filename##*.}"
+              base="${filename%.*}"
+              cp "$f" "release_assets/${base}-${target}.${ext}"
             done
           done
           gh release create ${{ github.ref_name }} \
