@@ -21,5 +21,8 @@ jobs:
         with:
           version: "0.14.0"
 
+      - name: Install Python tools
+        run: pip install quom
+
       - name: Run tests
         run: rake test
