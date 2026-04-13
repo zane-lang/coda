@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "coda-format"
-version = "2.1.2"
+version = "2.2.2"
 description = "Python bindings for the Coda configuration format"
 readme = "README.md"
 license = "MIT"
