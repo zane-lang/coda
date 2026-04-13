@@ -56,6 +56,7 @@ jobs:
             plat="${WHEEL_PLAT[$target]}"
             lib="${LIB_FILE[$target]}"
             cp "dist/${target}/${lib}" bindings/python/
+            rm -rf build/
             tmpdir=$(mktemp -d)
             python -m build --wheel --outdir "$tmpdir/"
             pushd "$tmpdir"
