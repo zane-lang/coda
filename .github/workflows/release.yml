@@ -72,6 +72,24 @@ jobs:
           name: wheels
           path: wheelhouse/*.whl
 
+      - name: Upload raw library artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: libs
+          path: |
+            dist/x86_64-linux-gnu/libcoda_ffi.so
+            dist/x86_64-linux-gnu/libcoda_ffi.a
+            dist/x86_64-linux-musl/libcoda_ffi.so
+            dist/x86_64-linux-musl/libcoda_ffi.a
+            dist/aarch64-linux-gnu/libcoda_ffi.so
+            dist/aarch64-linux-gnu/libcoda_ffi.a
+            dist/aarch64-linux-musl/libcoda_ffi.so
+            dist/aarch64-linux-musl/libcoda_ffi.a
+            dist/x86_64-windows-gnu/libcoda_ffi.dll
+            dist/x86_64-windows-gnu/libcoda_ffi.lib
+            dist/aarch64-windows-gnu/libcoda_ffi.dll
+            dist/aarch64-windows-gnu/libcoda_ffi.lib
+
   # ── Publish to PyPI and create a GitHub Release ───────────────────────────────
   publish:
     name: Publish
@@ -88,6 +106,12 @@ jobs:
           name: wheels
           path: dist/
 
+      - name: Download raw libraries
+        uses: actions/download-artifact@v4
+        with:
+          name: libs
+          path: libs/
+
       - name: Publish to PyPI
         uses: pypa/gh-action-pypi-publish@release/v1
 
@@ -97,4 +121,5 @@ jobs:
         run: |
           gh release create ${{ github.ref_name }} \
             --generate-notes \
-            dist/*.whl
+            dist/*.whl \
+            libs/**/*
