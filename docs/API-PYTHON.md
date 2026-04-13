@@ -172,7 +172,7 @@ Ordered list of `Node`.
 | `node[i]` | Get item by index |
 | `node[i] = value` | Replace item |
 | `del node[i]` | Remove item |
-| `node.append(value)` | Append a node |
+| `node.append(value)` | Append a node; returns `node` for chaining |
 | `for item in node` | Iterate |
 | `len(node)` | Length |
 | `node.header_comment` | Comment before the first element (get/set) |
@@ -201,6 +201,7 @@ Keyed table — rows indexed by their key string.
 |---|---|
 | `node["key"]` | Get row by key (returns `Row`) |
 | `node["key"] = row` | Insert or replace row |
+| `node.insert("key", row)` | Insert or replace row; returns `node` for chaining |
 | `del node["key"]` | Remove row |
 | `"key" in node` | Membership test |
 | `for key, row in node` | Iterate in insertion order |
