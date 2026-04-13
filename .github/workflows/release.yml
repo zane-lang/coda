@@ -6,25 +6,24 @@ on:
       - "v*"
 
 permissions:
-  contents: write   # create GitHub release
-  id-token: write   # PyPI trusted publishing (OIDC)
+  contents: write
+  id-token: write
 
 jobs:
   # ── Build all platform wheels in one go ───────────────────────────────────────
   build-wheels:
     name: Build wheels
     runs-on: ubuntu-latest
-
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - name: Install Zig
-        uses: goto-bus-stop/setup-zig@v2
+        uses: mlugg/setup-zig@v2
         with:
           version: "0.14.0"
 
       - name: Set up Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v6
         with:
           python-version: "3.x"
 
@@ -88,9 +87,8 @@ jobs:
     needs: build-wheels
     runs-on: ubuntu-latest
     environment: release
-
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - name: Download all wheels
         uses: actions/download-artifact@v4
