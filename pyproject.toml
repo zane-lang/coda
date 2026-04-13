@@ -3,7 +3,7 @@ requires = ["setuptools>=61"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "coda-lang"
+name = "coda-format"
 version = "0.1.0"
 description = "Python bindings for the Coda configuration format"
 readme = "README.md"
@@ -29,10 +29,10 @@ Repository = "https://github.com/zane-lang/coda"
 Issues = "https://github.com/zane-lang/coda/issues"
 
 [tool.setuptools]
-packages = ["coda_lang"]
+packages = ["coda_format"]
 
 [tool.setuptools.package-dir]
-coda_lang = "bindings/python"
+coda_format = "bindings/python"
 
 [tool.setuptools.package-data]
-coda_lang = ["*.so", "*.dylib", "*.dll", "*.pyi", "py.typed"]
+coda_format = ["*.so", "*.dylib", "*.dll", "*.pyi", "py.typed"]

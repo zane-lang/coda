@@ -26,11 +26,11 @@ Coda has three structural constructs: **blocks** `{}`, **arrays** `[]`, and **ta
 **Python** — install the pre-built package from PyPI (includes the compiled native library):
 
 ```bash
-pip install coda-lang
+pip install coda-format
 ```
 
 ```python
-from coda_lang import CodaDoc
+from coda_format import CodaDoc
 
 with CodaDoc.parse_file("config.coda") as doc:
     print(doc.root()["key"])
