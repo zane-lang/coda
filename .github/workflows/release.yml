@@ -1,0 +1,102 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write   # create GitHub release
+  id-token: write   # PyPI trusted publishing (OIDC)
+
+jobs:
+  # ── Build one wheel per platform ──────────────────────────────────────────────
+  build-wheels:
+    name: Build wheel (${{ matrix.zig_target }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - zig_target: x86_64-linux-gnu
+            wheel_plat: manylinux_2_17_x86_64
+            lib_file: libcoda_ffi.so
+          - zig_target: x86_64-linux-musl
+            wheel_plat: musllinux_1_2_x86_64
+            lib_file: libcoda_ffi.so
+          - zig_target: aarch64-linux-gnu
+            wheel_plat: manylinux_2_17_aarch64
+            lib_file: libcoda_ffi.so
+          - zig_target: aarch64-linux-musl
+            wheel_plat: musllinux_1_2_aarch64
+            lib_file: libcoda_ffi.so
+          - zig_target: x86_64-windows-gnu
+            wheel_plat: win_amd64
+            lib_file: libcoda_ffi.dll
+          - zig_target: aarch64-windows-gnu
+            wheel_plat: win_arm64
+            lib_file: libcoda_ffi.dll
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Zig
+        uses: goto-bus-stop/setup-zig@v2
+        with:
+          version: "0.14.0"
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.x"
+
+      - name: Install build tools
+        run: pip install build wheel
+
+      - name: Cross-compile FFI library
+        run: rake cross[${{ matrix.zig_target }}]
+
+      - name: Bundle library into package
+        run: cp dist/${{ matrix.zig_target }}/${{ matrix.lib_file }} bindings/python/
+
+      - name: Build wheel
+        run: python -m build --wheel --outdir wheelhouse/
+
+      - name: Retag wheel for target platform
+        run: |
+          cd wheelhouse
+          python -m wheel tags --platform-tag ${{ matrix.wheel_plat }} --remove *.whl
+
+      - name: Upload wheel artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: wheel-${{ matrix.zig_target }}
+          path: wheelhouse/*.whl
+
+  # ── Publish to PyPI and create a GitHub Release ───────────────────────────────
+  publish:
+    name: Publish
+    needs: build-wheels
+    runs-on: ubuntu-latest
+    environment: release
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download all wheels
+        uses: actions/download-artifact@v4
+        with:
+          pattern: wheel-*
+          path: dist/
+          merge-multiple: true
+
+      - name: Publish to PyPI
+        uses: pypa/gh-action-pypi-publish@release/v1
+
+      - name: Create GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create ${{ github.ref_name }} \
+            --generate-notes \
+            dist/*.whl
