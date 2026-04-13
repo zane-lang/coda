@@ -385,27 +385,15 @@ class _String(Node):
 
     Mirrors: std::string inside coda::detail::Value.
 
-        s = _String("hello")       # doc-less; materialized on insert
-        s = _String(doc, "hello")  # legacy: allocate immediately
+        s = _String("hello")  # pending until materialized into a doc
         s.value = "world"
         str(s)   # → "world"
 	"""
 
-	def __init__(self, value_or_doc: 'Union[str, Doc]' = "", value: str = ""):
-		if isinstance(value_or_doc, Doc):
-			# Legacy API: _String(doc, "value")
-			doc = value_or_doc
-			doc._check()
-			b   = _enc(value)
-			nid = _lib.coda_new_string(doc._ptr, b, len(b))
-			if nid == 0:
-				raise Error("Failed to create string node")
-			super().__init__(doc, nid)
-		else:
-			# New API: _String("value") — pending until materialized
-			self._doc           = None
-			self._node_id       = None
-			self._pending_value = value_or_doc if value_or_doc is not None else ""
+	def __init__(self, value: str = ""):
+		self._doc           = None
+		self._node_id       = None
+		self._pending_value = value if value is not None else ""
 
 	def _materialize(self, doc: 'Doc') -> None:
 		"""Allocate this node in *doc*. Called automatically on insert/append."""
@@ -452,25 +440,15 @@ class Row(Node):
 
     Mirrors: coda::Row
 
-        row = Row()           # doc-less; materialized on insert
-        row = Row(doc)        # legacy
+        row = Row()
         row["col1"] = "value"
         row["col2"] = "other"
 	"""
 
-	def __init__(self, doc: 'Optional[Doc]' = None):
-		if doc is not None:
-			# Legacy API: Row(doc)
-			doc._check()
-			nid = _lib.coda_new_row(doc._ptr)
-			if nid == 0:
-				raise Error("Failed to create row node")
-			super().__init__(doc, nid)
-		else:
-			# New API: Row() — pending
-			self._doc            = None
-			self._node_id        = None
-			self._pending_fields = {}  # ordered dict of field → value
+	def __init__(self):
+		self._doc            = None
+		self._node_id        = None
+		self._pending_fields = {}  # ordered dict of field → value
 
 	def _materialize(self, doc: 'Doc') -> None:
 		doc._check()
@@ -571,18 +549,9 @@ class Block(Node):
         block["age"] = "30"    # same as insert
 	"""
 
-	def __init__(self, doc: 'Optional[Doc]' = None):
-		if doc is not None:
-			# Legacy API: Block(doc)
-			doc._check()
-			nid = _lib.coda_new_block(doc._ptr)
-			if nid == 0:
-				raise Error("Failed to create block node")
-			super().__init__(doc, nid)
-		else:
-			# New API: Block() — pending
-			self._doc     = None
-			self._node_id = 0
+	def __init__(self):
+		self._doc     = None
+		self._node_id = 0
 
 	def _materialize(self, doc: 'Doc') -> None:
 		doc._check()
@@ -684,18 +653,9 @@ class Array(Node):
         arr.append(Block())
 	"""
 
-	def __init__(self, doc: 'Optional[Doc]' = None):
-		if doc is not None:
-			# Legacy API: Array(doc)
-			doc._check()
-			nid = _lib.coda_new_array(doc._ptr)
-			if nid == 0:
-				raise Error("Failed to create array node")
-			super().__init__(doc, nid)
-		else:
-			# New API: Array() — pending
-			self._doc     = None
-			self._node_id = 0
+	def __init__(self):
+		self._doc     = None
+		self._node_id = 0
 
 	def _materialize(self, doc: 'Doc') -> None:
 		doc._check()
@@ -794,24 +754,10 @@ class Table(Node):
         t[0]["col1"]            # index access
 	"""
 
-	def __init__(self, doc_or_columns: 'Union[Doc, list[str], None]' = None,
-	             columns: 'list[str]' = []):
-		if isinstance(doc_or_columns, Doc):
-			# Legacy API: Table(doc, columns)
-			doc = doc_or_columns
-			cols = columns
-			doc._check()
-			nid = _lib.coda_new_table(doc._ptr)
-			if nid == 0:
-				raise Error("Failed to create table node")
-			super().__init__(doc, nid)
-			for col in cols:
-				self.append_col(col)
-		else:
-			# New API: Table(["col1", "col2"]) or Table()
-			self._doc              = None
-			self._node_id          = None
-			self._pending_columns  = doc_or_columns if isinstance(doc_or_columns, list) else []
+	def __init__(self, columns: 'list[str]' = []):
+		self._doc              = None
+		self._node_id          = None
+		self._pending_columns  = columns
 
 	def _materialize(self, doc: 'Doc') -> None:
 		doc._check()
@@ -919,24 +865,10 @@ class KeyedTable(Node):
         kt["mykey"]["col1"]     # key + field access
 	"""
 
-	def __init__(self, doc_or_columns: 'Union[Doc, list[str], None]' = None,
-	             columns: 'list[str]' = []):
-		if isinstance(doc_or_columns, Doc):
-			# Legacy API: KeyedTable(doc, columns)
-			doc = doc_or_columns
-			cols = columns
-			doc._check()
-			nid = _lib.coda_new_keyed_table(doc._ptr)
-			if nid == 0:
-				raise Error("Failed to create keyed table node")
-			super().__init__(doc, nid)
-			for col in cols:
-				self.append_col(col)
-		else:
-			# New API: KeyedTable(["col1", "col2"]) or KeyedTable()
-			self._doc             = None
-			self._node_id         = None
-			self._pending_columns = doc_or_columns if isinstance(doc_or_columns, list) else []
+	def __init__(self, columns: 'list[str]' = []):
+		self._doc             = None
+		self._node_id         = None
+		self._pending_columns = columns
 
 	def _materialize(self, doc: 'Doc') -> None:
 		doc._check()
