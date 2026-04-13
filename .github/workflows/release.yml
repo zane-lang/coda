@@ -55,8 +55,9 @@ jobs:
           for target in "${!WHEEL_PLAT[@]}"; do
             plat="${WHEEL_PLAT[$target]}"
             lib="${LIB_FILE[$target]}"
+            rm -f bindings/python/*.so bindings/python/*.dylib bindings/python/*.dll
+            rm -rf build/ coda_format.egg-info/
             cp "dist/${target}/${lib}" bindings/python/
-            rm -rf build/
             tmpdir=$(mktemp -d)
             python -m build --wheel --outdir "$tmpdir/"
             pushd "$tmpdir"
