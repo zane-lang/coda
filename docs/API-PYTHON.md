@@ -78,24 +78,61 @@ with Doc.parse(text) as doc:
 
 ## Creating and modifying
 
-Scalar string values are represented as plain Python `str`. Container nodes (`Block`, `Array`, `Table`, `KeyedTable`) are created directly without passing a `doc` argument.
+Scalar string values are represented as plain Python `str`. Container nodes (`Block`, `Array`, `Table`, `KeyedTable`) are created without passing a `doc` argument and are materialized into the document when they are first inserted.
 
 ```python
 doc  = Doc.new()
 root = doc.root()
 
-# Insert a scalar — pass a plain str
-root["name"] = "myproject"
+# Scalars — pass a plain str
+root["name"]    = "myproject"
+root["version"] = "1.0.0"
 
-# Insert a block
+# Block — insert into doc first (to materialize it), then set fields
 compiler = Block()
-compiler["debug"] = "false"
-root["compiler"] = compiler
+root["compiler"] = compiler   # materializes
+compiler["debug"]    = "false"
+compiler["optimize"] = "true"
+
+# Array — header_comment and append must be called after insertion
+root["targets"] = Array()
+targets = root["targets"].as_array()
+targets.header_comment = "supported build targets"
+targets.append("x86_64-linux").append("x86_64-windows").append("aarch64-macos")
+
+# Plain table — pass the column list to the constructor
+root["releases"] = Table(["version", "date"])
+releases = root["releases"].as_table()
+r1 = Row()
+r1["version"] = "1.0.0"
+r1["date"]    = "2025-01-01"
+releases.append(r1)
+
+# Keyed table
+root["deps"] = KeyedTable(["link", "version"])
+root["deps"].comment = "dependency table"
+deps = root["deps"].as_keyed_table()
+deps.header_comment = "optional"
+plot = Row()
+plot["link"]    = "github.com/zane-lang/plot"
+plot["version"] = "4.0.3"
+deps.insert("plot", plot)
 
 # Modify an existing scalar in-place
 root["name"].as_string().value = "renamed"
 
 doc.save("out.coda")
+```
+
+`Table` and `KeyedTable` accept a column list in the constructor. Methods that operate on the document (such as `append_col`, `append`, `insert`, `header_comment`) require the node to be inserted first.
+
+`Row` fields set before insertion are buffered and applied automatically on materialization:
+
+```python
+r = Row()
+r["version"] = "2.0.0"   # buffered
+r["date"]    = "2026-01-01"
+releases.append(r)        # materializes and applies buffered fields
 ```
 
 ---
@@ -104,7 +141,7 @@ doc.save("out.coda")
 
 ```python
 doc.order()                                         # alphabetical, scalars first
-doc.order_weighted([("name", 100), ("type", 90)])   # by weight (higher → top)
+doc.order_weighted([("name", 100), ("version", 90)])  # by weight (higher → top)
 ```
 
 Sorting can also be applied to an individual sub-tree:
