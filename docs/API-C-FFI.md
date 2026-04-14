@@ -325,7 +325,7 @@ Do **not** mix these — calling the wrong free on a pointer is undefined behavi
 | `coda_node_header_comment_set(doc, n, s, len)` | Set header comment |
 | `coda_node_serialize(doc, n, indent, ilen, err?)` | Serialise sub-tree to `coda_owned_str_t` |
 | `coda_node_order(doc, n)` | Sort sub-tree alphabetically |
-| `coda_node_order_weighted(doc, n, keys, weights, n)` | Sort sub-tree by weight |
+| `coda_node_order_weighted(doc, n, keys, weights, count)` | Sort sub-tree by weight |
 
 ### Node creation
 

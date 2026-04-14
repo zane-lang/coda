@@ -2,11 +2,15 @@
 
 Coda is a **header-only** C++17 library. Copy `include/coda.hpp` into your project and `#include` it — no build step required.
 
+---
+
+## Setup
+
 ```cpp
 #include "path/to/coda.hpp"
 ```
 
-Requires C++17 or later (`std::variant`, structured bindings, `if constexpr`).
+Requires C++17 or later (`std::variant`, structured bindings, `if constexpr`). No dependencies beyond the standard library.
 
 ---
 
@@ -257,7 +261,7 @@ Every node stored in a `Block` or `Array` is a `coda::detail::Value`. You don't 
 | `asArray()` | `coda::Array&` — throws if wrong type |
 | `asTable()` | `coda::Table&` — throws if wrong type |
 | `asKeyedTable()` | `coda::KeyedTable&` — throws if wrong type |
-| `isContainer()` | `true` for `Block`, `Array`, `Table`, `KeyedTable` |
+| `isContainer()` | `bool` — `true` for `Block`, `Array`, `Table`, `KeyedTable`; `false` for strings |
 | `getComment()` | Pre-node `#` comment (without the `#`) |
 | `setComment(s)` | Set pre-node comment |
 
@@ -283,7 +287,8 @@ Ordered map of `string → Value`. The root of every document is a `Block`.
 | `has(key)` | `true` if the key exists |
 | `order()` | Sort keys alphabetically (scalars first, then containers) |
 | `order(fn)` | Sort by weight function |
-| `serialize(unit?)` | Serialise as a top-level block (no surrounding braces) |
+| `serialize(unit?)` | Serialise as a top-level block (no surrounding braces); `unit` defaults to `"\t"` |
+| `serialize(indent, unit)` | Serialise as a nested block (wrapped in `{ }`); `indent` is the current nesting depth |
 | `begin()` / `end()` | Iterate `pair<string, unique_ptr<Value>>` in insertion order |
 
 ### `coda::Array`
@@ -298,7 +303,7 @@ Ordered list of `Value`.
 | `size()` | Number of elements |
 | `getHeaderComment()` | Comment before the first element |
 | `setHeaderComment(s)` | Set header comment |
-| `begin()` / `end()` | Iterate `unique_ptr<Value>` — dereference to reach the `Value` |
+| `begin()` / `end()` | Iterate `unique_ptr<Value>` in insertion order — dereference with `*` or `->` to reach the `Value` |
 
 ### `coda::Table`
 

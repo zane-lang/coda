@@ -4,18 +4,31 @@ The Python wrapper uses `ctypes` to talk to `libcoda_ffi` and exposes a class hi
 
 ## Setup
 
-1. Build the shared library:
-   ```bash
-   rake build        # host platform only
-   rake cross-all    # all supported targets
-   ```
-2. Import the module:
-   ```python
-   from bindings.python.coda import (
-       Doc, Block, Array,
-       Table, KeyedTable, Row,
-   )
-   ```
+**From PyPI** (includes the compiled native library — no build step needed):
+
+```bash
+pip install coda-format
+```
+
+```python
+import coda
+from coda import Doc, Block, Array, Table, KeyedTable, Row, ParseError
+```
+
+**From source** — build the shared library first, then import directly:
+
+```bash
+rake build        # host platform only
+rake cross-all    # all supported targets
+```
+
+```python
+from bindings.python.coda import (
+    Doc, Block, Array,
+    Table, KeyedTable, Row,
+    ParseError, get_abi_version,
+)
+```
 
 ---
 
@@ -58,7 +71,7 @@ with Doc.parse(text) as doc:
         print(key, node.as_string().value)
 
     # Bare-list array
-    targets = root["compiler"]["targets"].as_array()
+    targets = root["targets"].as_array()
     for item in targets:
         print(item.as_string().value)
 
@@ -162,7 +175,7 @@ doc.save("out.coda")
 doc.save("out.coda", indent="  ")
 
 # Convenience: sort by weight and serialise in one call
-text = doc.order_weighted_and_serialize([("name", 100), ("type", 90)])
+text = doc.order_weighted_and_serialize([("name", 100), ("version", 90)])
 ```
 
 ---
@@ -183,6 +196,18 @@ except ParseError as e:
 ```
 
 `ParseError` inherits from `Error` (which inherits from `Exception`). All other coda runtime errors raise `Error` directly.
+
+---
+
+## Comments
+
+Every node class exposes a `.comment` property for the `#` lines that appear directly above it in the source file. `Array`, `Table`, and `KeyedTable` additionally expose `.header_comment` for the comment that appears before the first element or header row.
+
+```python
+deps = root["deps"].as_keyed_table()
+print(deps.header_comment)   # comment before the column header line
+print(deps["plot"].comment)  # comment above the "plot" row
+```
 
 ---
 
@@ -312,15 +337,3 @@ A single table row — flat map of column name → string value.
 | `len(row)` | Column count |
 | `row.get("col", default)` | Get value with fallback |
 | `row.comment` | Row-level comment (get/set) |
-
----
-
-## Comments
-
-Every node class exposes a `.comment` property for the `#` lines that appear directly above it in the source file. `Array`, `Table`, and `KeyedTable` additionally expose `.header_comment` for the comment that appears before the first element or header row.
-
-```python
-deps = root["deps"].as_keyed_table()
-print(deps.header_comment)   # comment before the column header line
-print(deps["plot"].comment)  # comment above the "plot" row
-```
