@@ -337,3 +337,28 @@ A single table row — flat map of column name → string value.
 | `len(row)` | Column count |
 | `row.get("col", default)` | Get value with fallback |
 | `row.comment` | Row-level comment (get/set) |
+
+### `Error`
+
+Base class for all Coda runtime errors. Inherits from `Exception`. Raised directly for non-parse errors (e.g. type mismatches, serialization failures).
+
+### `ParseError`
+
+Raised by `Doc.parse` and `Doc.parse_file` on invalid input. Inherits from `Error`.
+
+| Attribute | Type | Description |
+|---|---|---|
+| `code` | `int` | Numeric error code |
+| `line` | `int` | 1-based line number where the error occurred |
+| `col` | `int` | 1-based column number where the error occurred |
+| `offset` | `int` | Byte offset into the source |
+
+`str(e)` returns the message with line/col appended when available (e.g. `"unexpected token (line 3, col 5)"`).
+
+### `get_abi_version`
+
+```python
+get_abi_version() -> int
+```
+
+Returns the integer ABI version of the loaded `libcoda_ffi` native library. Useful for verifying library compatibility at runtime.
