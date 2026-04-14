@@ -236,34 +236,34 @@ Comments are stored and serialised without the leading `#` — the serialiser ad
 
 ### `coda::Doc`
 
-| Member | Description |
-|---|---|
-| `Doc()` | Create an empty document with an empty root `Block` |
-| `Doc(path)` | Load and parse a `.coda` file; throws `ParseError` on failure |
-| `Doc::parse(text, filename?)` | Parse from a `std::string`; `filename` is used in error messages |
-| `root()` | Return the root `Block&` |
-| `order()` | Sort all keys alphabetically (scalars first, then containers) |
-| `order(fn)` | Sort by a `float(const std::string&)` weight function |
-| `useTabs()` | Set indent unit to `\t` (default) |
-| `useSpaces(n)` | Set indent unit to `n` spaces |
-| `save(path)` | Serialise and write to disk using the current indent unit |
-| `save(path, unit)` | Set the indent unit, then write to disk |
-| `serialize()` | Return Coda text as `std::string` using the current indent unit |
+| Member | Return type | Description |
+|---|---|---|
+| `Doc()` | — | Create an empty document with an empty root `Block` |
+| `Doc(path)` | — | Load and parse a `.coda` file; throws `ParseError` on failure |
+| `Doc::parse(text, filename?)` | `Doc` | Parse from a `std::string`; `filename` is used in error messages |
+| `root()` | `Block&` | Return the root block |
+| `order()` | `void` | Sort all keys alphabetically (scalars first, then containers) |
+| `order(fn)` | `void` | Sort by a `float(const std::string&)` weight function |
+| `useTabs()` | `void` | Set indent unit to `\t` (default) |
+| `useSpaces(n)` | `void` | Set indent unit to `n` spaces |
+| `save(path)` | `void` | Serialise and write to disk using the current indent unit |
+| `save(path, unit)` | `void` | Set the indent unit, then write to disk |
+| `serialize()` | `std::string` | Return Coda text using the current indent unit |
 
 ### `coda::detail::Value`
 
 Every node stored in a `Block` or `Array` is a `coda::detail::Value`. You don't construct these directly — they are returned by `operator[]`.
 
-| Member | Description |
-|---|---|
-| `asString()` | `std::string&` — throws `std::runtime_error` if not a string |
-| `asBlock()` | `coda::Block&` — throws if wrong type |
-| `asArray()` | `coda::Array&` — throws if wrong type |
-| `asTable()` | `coda::Table&` — throws if wrong type |
-| `asKeyedTable()` | `coda::KeyedTable&` — throws if wrong type |
-| `isContainer()` | `bool` — `true` for `Block`, `Array`, `Table`, `KeyedTable`; `false` for strings |
-| `getComment()` | Pre-node `#` comment (without the `#`) |
-| `setComment(s)` | Set pre-node comment |
+| Member | Return type | Description |
+|---|---|---|
+| `asString()` | `std::string&` | Throws `std::runtime_error` if not a string |
+| `asBlock()` | `coda::Block&` | Throws `std::runtime_error` if not a block |
+| `asArray()` | `coda::Array&` | Throws `std::runtime_error` if not an array |
+| `asTable()` | `coda::Table&` | Throws `std::runtime_error` if not a table |
+| `asKeyedTable()` | `coda::KeyedTable&` | Throws `std::runtime_error` if not a keyed table |
+| `isContainer()` | `bool` | `true` for `Block`, `Array`, `Table`, `KeyedTable`; `false` for strings |
+| `getComment()` | `const std::string&` | Pre-node `#` comment (without the `#`) |
+| `setComment(s)` | `void` | Set pre-node comment |
 
 Values are constructed implicitly when assigning to `Block::operator[]`:
 
@@ -279,74 +279,74 @@ root["deps"]     = coda::KeyedTable{}; // KeyedTable
 
 Ordered map of `string → Value`. The root of every document is a `Block`.
 
-| Member | Description |
-|---|---|
-| `Block()` | Construct an empty block |
-| `operator[](key)` | Non-const: auto-inserts empty string; const: throws `std::out_of_range` if absent |
-| `insert(key, value)` | Insert or replace; returns `Block&` for chaining |
-| `has(key)` | `true` if the key exists |
-| `order()` | Sort keys alphabetically (scalars first, then containers) |
-| `order(fn)` | Sort by weight function |
-| `serialize(unit?)` | Serialise as a top-level block (no surrounding braces); `unit` defaults to `"\t"` |
-| `serialize(indent, unit)` | Serialise as a nested block (wrapped in `{ }`); `indent` is the current nesting depth |
-| `begin()` / `end()` | Iterate `pair<string, unique_ptr<Value>>` in insertion order |
+| Member | Return type | Description |
+|---|---|---|
+| `Block()` | — | Construct an empty block |
+| `operator[](key)` | `detail::Value&` | Non-const: auto-inserts empty string if absent; const: throws `std::out_of_range` |
+| `insert(key, value)` | `Block&` | Insert or replace a value; returns `*this` for chaining |
+| `has(key)` | `bool` | `true` if the key exists |
+| `order()` | `void` | Sort keys alphabetically (scalars first, then containers) |
+| `order(fn)` | `void` | Sort by a `float(const std::string&)` weight function |
+| `serialize(unit?)` | `std::string` | Serialise as a top-level block (no surrounding braces); `unit` defaults to `"\t"` |
+| `serialize(indent, unit)` | `std::string` | Serialise as a nested block wrapped in `{ }`; `indent` is the current nesting depth |
+| `begin()` / `end()` | iterator | Iterate `pair<string, unique_ptr<Value>>` in insertion order |
 
 ### `coda::Array`
 
 Ordered list of `Value`.
 
-| Member | Description |
-|---|---|
-| `Array()` | Construct an empty array |
-| `append(value)` | Append an element; returns `Array&` for chaining |
-| `operator[](i)` | Get element by index; throws `std::out_of_range` if out of range |
-| `size()` | Number of elements |
-| `getHeaderComment()` | Comment before the first element |
-| `setHeaderComment(s)` | Set header comment |
-| `begin()` / `end()` | Iterate `unique_ptr<Value>` in insertion order — dereference with `*` or `->` to reach the `Value` |
+| Member | Return type | Description |
+|---|---|---|
+| `Array()` | — | Construct an empty array |
+| `append(value)` | `Array&` | Append an element; returns `*this` for chaining |
+| `operator[](i)` | `detail::Value&` | Get element by index; throws `std::out_of_range` if out of range |
+| `size()` | `size_t` | Number of elements |
+| `getHeaderComment()` | `const std::string&` | Comment before the first element |
+| `setHeaderComment(s)` | `void` | Set header comment |
+| `begin()` / `end()` | iterator | Iterate `unique_ptr<Value>` in insertion order — dereference with `*` or `->` to reach the `Value` |
 
 ### `coda::Table`
 
 Plain (anonymous-row) table. Column names are validated on `append`.
 
-| Member | Description |
-|---|---|
-| `Table(headers?)` | Construct with an optional `std::set<std::string>` of column names |
-| `append(row)` | Append a `Row`; validates fields against the header set; returns `Table&` |
-| `operator[](i)` | Get row by index; throws `std::out_of_range` if out of range |
-| `size()` | Row count |
-| `empty()` | `true` if there are no rows |
-| `front()` | First row |
-| `getHeaderComment()` | Comment before the header row |
-| `setHeaderComment(s)` | Set header comment |
-| `begin()` / `end()` | Iterate `Row` |
+| Member | Return type | Description |
+|---|---|---|
+| `Table(headers?)` | — | Construct with an optional `std::set<std::string>` of column names |
+| `append(row)` | `Table&` | Append a `Row`; validates fields against the header set; returns `*this` for chaining |
+| `operator[](i)` | `Row&` | Get row by index; throws `std::out_of_range` if out of range |
+| `size()` | `size_t` | Row count |
+| `empty()` | `bool` | `true` if there are no rows |
+| `front()` | `const Row&` | First row |
+| `getHeaderComment()` | `const std::string&` | Comment before the header row |
+| `setHeaderComment(s)` | `void` | Set header comment |
+| `begin()` / `end()` | iterator | Iterate `Row` |
 
 ### `coda::KeyedTable`
 
 Keyed table — rows indexed by a key string. Column names are validated on `insert`.
 
-| Member | Description |
-|---|---|
-| `KeyedTable(headers?)` | Construct with an optional `std::set<std::string>` of (non-key) column names |
-| `insert(key, row)` | Insert or replace a row; validates fields; returns `KeyedTable&` |
-| `operator[](key)` | Non-const: auto-inserts empty row; const: throws `std::out_of_range` if absent |
-| `empty()` | `true` if there are no rows |
-| `getHeaderComment()` | Comment before the header row |
-| `setHeaderComment(s)` | Set header comment |
-| `begin()` / `end()` | Iterate `pair<string, Row>` in insertion order |
+| Member | Return type | Description |
+|---|---|---|
+| `KeyedTable(headers?)` | — | Construct with an optional `std::set<std::string>` of (non-key) column names |
+| `insert(key, row)` | `KeyedTable&` | Insert or replace a row; validates fields; returns `*this` for chaining |
+| `operator[](key)` | `Row&` | Non-const: auto-inserts empty row if absent; const: throws `std::out_of_range` |
+| `empty()` | `bool` | `true` if there are no rows |
+| `getHeaderComment()` | `const std::string&` | Comment before the header row |
+| `setHeaderComment(s)` | `void` | Set header comment |
+| `begin()` / `end()` | iterator | Iterate `pair<string, Row>` in insertion order |
 
 ### `coda::Row`
 
 A single table row — flat map of `string → string`.
 
-| Member | Description |
-|---|---|
-| `Row()` | Construct an empty row |
-| `insert(col, value)` | Set column value; returns `Row&` for chaining |
-| `operator[](col)` | Non-const: auto-inserts empty string; const: throws `std::out_of_range` if absent |
-| `getComment()` | Row-level `#` comment |
-| `setComment(s)` | Set row-level comment |
-| `begin()` / `end()` | Iterate `pair<string, string>` in insertion order |
+| Member | Return type | Description |
+|---|---|---|
+| `Row()` | — | Construct an empty row |
+| `insert(col, value)` | `Row&` | Set column value; returns `*this` for chaining |
+| `operator[](col)` | `std::string&` | Non-const: auto-inserts empty string if absent; const: throws `std::out_of_range` |
+| `getComment()` | `const std::string&` | Row-level `#` comment (without the `#`) |
+| `setComment(s)` | `void` | Set row-level comment |
+| `begin()` / `end()` | iterator | Iterate `pair<string, string>` in insertion order |
 
 ### `coda::ParseError`
 
