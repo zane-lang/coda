@@ -22,18 +22,81 @@ Then include the header and link against the library:
 
 ## Types
 
-| Type | Description |
-|---|---|
-| `coda_doc_t*` | Opaque document handle; free with `coda_doc_free()` |
-| `coda_node_t` (`uint32_t`) | Opaque node handle; `0` = null / invalid |
-| `coda_str_t` | **Borrowed** `{ const char* ptr; size_t len; }` — see lifetime warning below |
-| `coda_owned_str_t` | **Owned** `{ char* ptr; size_t len; }` — free with `coda_owned_str_free()` |
-| `coda_error_t` | Parse error details — call `coda_error_clear()` to release the message buffer |
-| `coda_node_kind_t` | Enum: `CODA_NODE_NULL`, `CODA_NODE_STRING`, `CODA_NODE_BLOCK`, `CODA_NODE_ARRAY`, `CODA_NODE_TABLE`, `CODA_NODE_KEYED_TABLE`, `CODA_NODE_ROW` |
-| `coda_status_t` | Return code: `CODA_OK`, `CODA_ERR`, `CODA_NOT_FOUND`, `CODA_BAD_KIND`, `CODA_OUT_OF_RANGE` |
-| `coda_parse_error_code_t` | Enum of parse error codes — see [Error handling](#error-handling) |
+### Opaque handles
 
-> **`coda_str_t` lifetime**: a *borrowed* view into the document's internal storage. The pointer is valid only as long as the document is alive **and** no mutation has been made since the view was obtained. Always copy the bytes (e.g. `memcpy`) before calling any mutating function or `coda_doc_free()`.
+| Type | Underlying type | Description |
+|---|---|---|
+| `coda_doc_t*` | opaque pointer | Document handle; free with `coda_doc_free()` |
+| `coda_node_t` | `uint32_t` | Node handle; `0` is reserved as null / invalid |
+
+### String types
+
+```c
+typedef struct coda_str {
+    const char* ptr;   // pointer into document-internal storage (borrowed)
+    size_t      len;   // length in bytes, excluding any null terminator
+} coda_str_t;
+
+typedef struct coda_owned_str {
+    char*  ptr;   // heap-allocated, null-terminated for convenience
+    size_t len;   // length in bytes, excluding the null terminator
+} coda_owned_str_t;
+```
+
+> ⚠️ **`coda_str_t` lifetime**: a *borrowed* view into the document's internal storage. The pointer is valid only as long as (a) the `coda_doc_t` that owns it is alive **and** (b) no mutation has been made to the document since the view was obtained. Always `memcpy` the bytes before calling any mutating function or `coda_doc_free()`. Do not store `coda_str_t` across calls that modify the document.
+>
+> Returned by: `coda_string_get`, `coda_map_key_at`, `coda_table_col_name`, `coda_keyed_table_col_name`, `coda_keyed_table_row_key_at`, `coda_row_get`, `coda_row_col_name_at`, `coda_row_col_value_at`, `coda_node_comment_get`, `coda_node_header_comment_get`, `coda_row_comment_get`, `coda_parse_error_code_name`.
+
+### `coda_error_t`
+
+```c
+typedef struct coda_error {
+    uint32_t         code;     // coda_parse_error_code_t value
+    uint32_t         line;     // 1-based line number
+    uint32_t         col;      // 1-based column number
+    size_t           offset;   // byte offset into source
+    coda_owned_str_t message;  // owned formatted error string
+} coda_error_t;
+```
+
+Free the embedded message buffer with `coda_error_clear(&err)`; the struct itself is caller-allocated.
+
+### `coda_node_kind_t`
+
+| Value | Integer | Description |
+|---|---|---|
+| `CODA_NODE_NULL` | 0 | Null / invalid node |
+| `CODA_NODE_STRING` | 2 | Scalar string value |
+| `CODA_NODE_BLOCK` | 3 | Key-value map (also the root node) |
+| `CODA_NODE_ARRAY` | 4 | Ordered list of values |
+| `CODA_NODE_TABLE` | 5 | Anonymous-row table (header + data rows) |
+| `CODA_NODE_KEYED_TABLE` | 6 | Keyed-row table (`key col…` header + keyed rows) |
+| `CODA_NODE_ROW` | 7 | A single row inside a `TABLE` or `KEYED_TABLE` |
+
+### `coda_status_t`
+
+| Value | Integer | Meaning |
+|---|---|---|
+| `CODA_OK` | 0 | Success |
+| `CODA_ERR` | 1 | Generic error |
+| `CODA_NOT_FOUND` | 2 | Key or index not found |
+| `CODA_BAD_KIND` | 3 | Node has the wrong kind for the operation |
+| `CODA_OUT_OF_RANGE` | 4 | Index out of range |
+
+### `coda_parse_error_code_t`
+
+| Value | Integer |
+|---|---|
+| `CODA_PARSE_UNEXPECTED_TOKEN` | 0 |
+| `CODA_PARSE_UNEXPECTED_EOF` | 1 |
+| `CODA_PARSE_DUPLICATE_KEY` | 2 |
+| `CODA_PARSE_DUPLICATE_FIELD` | 3 |
+| `CODA_PARSE_RAGGED_ROW` | 4 |
+| `CODA_PARSE_INVALID_ESCAPE` | 5 |
+| `CODA_PARSE_UNTERMINATED_STRING` | 6 |
+| `CODA_PARSE_NESTED_BLOCK` | 7 |
+| `CODA_PARSE_CONTENT_AFTER_BRACE` | 8 |
+| `CODA_PARSE_KEY_IN_BLOCK` | 9 |
 
 ---
 
@@ -310,7 +373,7 @@ Do **not** mix these — calling the wrong free on a pointer is undefined behavi
 | `coda_doc_root(doc)` | Get the root `CODA_NODE_BLOCK` handle |
 | `coda_doc_serialize(doc, indent, ilen, err?)` | Serialise to `coda_owned_str_t` |
 | `coda_doc_order(doc)` | Sort all keys |
-| `coda_doc_order_weighted(doc, keys, weights, n)` | Sort by weight |
+| `coda_doc_order_weighted(doc, keys, weights, count)` | Sort by weight |
 | `coda_ffi_abi_version()` | ABI version integer |
 
 ### Node inspection
@@ -320,9 +383,9 @@ Do **not** mix these — calling the wrong free on a pointer is undefined behavi
 | `coda_node_kind(doc, n)` | Returns `coda_node_kind_t` |
 | `coda_node_is_container(doc, n)` | `1` if `BLOCK`, `ARRAY`, `TABLE`, or `KEYED_TABLE` |
 | `coda_node_comment_get(doc, n)` | Pre-node comment (`coda_str_t`) |
-| `coda_node_comment_set(doc, n, s, len)` | Set pre-node comment |
+| `coda_node_comment_set(doc, n, s, len)` | Set pre-node comment; returns `coda_status_t` |
 | `coda_node_header_comment_get(doc, n)` | Header comment (`coda_str_t`) |
-| `coda_node_header_comment_set(doc, n, s, len)` | Set header comment |
+| `coda_node_header_comment_set(doc, n, s, len)` | Set header comment; returns `coda_status_t` |
 | `coda_node_serialize(doc, n, indent, ilen, err?)` | Serialise sub-tree to `coda_owned_str_t` |
 | `coda_node_order(doc, n)` | Sort sub-tree alphabetically |
 | `coda_node_order_weighted(doc, n, keys, weights, count)` | Sort sub-tree by weight |
