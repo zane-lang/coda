@@ -271,8 +271,8 @@ Values are constructed implicitly when assigning to `Block::operator[]`:
 root["x"]        = "hello";            // std::string / const char*
 root["compiler"] = coda::Block{};      // Block
 root["targets"]  = coda::Array{};      // Array
-root["releases"] = coda::Table{};      // Table
-root["deps"]     = coda::KeyedTable{}; // KeyedTable
+root["releases"] = coda::Table({"version", "date"});       // Table
+root["deps"]     = coda::KeyedTable({"link", "version"});  // KeyedTable
 ```
 
 ### `coda::Block`
@@ -311,7 +311,7 @@ Plain (anonymous-row) table. Column names are validated on `append`.
 
 | Member | Return type | Description |
 |---|---|---|
-| `Table(headers?)` | — | Construct with an optional `std::set<std::string>` of column names |
+| `Table(headers)` | — | Construct with a non-empty `std::set<std::string>` of column names |
 | `append(row)` | `Table&` | Append a `Row`; validates fields against the header set; returns `*this` for chaining |
 | `operator[](i)` | `Row&` | Get row by index; throws `std::out_of_range` if out of range |
 | `size()` | `size_t` | Row count |
@@ -327,7 +327,7 @@ Keyed table — rows indexed by a key string. Column names are validated on `ins
 
 | Member | Return type | Description |
 |---|---|---|
-| `KeyedTable(headers?)` | — | Construct with an optional `std::set<std::string>` of (non-key) column names |
+| `KeyedTable(headers)` | — | Construct with a non-empty `std::set<std::string>` of (non-key) column names |
 | `insert(key, row)` | `KeyedTable&` | Insert or replace a row; validates fields; returns `*this` for chaining |
 | `operator[](key)` | `Row&` | Non-const: auto-inserts empty row if absent; const: throws `std::out_of_range` |
 | `empty()` | `bool` | `true` if there are no rows |
