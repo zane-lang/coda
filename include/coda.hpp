@@ -400,6 +400,7 @@ public:
 	bool empty() const { return content.empty(); }
 	size_t size()  const { return content.size(); }
 	const Row& front() const { return content.front(); }
+	const std::set<std::string>& getHeaders() const { return headers; }
 
 	auto begin() const { return content.begin(); }
 	auto begin()       { return content.begin(); }
@@ -442,6 +443,7 @@ public:
 	Row&       operator[](const std::string& key)       { return content[key]; }
 
 	bool empty() const { return content.empty(); }
+	const std::set<std::string>& getHeaders() const { return headers; }
 
 	auto begin() const { return content.begin(); }
 	auto begin()       { return content.begin(); }
@@ -703,11 +705,14 @@ inline std::string Block::serialize(int indent, const std::string& unit) const {
 }
 
 inline std::string KeyedTable::serialize(int indent, const std::string& unit) const {
-	if (content.empty()) return "[]";
-
 	std::vector<std::string> fields;
-	for (const auto& [k, _] : content.begin()->second)
-		fields.push_back(k);
+	if (content.empty()) {
+		for (const auto& h : headers)
+			fields.push_back(h);
+	} else {
+		for (const auto& [k, _] : content.begin()->second)
+			fields.push_back(k);
+	}
 
 	std::string out = "[\n";
 	out += detail::serializeComment(headerComment, indent + 1, unit);
@@ -728,11 +733,14 @@ inline std::string KeyedTable::serialize(int indent, const std::string& unit) co
 }
 
 inline std::string Table::serialize(int indent, const std::string& unit) const {
-	if (content.empty()) return "[]";
-
 	std::vector<std::string> fields;
-	for (const auto& [k, _] : content.front())
-		fields.push_back(k);
+	if (content.empty()) {
+		for (const auto& h : headers)
+			fields.push_back(h);
+	} else {
+		for (const auto& [k, _] : content.front())
+			fields.push_back(k);
+	}
 
 	std::string out = "[\n";
 	out += detail::serializeComment(headerComment, indent + 1, unit);
@@ -753,7 +761,8 @@ inline std::string Table::serialize(int indent, const std::string& unit) const {
 }
 
 inline std::string Array::serialize(int indent, const std::string& unit) const {
-	if (content.empty()) return "[]";
+	if (content.empty())
+		return "[\n" + detail::pad(indent, unit) + "]";
 
 	std::string out = "[\n";
 	out += detail::serializeComment(headerComment, indent + 1, unit);
@@ -1279,7 +1288,9 @@ class Parser {
 		checkUniqueFields(fieldToks);
 		skipNewlines();
 
-		coda::KeyedTable table;
+		std::set<std::string> headerSet;
+		for (const auto& tok : fieldToks) headerSet.insert(tok.value);
+		coda::KeyedTable table(std::move(headerSet));
 		table.setHeaderComment(std::move(headerComment));
 
 		while (current.type != TokenType::RBracket && current.type != TokenType::Eof) {

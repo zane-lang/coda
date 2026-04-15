@@ -476,7 +476,9 @@ class Parser {
 		checkUniqueFields(fieldToks);
 		skipNewlines();
 
-		coda::KeyedTable table;
+		std::set<std::string> headerSet;
+		for (const auto& tok : fieldToks) headerSet.insert(tok.value);
+		coda::KeyedTable table(std::move(headerSet));
 		table.setHeaderComment(std::move(headerComment));
 
 		while (current.type != TokenType::RBracket && current.type != TokenType::Eof) {
