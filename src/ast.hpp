@@ -104,7 +104,7 @@ class Table {
 	std::set<std::string> headers;
 
 public:
-	Table(std::set<std::string> headers = {}) : headers(headers) {}
+	explicit Table(std::set<std::string> headers) : headers(std::move(headers)) {}
 
 	void setHeaderComment(const std::string& c) { headerComment = c; }
 	const std::string& getHeaderComment() const  { return headerComment; }
@@ -149,7 +149,7 @@ class KeyedTable {
 	std::set<std::string> headers;
 
 public:
-	KeyedTable(std::set<std::string> headers = {}) : headers(headers) {}
+	explicit KeyedTable(std::set<std::string> headers) : headers(std::move(headers)) {}
 
 	void setHeaderComment(const std::string& c) { headerComment = c; }
 	const std::string& getHeaderComment() const  { return headerComment; }
