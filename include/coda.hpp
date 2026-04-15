@@ -464,7 +464,7 @@ class Block {
 	detail::OrderedMap<std::string, std::unique_ptr<detail::Value>> content;
 
 public:
-	Block() {}
+	Block();
 	Block(const Block& o);
 	Block(Block&&) = default;
 	Block& operator=(const Block& o);
@@ -499,7 +499,7 @@ class Array {
 	std::string headerComment;
 
 public:
-	Array() {}
+	Array();
 	Array(const Array& o);
 	Array(Array&&) = default;
 	Array& operator=(const Array& o);
@@ -798,6 +798,9 @@ inline void Block::order() {
 inline void Block::order(const std::function<float(const std::string&)>& weightFn) {
 	detail::orderMapWeighted(getContent(), weightFn);
 }
+
+inline Block::Block() {}
+inline Array::Array() {}
 
 } // namespace coda
 
