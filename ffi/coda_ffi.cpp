@@ -195,15 +195,9 @@ static uint32_t intern_value(coda_doc& d, const coda::detail::Value& v) {
 		uint32_t id = d.new_node(K::Table);
 		d.get(id)->comment = v.getComment();
 		d.get(id)->header_comment = t.getHeaderComment();
-
-		// Build column list from the first row (if any)
-		bool cols_built = false;
+		for (const auto& col : t.getHeaders())
+			d.get(id)->cols.push_back(col);
 		for (const auto& row : t) {
-			if (!cols_built) {
-				for (const auto& [col, _] : row)
-					d.get(id)->cols.push_back(col);
-				cols_built = true;
-			}
 			// Intern the row
 			uint32_t rid = d.new_node(coda_doc::Kind::Row);
 			d.get(rid)->comment = row.getComment();
@@ -223,15 +217,9 @@ static uint32_t intern_value(coda_doc& d, const coda::detail::Value& v) {
 		uint32_t id = d.new_node(K::KeyedTable);
 		d.get(id)->comment = v.getComment();
 		d.get(id)->header_comment = kt.getHeaderComment();
-
-		// Build column list from the first row
-		bool cols_built = false;
+		for (const auto& col : kt.getHeaders())
+			d.get(id)->cols.push_back(col);
 		for (const auto& [rowKey, row] : kt) {
-			if (!cols_built) {
-				for (const auto& [col, _] : row)
-					d.get(id)->cols.push_back(col);
-				cols_built = true;
-			}
 			// Intern the row
 			uint32_t rid = d.new_node(coda_doc::Kind::Row);
 			d.get(rid)->comment = row.getComment();

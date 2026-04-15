@@ -137,7 +137,7 @@ root["name"].as_string().value = "renamed"
 doc.save("out.coda")
 ```
 
-`Table` and `KeyedTable` accept a column list in the constructor. Methods that operate on the document (such as `append_col`, `append`, `insert`, `header_comment`) require the node to be inserted first.
+`Table` and `KeyedTable` require a non-empty column list in the constructor. Methods that operate on the document (such as `append_col`, `append`, `insert`, `header_comment`) require the node to be inserted first.
 
 `Row` fields set before insertion are buffered and applied automatically on materialization:
 
@@ -292,7 +292,7 @@ Plain (anonymous-row) table.
 
 | Operation | Description |
 |---|---|
-| `Table(columns?)` | Create a new table, optionally with an initial column list |
+| `Table(columns)` | Create a new table with an initial non-empty column list |
 | `node[i]` | Get row by index (returns `Row`) |
 | `node[i] = row` | Replace row |
 | `del node[i]` | Remove row |
@@ -309,7 +309,7 @@ Keyed table — rows indexed by their key string.
 
 | Operation | Description |
 |---|---|
-| `KeyedTable(columns?)` | Create a new keyed table, optionally with an initial column list |
+| `KeyedTable(columns)` | Create a new keyed table with an initial non-empty column list |
 | `node["key"]` | Get row by key (returns `Row`) |
 | `node["key"] = row` | Insert or replace row |
 | `node.insert("key", row)` | Insert or replace row; returns `node` for chaining |
