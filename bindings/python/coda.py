@@ -754,8 +754,8 @@ class Table(Node):
         t[0]["col1"]            # index access
 	"""
 
-	def __init__(self, columns: 'Optional[list[str]]' = None):
-		if columns is None or len(columns) == 0:
+	def __init__(self, columns: 'list[str]'):
+		if len(columns) == 0:
 			raise ValueError("Table requires at least one column")
 		self._doc              = None
 		self._node_id          = None
@@ -867,8 +867,8 @@ class KeyedTable(Node):
         kt["mykey"]["col1"]     # key + field access
 	"""
 
-	def __init__(self, columns: 'Optional[list[str]]' = None):
-		if columns is None or len(columns) == 0:
+	def __init__(self, columns: 'list[str]'):
+		if len(columns) == 0:
 			raise ValueError("KeyedTable requires at least one column")
 		self._doc             = None
 		self._node_id         = None

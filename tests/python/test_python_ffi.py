@@ -33,13 +33,25 @@ def test_empty_table_and_keyed_table_keep_headers() -> None:
 def test_table_and_keyed_table_require_columns() -> None:
 	try:
 		Table()
-		raise AssertionError("Table() should require columns")
-	except ValueError:
+		raise AssertionError("Table() should require columns argument")
+	except TypeError:
 		pass
 
 	try:
 		KeyedTable()
-		raise AssertionError("KeyedTable() should require columns")
+		raise AssertionError("KeyedTable() should require columns argument")
+	except TypeError:
+		pass
+
+	try:
+		Table([])
+		raise AssertionError("Table([]) should be rejected")
+	except ValueError:
+		pass
+
+	try:
+		KeyedTable([])
+		raise AssertionError("KeyedTable([]) should be rejected")
 	except ValueError:
 		pass
 
