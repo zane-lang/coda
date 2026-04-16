@@ -191,7 +191,6 @@ _sig(_lib.coda_map_len,           c_size_t, c_void_p, c_uint32)
 _sig(_lib.coda_map_key_at,        _CodaStr, c_void_p, c_uint32, c_size_t)
 _sig(_lib.coda_map_value_at,      c_uint32, c_void_p, c_uint32, c_size_t)
 _sig(_lib.coda_map_get,           c_uint32, c_void_p, c_uint32, c_char_p, c_size_t)
-_sig(_lib.coda_map_get_or_insert, c_uint32, c_void_p, c_uint32, c_char_p, c_size_t)
 _sig(_lib.coda_map_set,           c_uint32, c_void_p, c_uint32, c_char_p, c_size_t, c_uint32)
 _sig(_lib.coda_map_remove,        c_uint32, c_void_p, c_uint32, c_char_p, c_size_t)
 
@@ -494,6 +493,11 @@ class Row(Node):
 		                     cb, len(cb), vb, len(vb)) != _CODA_OK:
 			raise Error(f"Failed to set row field: {col}")
 
+	def insert(self, col: str, value: str) -> 'Row':
+		"""Insert or replace a column value. Returns self for chaining."""
+		self[col] = value
+		return self
+
 	def __delitem__(self, col: str):
 		doc = self._check()
 		b  = _enc(col)
@@ -502,12 +506,6 @@ class Row(Node):
 			raise KeyError(col)
 		if st != _CODA_OK:
 			raise Error(f"Failed to remove row field: {col}")
-
-	def get(self, col: str, default: Optional[str] = None) -> Optional[str]:
-		try:
-			return self[col]
-		except KeyError:
-			return default
 
 	def __contains__(self, col: str) -> bool:
 		try:
@@ -614,15 +612,6 @@ class Block(Node):
 	def __len__(self) -> int:
 		doc = self._check()
 		return _lib.coda_map_len(doc._ptr, self._node_id)
-
-	def get_or_insert(self, key: str) -> Node:
-		"""Return the node for key, inserting an empty String if absent."""
-		doc = self._check()
-		kb       = _enc(key)
-		child_id = _lib.coda_map_get_or_insert(doc._ptr, self._node_id, kb, len(kb))
-		if child_id == 0:
-			raise Error(f"Failed to get_or_insert key: {key}")
-		return _node_from_id(doc, child_id)
 
 	def order(self) -> None:
 		"""Reorder keys: scalars first, then containers; alphabetical within groups."""
@@ -1045,17 +1034,13 @@ class Doc:
 		self.free()
 		return False
 
-	def close(self):
-		"""Idempotent alias for free(). Suitable for use with contextlib.closing()."""
-		self.free()
-
 	def free(self):
 		if self._ptr is not None:
 			_lib.coda_doc_free(self._ptr)
 			self._ptr = None
 
 	def __del__(self):
-		# Backstop: catches cases where the context manager or close() was not used.
+		# Backstop: catches cases where the context manager was not used.
 		# Do not rely on this for correctness — always prefer the context manager.
 		try:
 			self.free()
@@ -1105,12 +1090,6 @@ class Doc:
 			keys[i] = k.encode("utf-8")
 			vals[i] = v
 		_lib.coda_doc_order_weighted(self._ptr, keys, vals, len(weights))
-
-	def order_weighted_and_serialize(self, weights: list[tuple[str, float]],
-	                                 indent: str = "\t") -> str:
-		self.order_weighted(weights)
-		return self.serialize(indent)
-
 
 # ─── Module-level utilities ───────────────────────────────────────────────────
 
