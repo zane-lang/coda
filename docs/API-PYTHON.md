@@ -173,9 +173,6 @@ text = doc.serialize(indent="  ")
 
 doc.save("out.coda")
 doc.save("out.coda", indent="  ")
-
-# Convenience: sort by weight and serialise in one call
-text = doc.order_weighted_and_serialize([("name", 100), ("version", 90)])
 ```
 
 ---
@@ -225,7 +222,6 @@ print(deps["plot"].comment)  # comment above the "plot" row
 | `save(path, indent?)` | Serialise and write to disk |
 | `order()` | Sort all keys alphabetically (scalars first) |
 | `order_weighted(weights)` | Sort by `[(key, float), …]` weight list (higher → top) |
-| `order_weighted_and_serialize(weights, indent?)` | Sort by weight then serialise; returns `str` |
 | `free()` | Explicitly free the document (auto-called by context manager) |
 
 `Doc` implements the context-manager protocol (`with Doc.parse(...) as doc:`), which calls `free()` on exit.
@@ -264,10 +260,10 @@ Ordered map of `str → Node`. Scalar values may be supplied as plain `str`; the
 | `node["key"] = value` | Insert or replace a child (`str` or container node) |
 | `node.insert("key", value)` | Insert or replace a child; returns `node` for chaining |
 | `del node["key"]` | Remove a child |
-| `"key" in node` | Membership test |
+| `node.has("key")` | Membership test (equivalent to `"key" in node`) |
+| `"key" in node` | Membership test (equivalent to `node.has("key")`) |
 | `for key, child in node` | Iterate in insertion order |
 | `len(node)` | Number of entries |
-| `node.get_or_insert("key")` | Look up key, inserting an empty string node if absent |
 | `node.order()` | Sort this block's keys alphabetically (scalars first) |
 | `node.order_weighted(weights)` | Sort by `[(key, float), …]` weight list |
 | `node.comment` | Pre-node comment string (get/set) |
@@ -331,11 +327,11 @@ A single table row — flat map of column name → string value.
 |---|---|
 | `row["col"]` | Get column value as `str` |
 | `row["col"] = "val"` | Set column value |
+| `row.insert("col", "val")` | Set column value; returns `row` for chaining |
 | `del row["col"]` | Remove column |
 | `"col" in row` | Membership test |
 | `for col, val in row` | Iterate columns |
 | `len(row)` | Column count |
-| `row.get("col", default)` | Get value with fallback |
 | `row.comment` | Row-level comment (get/set) |
 
 ### `Error`

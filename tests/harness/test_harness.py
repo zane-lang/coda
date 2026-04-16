@@ -17,7 +17,7 @@ from bindings.python.coda import (
 	Array,
 	Table,
 	KeyedTable,
-	_String,
+	Row,
 	Node,
 	Error,
 	ParseError,
@@ -150,10 +150,13 @@ class CodaTestRunner:
 			return keys == self._strings(check["eq_list"])
 
 		if op == "table_row_missing_inserts":
-			block = self.root[str(check["table"])].as_block()
+			kt = self.root[str(check["table"])].as_keyed_table()
 			try:
-				node = block.get_or_insert(str(check["row"]))
-				got  = isinstance(node, _String) and str(node) == ""
+				row_key = str(check["row"])
+				kt.insert(row_key, Row())
+				row_exists = row_key in kt
+				row_is_empty = len(kt[row_key]) == 0 if row_exists else False
+				got = row_exists and row_is_empty
 			except Exception:
 				got = False
 			return got == self._bool(str(check["eq_bool"]))
@@ -241,8 +244,9 @@ class CodaTestRunner:
 				(str(entry.as_block()["field"]), self._float(str(entry.as_block()["weight"])))
 				for entry in check["weights"].as_array()
 			]
+			self.doc.order_weighted(weights)
 			return self._order_contains(
-				self.doc.order_weighted_and_serialize(weights), order
+				self.doc.serialize(), order
 			)
 
 		if op == "serialize_contains":
