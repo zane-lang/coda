@@ -260,8 +260,8 @@ Ordered map of `str → Node`. Scalar values may be supplied as plain `str`; the
 | `node["key"] = value` | Insert or replace a child (`str` or container node) |
 | `node.insert("key", value)` | Insert or replace a child; returns `node` for chaining |
 | `del node["key"]` | Remove a child |
-| `node.has("key")` | Membership test |
-| `"key" in node` | Membership test |
+| `node.has("key")` | Membership test (equivalent to `"key" in node`) |
+| `"key" in node` | Membership test (equivalent to `node.has("key")`) |
 | `for key, child in node` | Iterate in insertion order |
 | `len(node)` | Number of entries |
 | `node.order()` | Sort this block's keys alphabetically (scalars first) |

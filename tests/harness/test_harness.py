@@ -154,7 +154,9 @@ class CodaTestRunner:
 			try:
 				row_key = str(check["row"])
 				kt.insert(row_key, Row())
-				got = row_key in kt and len(kt[row_key]) == 0
+				row_exists = row_key in kt
+				row_is_empty = len(kt[row_key]) == 0 if row_exists else False
+				got = row_exists and row_is_empty
 			except Exception:
 				got = False
 			return got == self._bool(str(check["eq_bool"]))
