@@ -1434,6 +1434,8 @@ public:
 
 } // namespace coda
 
+#include <cerrno>
+#include <cstring>
 #include <fstream>
 #include <sstream>
 #include <string>
@@ -1456,7 +1458,7 @@ public:
 
 	static Doc parseFile(const std::string& path) {
 		std::ifstream f(path, std::ios::binary);
-		if (!f) throw std::runtime_error("could not open: " + path);
+		if (!f) throw std::runtime_error("could not open '" + path + "': " + std::strerror(errno));
 		std::ostringstream ss;
 		ss << f.rdbuf();
 		return parse(ss.str(), path);
