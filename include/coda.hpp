@@ -1447,18 +1447,19 @@ class Doc {
 
 public:
 	Doc() = default;
-	Doc(const std::string& path) {
-		std::ifstream f(path, std::ios::binary);
-		if (!f) throw std::runtime_error("could not open: " + path);
-		std::ostringstream ss;
-		ss << f.rdbuf();
-		rootBlock = detail::Parser(ss.str(), path).parse();
-	}
 
 	static Doc parse(std::string content, std::string filename = "") {
 		Doc doc;
 		doc.rootBlock = detail::Parser(content, filename).parse();
 		return doc;
+	}
+
+	static Doc parseFile(const std::string& path) {
+		std::ifstream f(path, std::ios::binary);
+		if (!f) throw std::runtime_error("could not open: " + path);
+		std::ostringstream ss;
+		ss << f.rdbuf();
+		return parse(ss.str(), path);
 	}
 
 	void useTabs()              { indentUnit = "\t"; }
