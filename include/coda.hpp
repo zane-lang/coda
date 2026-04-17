@@ -705,27 +705,27 @@ inline std::string Block::serialize(int indent, const std::string& unit) const {
 }
 
 inline std::string KeyedTable::serialize(int indent, const std::string& unit) const {
-	std::vector<std::string> fields;
+	std::vector<const std::string*> fields;
 	if (content.empty()) {
 		for (const auto& h : headers)
-			fields.push_back(h);
+			fields.push_back(&h);
 	} else {
 		for (const auto& [k, _] : content.begin()->second)
-			fields.push_back(k);
+			fields.push_back(&k);
 	}
 
 	std::string out = "[\n";
 	out += detail::serializeComment(headerComment, indent + 1, unit);
 	out += detail::pad(indent + 1, unit) + "key";
 	for (const auto& f : fields)
-		out += " " + detail::serializeToken(f);
+		out += " " + detail::serializeToken(*f);
 	out += "\n";
 
 	for (const auto& [rowKey, row] : content) {
 		out += detail::serializeComment(row.getComment(), indent + 1, unit);
 		out += detail::pad(indent + 1, unit) + detail::serializeToken(rowKey);
 		for (const auto& f : fields)
-			out += " " + detail::serializeToken(row[f]);
+			out += " " + detail::serializeToken(row[*f]);
 		out += "\n";
 	}
 
@@ -733,27 +733,27 @@ inline std::string KeyedTable::serialize(int indent, const std::string& unit) co
 }
 
 inline std::string Table::serialize(int indent, const std::string& unit) const {
-	std::vector<std::string> fields;
+	std::vector<const std::string*> fields;
 	if (content.empty()) {
 		for (const auto& h : headers)
-			fields.push_back(h);
+			fields.push_back(&h);
 	} else {
 		for (const auto& [k, _] : content.front())
-			fields.push_back(k);
+			fields.push_back(&k);
 	}
 
 	std::string out = "[\n";
 	out += detail::serializeComment(headerComment, indent + 1, unit);
 	out += detail::pad(indent + 1, unit);
 	for (size_t i = 0; i < fields.size(); ++i)
-		out += detail::serializeToken(fields[i]) + (i < fields.size() - 1 ? " " : "");
+		out += detail::serializeToken(*fields[i]) + (i < fields.size() - 1 ? " " : "");
 	out += "\n";
 
 	for (const auto& row : content) {
 		out += detail::serializeComment(row.getComment(), indent + 1, unit);
 		out += detail::pad(indent + 1, unit);
 		for (size_t i = 0; i < fields.size(); ++i)
-			out += detail::serializeToken(row[fields[i]]) + (i < fields.size() - 1 ? " " : "");
+			out += detail::serializeToken(row[*fields[i]]) + (i < fields.size() - 1 ? " " : "");
 		out += "\n";
 	}
 
@@ -1067,8 +1067,8 @@ class Parser {
 
 	Token advance() {
 		checkNotError();
-		Token t   = current;
-		current   = lookahead;
+		Token t   = std::move(current);
+		current   = std::move(lookahead);
 		lookahead = lexer.next();
 		return t;
 	}
@@ -1457,7 +1457,7 @@ public:
 
 	static Doc parse(std::string content, std::string filename = "") {
 		Doc doc;
-		doc.rootBlock = detail::Parser(content, filename).parse();
+		doc.rootBlock = detail::Parser(std::move(content), std::move(filename)).parse();
 		return doc;
 	}
 

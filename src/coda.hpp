@@ -24,7 +24,7 @@ public:
 
 	static Doc parse(std::string content, std::string filename = "") {
 		Doc doc;
-		doc.rootBlock = detail::Parser(content, filename).parse();
+		doc.rootBlock = detail::Parser(std::move(content), std::move(filename)).parse();
 		return doc;
 	}
 
