@@ -255,8 +255,8 @@ class Parser {
 
 	Token advance() {
 		checkNotError();
-		Token t   = current;
-		current   = lookahead;
+		Token t   = std::move(current);
+		current   = std::move(lookahead);
 		lookahead = lexer.next();
 		return t;
 	}

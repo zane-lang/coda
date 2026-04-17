@@ -284,7 +284,7 @@ static coda::detail::Value emit_value(const coda_doc& d, uint32_t id) {
 		case coda_doc::Kind::Table: {
 			// Reconstruct a Table with headers derived from the stored col list.
 			std::set<std::string> hdrs(n->cols.begin(), n->cols.end());
-			coda::Table t(hdrs);
+			coda::Table t(std::move(hdrs));
 			t.setHeaderComment(n->header_comment);
 			for (uint32_t rid : n->arr) {
 				const auto* rn = d.get(rid);
@@ -302,7 +302,7 @@ static coda::detail::Value emit_value(const coda_doc& d, uint32_t id) {
 
 		case coda_doc::Kind::KeyedTable: {
 			std::set<std::string> hdrs(n->cols.begin(), n->cols.end());
-			coda::KeyedTable kt(hdrs);
+			coda::KeyedTable kt(std::move(hdrs));
 			kt.setHeaderComment(n->header_comment);
 			for (const auto& [rowKey, rid] : n->entries) {
 				const auto* rn = d.get(rid);
