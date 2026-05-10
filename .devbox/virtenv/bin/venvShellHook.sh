@@ -1,1 +1,0 @@
-/home/manuel/projects/zane/coda/.devbox/virtenv/python3/bin/venvShellHook.sh
