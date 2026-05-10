@@ -1,6 +1,9 @@
 {
   "$schema": "https://raw.githubusercontent.com/jetify-com/devbox/0.17.2/.schema/devbox.schema.json",
   "packages": [
+    "python3Packages.build",
+    "python3Packages.quom",
+    "python3Packages.wheel",
     "zig@latest",
     "just@latest"
   ],

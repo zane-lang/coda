@@ -17,26 +17,16 @@ jobs:
     steps:
       - uses: actions/checkout@v6
 
-      - name: Install Zig
-        uses: mlugg/setup-zig@v2
-        with:
-          version: "0.14.0"
+      - name: Install devbox + packages
+        uses: jetify-com/devbox-install-action@v0.15.0
 
       - name: Set up Python
         uses: actions/setup-python@v6
         with:
           python-version: "3.x"
 
-      - name: Install just
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y just
-
-      - name: Install build tools
-        run: pip install build wheel quom
-
       - name: Cross-compile all FFI libraries
-        run: just cross-all
+        run: devbox run -- just cross-all
 
       - name: Build platform wheels
         run: |
@@ -62,9 +52,9 @@ jobs:
             lib="${LIB_FILE[$target]}"
             cp "dist/${target}/${lib}" bindings/python/
             tmpdir=$(mktemp -d)
-            python -m build --wheel --outdir "$tmpdir/"
+            devbox run -- python3 -m build --wheel --outdir "$tmpdir/"
             pushd "$tmpdir"
-            python -m wheel tags --platform-tag "${plat}" --remove *.whl
+            devbox run -- python3 -m wheel tags --platform-tag "${plat}" --remove *.whl
             mv *.whl "$GITHUB_WORKSPACE/wheelhouse/"
             popd
             rm -f "bindings/python/${lib}"
