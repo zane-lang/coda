@@ -27,11 +27,16 @@ jobs:
         with:
           python-version: "3.x"
 
+      - name: Install just
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y just
+
       - name: Install build tools
         run: pip install build wheel quom
 
       - name: Cross-compile all FFI libraries
-        run: rake cross-all
+        run: just cross-all
 
       - name: Build platform wheels
         run: |

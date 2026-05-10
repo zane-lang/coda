@@ -1,7 +1,7 @@
 // examples/cpp.cpp — Coda C++ API tour
 //
 // Build and run from the repository root:
-//   rake run
+//   just run
 //
 // Or compile directly:
 //   c++ -std=c++17 -I. examples/cpp.cpp -o build/run && ./build/run
@@ -194,4 +194,3 @@ int main() {
 
 	return 0;
 }
-

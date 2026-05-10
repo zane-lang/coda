@@ -42,7 +42,7 @@ with coda.Doc.parse_file("config.coda") as doc:
 #include "path/to/coda.hpp"
 ```
 
-**C FFI / other languages** — build the shared library with `rake build` (see [Building & testing](#building--testing) below).
+**C FFI / other languages** — build the shared library with `just build` (see [Building & testing](#building--testing) below).
 
 ---
 
@@ -58,16 +58,16 @@ with coda.Doc.parse_file("config.coda") as doc:
 
 ## Building & testing
 
-This repo is built and tested via `rake`.
+This repo is built and tested via `just`.
 
 ```bash
-rake generate     # regenerate include/coda.hpp (requires quom)
-rake build        # build host shared library (libcoda_ffi.so)
-rake cross-all    # cross-compile for all supported targets
-rake test         # run all tests
-rake test-cpp
-rake test-c-ffi
-rake test-py-ffi
+just generate     # regenerate include/coda.hpp (requires quom)
+just build        # build host shared library (libcoda_ffi.so)
+just cross-all    # cross-compile for all supported targets
+just test         # run all tests
+just test-cpp
+just test-c-ffi
+just test-py-ffi
 ```
 
 Cross-compiled FFI artifacts are placed under `dist/<target>/`.

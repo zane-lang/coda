@@ -18,8 +18,8 @@ from coda import Doc, Block, Array, Table, KeyedTable, Row, ParseError
 **From source** — build the shared library first, then import directly:
 
 ```bash
-rake build        # host platform only
-rake cross-all    # all supported targets
+just build        # host platform only
+just cross-all    # all supported targets
 ```
 
 ```python

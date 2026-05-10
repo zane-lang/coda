@@ -7,8 +7,8 @@
 Build the shared library:
 
 ```bash
-rake build        # libcoda_ffi.so / .dylib / .dll for the host platform
-rake cross-all    # cross-compile for all supported targets (output in dist/)
+just build        # libcoda_ffi.so / .dylib / .dll for the host platform
+just cross-all    # cross-compile for all supported targets (output in dist/)
 ```
 
 Then include the header and link against the library:
