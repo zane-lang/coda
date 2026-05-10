@@ -192,13 +192,17 @@ def cross_all() -> None:
 
 
 def install(libdir: str) -> None:
+	artifact = DIST_DIR / "x86_64-linux-gnu" / "libcoda_ffi.so"
+	if not artifact.exists():
+		raise FileNotFoundError("dist/x86_64-linux-gnu/libcoda_ffi.so not found; run `just cross-all` first")
+
 	run_cmd("sudo", "install", "-d", libdir)
 	run_cmd(
 		"sudo",
 		"install",
 		"-m",
 		"755",
-		"dist/x86_64-linux-gnu/libcoda_ffi.so",
+		str(artifact),
 		f"{libdir}/",
 	)
 
