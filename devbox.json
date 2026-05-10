@@ -2,11 +2,15 @@
   "$schema": "https://raw.githubusercontent.com/jetify-com/devbox/0.17.2/.schema/devbox.schema.json",
   "packages": [
     "zig@latest",
-    "just@latest"
+    "just@latest",
+    "python3@latest"
   ],
   "shell": {
     "init_hook": [
-      "echo 'Welcome to devbox!' > /dev/null"
+      "echo 'Welcome to devbox!'",
+      "if [ ! -d .venv ]; then python3 -m venv .venv; fi",
+      ". .venv/bin/activate",
+      "pip install --upgrade -q quom"
     ],
     "scripts": {
       "test": [

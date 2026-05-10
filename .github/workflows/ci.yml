@@ -16,13 +16,8 @@ jobs:
     steps:
       - uses: actions/checkout@v6
 
-      - name: Install Zig
-        uses: mlugg/setup-zig@v2
-        with:
-          version: "0.14.0"
-
-      - name: Install Python tools
-        run: pip install quom
+      - name: Install devbox + packages
+        uses: jetify-com/devbox-install-action@v0.15.0
 
       - name: Run tests
-        run: rake test
+        run: devbox run -- just test

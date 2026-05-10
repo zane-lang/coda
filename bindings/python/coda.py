@@ -67,7 +67,7 @@ def _find_library() -> str:
 
 	# Check repo-local paths first (dist/, build/), then fall back to the
 	# bare library name so the OS linker resolves it via LD_LIBRARY_PATH /
-	# ldconfig — same mechanism as rake install.
+	# ldconfig — same mechanism as just install.
 	script_dir = os.path.dirname(os.path.abspath(__file__))
 	repo_root  = os.path.join(script_dir, "..", "..")
 	for path in [
@@ -82,7 +82,7 @@ def _find_library() -> str:
 			if os.path.exists(lib_path):
 				return lib_path
 
-	# Let the OS find it (installed via rake install / ldconfig).
+	# Let the OS find it (installed via just install / ldconfig).
 	return lib_names[0]
 
 
