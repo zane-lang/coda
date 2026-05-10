@@ -216,7 +216,6 @@ def clean() -> None:
 
 
 def test() -> None:
-	cross_all()
 	test_cpp()
 	test_c_ffi()
 	test_py_ffi()

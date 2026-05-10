@@ -20,9 +20,7 @@ test-py-ffi:
 	python3 scripts/tasks.py test-py-ffi
 
 test: cross-all
-	python3 scripts/tasks.py test-cpp
-	python3 scripts/tasks.py test-c-ffi
-	python3 scripts/tasks.py test-py-ffi
+	python3 scripts/tasks.py test
 
 run: generate
 	python3 scripts/tasks.py run
