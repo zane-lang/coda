@@ -122,9 +122,6 @@ def run_sample() -> None:
 
 
 def cross(target: str) -> None:
-	if not target:
-		raise ValueError("target is required")
-
 	target_dir = DIST_DIR / target
 	ensure_dir(target_dir)
 
@@ -192,7 +189,6 @@ def cross_all() -> None:
 	for target in TARGETS:
 		cross(target)
 	print("Cross build done. Artifacts are in dist/.")
-	install("/usr/local/lib")
 
 
 def install(libdir: str) -> None:
