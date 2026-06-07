@@ -1,0 +1,12 @@
+(library
+ (name coda)
+ (foreign_stubs (language c) [coda_ocaml.c])
+ (modules coda_ocaml coda)
+ (preprocess (arguments [-I include]))
+)
+
+(executable
+ (name test)
+ (public_name coda_test)
+ (modules test)
+ (libraries coda))

@@ -169,18 +169,20 @@ public:
 	}
 
 	bool set_string(const char* key, const char* value) override {
-		f()[key] = std::string(value);
+		f().insert(key, std::string(value));
 		return true;
 	}
 
 	bool set_string_path(const std::vector<std::string>& keys,
 	                     const char* value) override {
-		coda::detail::Value* v = nullptr;
-		for (size_t i = 0; i < keys.size(); ++i) {
-			if (i == 0) v = &f()[keys[i]];
-			else        v = &v->asBlock()[keys[i]];
+		coda::Block* curr = &f();
+		for (size_t i = 0; i + 1 < keys.size(); ++i) {
+			if (!curr->has(keys[i])) {
+				curr->insert(keys[i], coda::Block());
+			}
+			curr = &curr->operator[](keys[i]).asBlock();
 		}
-		*v = std::string(value);
+		curr->insert(keys.back(), std::string(value));
 		return true;
 	}
 

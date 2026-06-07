@@ -108,6 +108,10 @@ def test_py_ffi() -> None:
 	run_cmd("python3", "tests/python/test_python_ffi.py")
 
 
+def test_ocaml() -> None:
+	run_cmd("dune", "run", "-p", "coda_ocaml_test")
+
+
 def run_sample() -> None:
 	ensure_dir(BUILD_DIR)
 	run_cmd(
@@ -219,6 +223,7 @@ def test() -> None:
 	test_cpp()
 	test_c_ffi()
 	test_py_ffi()
+	test_ocaml()
 
 
 def main() -> None:
@@ -230,6 +235,7 @@ def main() -> None:
 	subparsers.add_parser("test-cpp")
 	subparsers.add_parser("test-c-ffi")
 	subparsers.add_parser("test-py-ffi")
+	subparsers.add_parser("test-ocaml")
 	subparsers.add_parser("test")
 	subparsers.add_parser("run")
 	subparsers.add_parser("cross-all")
@@ -253,6 +259,8 @@ def main() -> None:
 		test_c_ffi()
 	elif args.command == "test-py-ffi":
 		test_py_ffi()
+	elif args.command == "test-ocaml":
+		test_ocaml()
 	elif args.command == "test":
 		test()
 	elif args.command == "run":

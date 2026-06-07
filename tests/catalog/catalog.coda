@@ -668,14 +668,14 @@ tests [
     }
     {
         suite "Keyed tables"
-        name "missing key inserts default row"
+        name "missing key does NOT insert default row"
         src "deps [\n  key link\n  a b\n]\n"
         checks [
             {
                 op table_row_missing_inserts
                 table deps
                 row nope
-                eq_bool true
+                eq_bool false
             }
         ]
     }
