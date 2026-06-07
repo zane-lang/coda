@@ -158,11 +158,13 @@ _sig(_lib.coda_free,            None,          c_void_p)
 _sig(_lib.coda_error_clear,     None,          POINTER(_CodaError))
 _sig(_lib.coda_owned_str_free,  None,          _CodaOwnedStr)
 _sig(_lib.coda_ffi_abi_version, c_uint32)
+_sig(_lib.coda_parse_error_code_name, _CodaStr, c_uint32)
 
 _sig(_lib.coda_doc_new,            c_void_p)
 _sig(_lib.coda_doc_free,           None,          c_void_p)
 _sig(_lib.coda_doc_parse,          c_void_p,      c_char_p, c_size_t, c_char_p, POINTER(_CodaError))
 _sig(_lib.coda_doc_parse_file,     c_void_p,      c_char_p, POINTER(_CodaError))
+_sig(_lib.coda_doc_parse_fp,       c_void_p,      c_void_p, c_char_p, POINTER(_CodaError))
 _sig(_lib.coda_doc_serialize,      _CodaOwnedStr, c_void_p, c_char_p, c_size_t, POINTER(_CodaError))
 _sig(_lib.coda_doc_order,          None,          c_void_p)
 _sig(_lib.coda_doc_order_weighted, None,          c_void_p, POINTER(c_char_p), POINTER(ctypes.c_float), c_size_t)
@@ -191,6 +193,7 @@ _sig(_lib.coda_map_len,           c_size_t, c_void_p, c_uint32)
 _sig(_lib.coda_map_key_at,        _CodaStr, c_void_p, c_uint32, c_size_t)
 _sig(_lib.coda_map_value_at,      c_uint32, c_void_p, c_uint32, c_size_t)
 _sig(_lib.coda_map_get,           c_uint32, c_void_p, c_uint32, c_char_p, c_size_t)
+_sig(_lib.coda_map_get_or_insert, c_uint32, c_void_p, c_uint32, c_char_p, c_size_t)
 _sig(_lib.coda_map_set,           c_uint32, c_void_p, c_uint32, c_char_p, c_size_t, c_uint32)
 _sig(_lib.coda_map_remove,        c_uint32, c_void_p, c_uint32, c_char_p, c_size_t)
 
@@ -527,6 +530,14 @@ class Row(Node):
 		doc = self._check()
 		return _lib.coda_row_col_count(doc._ptr, self._node_id)
 
+	def size(self) -> int:
+		"""Return the number of columns. Alias for __len__."""
+		return self.__len__()
+
+	def empty(self) -> bool:
+		"""Return True if the row has no columns."""
+		return self.__len__() == 0
+
 	def __repr__(self) -> str:
 		return f"Row({dict(self)!r})"
 
@@ -600,6 +611,18 @@ class Block(Node):
 		"""Return True if the block contains the given key."""
 		return key in self
 
+	def get_or_insert(self, key: str) -> "Node":
+		"""Return the node for *key*, inserting an empty STRING node if absent.
+
+		Mirrors C++ Block::operator[] which auto-inserts on missing keys.
+		"""
+		doc = self._check()
+		kb = _enc(key)
+		child_id = _lib.coda_map_get_or_insert(doc._ptr, self._node_id, kb, len(kb))
+		if child_id == 0:
+			raise Error(f"Failed to get or insert key: {key}")
+		return _node_from_id(doc, child_id)
+
 	def __iter__(self) -> Iterator[Tuple[str, Node]]:
 		"""Yield (key, node) pairs in insertion order."""
 		doc = self._check()
@@ -628,6 +651,14 @@ class Block(Node):
 		vals = (ctypes.c_float * len(weights))(*[v for _, v in weights])
 		_lib.coda_node_order_weighted(doc._ptr, self._node_id, keys, vals, len(weights))
 
+
+	def size(self) -> int:
+		"""Return the number of keys. Alias for __len__."""
+		return self.__len__()
+
+	def empty(self) -> bool:
+		"""Return True if the block has no keys."""
+		return self.__len__() == 0
 
 # ─── Array ────────────────────────────────────────────────────────────────
 
@@ -723,6 +754,10 @@ class Array(Node):
 		doc = self._check()
 		return _lib.coda_array_len(doc._ptr, self._node_id)
 
+
+	def empty(self) -> bool:
+		"""Return True if the array has no elements."""
+		return self.__len__() == 0
 
 # ─── Table ────────────────────────────────────────────────────────────────
 
@@ -836,6 +871,13 @@ class Table(Node):
 		doc = self._check()
 		return _lib.coda_table_row_count(doc._ptr, self._node_id)
 
+	def size(self) -> int:
+		"""Return the number of rows. Alias for __len__."""
+		return self.__len__()
+
+	def empty(self) -> bool:
+		"""Return True if the table has no rows."""
+		return self.__len__() == 0
 
 # ─── KeyedTable ───────────────────────────────────────────────────────────
 
@@ -948,6 +990,14 @@ class KeyedTable(Node):
 		doc = self._check()
 		return _lib.coda_keyed_table_row_count(doc._ptr, self._node_id)
 
+	def size(self) -> int:
+		"""Return the number of rows. Alias for __len__."""
+		return self.__len__()
+
+	def empty(self) -> bool:
+		"""Return True if the keyed table has no rows."""
+		return self.__len__() == 0
+
 	def order(self) -> None:
 		"""Reorder rows: alphabetically by key."""
 		doc = self._check()
@@ -1018,6 +1068,21 @@ class Doc:
 			_lib.coda_error_clear(ctypes.byref(err))
 			raise ParseError(msg, code=code, line=line, col=col, offset=offset)
 		return cls(ptr)
+
+	@classmethod
+	def parse_fp(cls, fp, filename: Optional[str] = None) -> 'Doc':
+		"""Parse Coda text from a file object.
+
+		Args:
+			fp: A file-like object with a read() method (e.g. sys.stdin.buffer, an opened file, io.StringIO, io.BytesIO).
+			filename: Optional filename for error messages.
+		"""
+		if not hasattr(fp, 'read'):
+			raise TypeError('fp must be a file-like object with a read() method')
+		text = fp.read()
+		if isinstance(text, bytes):
+			text = text.decode('utf-8')
+		return cls.parse(text, filename)
 
 	@classmethod
 	def new(cls) -> 'Doc':
@@ -1097,6 +1162,11 @@ def get_abi_version() -> int:
 	return _lib.coda_ffi_abi_version()
 
 
+def parse_error_code_name(code: int) -> str:
+	"""Return the human-readable name for a parse error code."""
+	return _lib.coda_parse_error_code_name(code).to_python()
+
+
 __all__ = [
 	"Doc",
 	"Block",
@@ -1107,4 +1177,5 @@ __all__ = [
 	"Error",
 	"ParseError",
 	"get_abi_version",
+	"parse_error_code_name",
 ]

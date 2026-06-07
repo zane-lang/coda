@@ -967,6 +967,23 @@ extern "C" CODA_FFI_EXPORT coda_status_t coda_table_row_append(
 	if (n->kind != coda_doc::Kind::Table) return CODA_BAD_KIND;
 	const auto* rn = doc->get(row);
 	if (!rn || rn->kind != coda_doc::Kind::Row) return CODA_BAD_KIND;
+
+	// Validate row fields match table headers (mirrors C++ Table::append)
+	for (const auto& [field, val] : rn->fields) {
+		bool found = false;
+		for (const auto& h : n->cols) {
+			if (h == field) { found = true; break; }
+		}
+		if (!found) return CODA_BAD_KIND;  // unknown field
+	}
+	for (const auto& h : n->cols) {
+		bool found = false;
+		for (const auto& [field, val] : rn->fields) {
+			if (field == h) { found = true; break; }
+		}
+		if (!found) return CODA_BAD_KIND;  // missing required field
+	}
+
 	try { n->arr.push_back(row); return CODA_OK; }
 	catch (...) { return CODA_ERR; }
 }
@@ -981,6 +998,23 @@ extern "C" CODA_FFI_EXPORT coda_status_t coda_table_row_set(
 	if (row_idx >= n->arr.size()) return CODA_OUT_OF_RANGE;
 	const auto* rn = doc->get(row);
 	if (!rn || rn->kind != coda_doc::Kind::Row) return CODA_BAD_KIND;
+
+	// Validate row fields match table headers (mirrors C++ Table::append)
+	for (const auto& [field, val] : rn->fields) {
+		bool found = false;
+		for (const auto& h : n->cols) {
+			if (h == field) { found = true; break; }
+		}
+		if (!found) return CODA_BAD_KIND;  // unknown field
+	}
+	for (const auto& h : n->cols) {
+		bool found = false;
+		for (const auto& [field, val] : rn->fields) {
+			if (field == h) { found = true; break; }
+		}
+		if (!found) return CODA_BAD_KIND;  // missing required field
+	}
+
 	uint32_t old = n->arr[row_idx];
 	n->arr[row_idx] = row;
 	if (old != row) doc->free_node(old);
@@ -1080,6 +1114,23 @@ extern "C" CODA_FFI_EXPORT coda_status_t coda_keyed_table_row_set(
 	if (n->kind != coda_doc::Kind::KeyedTable) return CODA_BAD_KIND;
 	const auto* rn = doc->get(row);
 	if (!rn || rn->kind != coda_doc::Kind::Row) return CODA_BAD_KIND;
+
+	// Validate row fields match table headers (mirrors C++ KeyedTable::insert)
+	for (const auto& [field, val] : rn->fields) {
+		bool found = false;
+		for (const auto& h : n->cols) {
+			if (h == field) { found = true; break; }
+		}
+		if (!found) return CODA_BAD_KIND;  // unknown field
+	}
+	for (const auto& h : n->cols) {
+		bool found = false;
+		for (const auto& [field, val] : rn->fields) {
+			if (field == h) { found = true; break; }
+		}
+		if (!found) return CODA_BAD_KIND;  // missing required field
+	}
+
 	try {
 		std::string k(key ? key : "", key_len);
 		auto it = n->index.find(k);
