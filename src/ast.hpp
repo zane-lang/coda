@@ -15,6 +15,11 @@ namespace coda {
 
 namespace detail {
 
+// Single source of truth for the one reserved bare word in the grammar:
+// `key` always introduces a keyed-table header, so as a plain value/identifier
+// it must be quoted on output. Both the lexer and the serializer reference this.
+inline constexpr const char* RESERVED_KEY = "key";
+
 inline std::string pad(int level, const std::string& unit) {
 	std::string out;
 	for (int i = 0; i < level; ++i) out += unit;
@@ -22,7 +27,7 @@ inline std::string pad(int level, const std::string& unit) {
 }
 
 inline std::string serializeToken(const std::string& s) {
-	if (s == "key") return "\"key\"";
+	if (s == RESERVED_KEY) return "\"key\"";
 
 	auto isBareChar = [](unsigned char c) -> bool {
 		if (std::isspace(c)) return false;
@@ -102,9 +107,21 @@ class Table {
 	std::vector<Row> content;
 	std::string headerComment;
 	std::set<std::string> headers;
+	std::vector<std::string> colOrder; // declared column order (for empty tables)
 
 public:
-	explicit Table(std::set<std::string> headers) : headers(std::move(headers)) {}
+	explicit Table(std::set<std::string> headers) : headers(std::move(headers)) {
+		colOrder.assign(this->headers.begin(), this->headers.end());
+	}
+
+	// Construct preserving an explicit, ordered column list (FFI / builders).
+	// Named factory (not a ctor) so brace-init like Table({"a","b"}) stays
+	// unambiguous and keeps using the set-based constructor.
+	static Table withColumns(std::vector<std::string> orderedCols) {
+		Table t{std::set<std::string>(orderedCols.begin(), orderedCols.end())};
+		t.colOrder = std::move(orderedCols);
+		return t;
+	}
 
 	void setHeaderComment(const std::string& c) { headerComment = c; }
 	const std::string& getHeaderComment() const  { return headerComment; }
@@ -132,6 +149,7 @@ public:
 	size_t size()  const { return content.size(); }
 	const Row& front() const { return content.front(); }
 	const std::set<std::string>& getHeaders() const { return headers; }
+	const std::vector<std::string>& getColumnOrder() const { return colOrder; }
 
 	auto begin() const { return content.begin(); }
 	auto begin()       { return content.begin(); }
@@ -147,9 +165,19 @@ class KeyedTable {
 	detail::OrderedMap<std::string, Row> content;
 	std::string headerComment;
 	std::set<std::string> headers;
+	std::vector<std::string> colOrder; // declared column order (for empty tables)
 
 public:
-	explicit KeyedTable(std::set<std::string> headers) : headers(std::move(headers)) {}
+	explicit KeyedTable(std::set<std::string> headers) : headers(std::move(headers)) {
+		colOrder.assign(this->headers.begin(), this->headers.end());
+	}
+
+	// Construct preserving an explicit, ordered column list (FFI / builders).
+	static KeyedTable withColumns(std::vector<std::string> orderedCols) {
+		KeyedTable t{std::set<std::string>(orderedCols.begin(), orderedCols.end())};
+		t.colOrder = std::move(orderedCols);
+		return t;
+	}
 
 	void setHeaderComment(const std::string& c) { headerComment = c; }
 	const std::string& getHeaderComment() const  { return headerComment; }
@@ -175,6 +203,7 @@ public:
 
 	bool empty() const { return content.empty(); }
 	const std::set<std::string>& getHeaders() const { return headers; }
+	const std::vector<std::string>& getColumnOrder() const { return colOrder; }
 
 	auto begin() const { return content.begin(); }
 	auto begin()       { return content.begin(); }
@@ -209,6 +238,10 @@ public:
 	detail::Value&       operator[](const std::string& key);
 
 	bool has(const std::string& key) const { return content.contains(key); }
+	bool contains(const std::string& key) const { return content.contains(key); }
+
+	size_t size()  const { return content.size(); }
+	bool   empty() const { return content.empty(); }
 
 	auto begin() const { return content.begin(); }
 	auto begin()       { return content.begin(); }
@@ -280,49 +313,61 @@ public:
 		return !std::holds_alternative<std::string>(content.value);
 	}
 
+	// Type-dispatch over the underlying value without exceptions.
+	// Callbacks receive (const std::string&, const Block&, const Array&,
+	// const Table&, const KeyedTable&) respectively.
+	template<typename... Callbacks>
+	decltype(auto) visitContent(Callbacks&&... cbs) const {
+		return content.match(std::forward<Callbacks>(cbs)...);
+	}
+	template<typename... Callbacks>
+	decltype(auto) visitContent(Callbacks&&... cbs) {
+		return content.match(std::forward<Callbacks>(cbs)...);
+	}
+
 	const std::string& asString() const {
 		if (auto* p = std::get_if<std::string>(&content.value)) return *p;
-		throw std::runtime_error("CodaValue::asString() — value is not a string");
+		throw std::runtime_error("Value::asString() — value is not a string");
 	}
 	std::string& asString() {
 		if (auto* p = std::get_if<std::string>(&content.value)) return *p;
-		throw std::runtime_error("CodaValue::asString() — value is not a string");
+		throw std::runtime_error("Value::asString() — value is not a string");
 	}
 
 	const Block& asBlock() const {
 		if (auto* p = std::get_if<Block>(&content.value)) return *p;
-		throw std::runtime_error("CodaValue::asBlock() — value is not a block");
+		throw std::runtime_error("Value::asBlock() — value is not a block");
 	}
 	Block& asBlock() {
 		if (auto* p = std::get_if<Block>(&content.value)) return *p;
-		throw std::runtime_error("CodaValue::asBlock() — value is not a block");
+		throw std::runtime_error("Value::asBlock() — value is not a block");
 	}
 
 	const Array& asArray() const {
 		if (auto* p = std::get_if<Array>(&content.value)) return *p;
-		throw std::runtime_error("CodaValue::asArray() — value is not an array");
+		throw std::runtime_error("Value::asArray() — value is not an array");
 	}
 	Array& asArray() {
 		if (auto* p = std::get_if<Array>(&content.value)) return *p;
-		throw std::runtime_error("CodaValue::asArray() — value is not an array");
+		throw std::runtime_error("Value::asArray() — value is not an array");
 	}
 
 	const Table& asTable() const {
 		if (auto* p = std::get_if<Table>(&content.value)) return *p;
-		throw std::runtime_error("CodaValue::asTable() — value is not a table");
+		throw std::runtime_error("Value::asTable() — value is not a table");
 	}
 	Table& asTable() {
 		if (auto* p = std::get_if<Table>(&content.value)) return *p;
-		throw std::runtime_error("CodaValue::asTable() — value is not a table");
+		throw std::runtime_error("Value::asTable() — value is not a table");
 	}
 
 	const KeyedTable& asKeyedTable() const {
 		if (auto* p = std::get_if<KeyedTable>(&content.value)) return *p;
-		throw std::runtime_error("CodaValue::asKeyedTable() — value is not a keyed table");
+		throw std::runtime_error("Value::asKeyedTable() — value is not a keyed table");
 	}
 	KeyedTable& asKeyedTable() {
 		if (auto* p = std::get_if<KeyedTable>(&content.value)) return *p;
-		throw std::runtime_error("CodaValue::asKeyedTable() — value is not a keyed table");
+		throw std::runtime_error("Value::asKeyedTable() — value is not a keyed table");
 	}
 
 	std::string serializeInline(int indent, const std::string& unit) const {
@@ -435,7 +480,7 @@ inline std::string Block::serialize(int indent, const std::string& unit) const {
 inline std::string KeyedTable::serialize(int indent, const std::string& unit) const {
 	std::vector<const std::string*> fields;
 	if (content.empty()) {
-		for (const auto& h : headers)
+		for (const auto& h : colOrder)
 			fields.push_back(&h);
 	} else {
 		for (const auto& [k, _] : content.begin()->second)
@@ -463,7 +508,7 @@ inline std::string KeyedTable::serialize(int indent, const std::string& unit) co
 inline std::string Table::serialize(int indent, const std::string& unit) const {
 	std::vector<const std::string*> fields;
 	if (content.empty()) {
-		for (const auto& h : headers)
+		for (const auto& h : colOrder)
 			fields.push_back(&h);
 	} else {
 		for (const auto& [k, _] : content.front())

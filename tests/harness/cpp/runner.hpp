@@ -1,7 +1,7 @@
 #pragma once
 
-#include "test_checks.hpp"
-#include "test_utils.hpp"
+#include "adapter.hpp"
+#include "framework.hpp"
 
 #include <exception>
 #include <string>

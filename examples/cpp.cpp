@@ -4,7 +4,7 @@
 //   just run
 //
 // Or compile directly:
-//   c++ -std=c++17 -I. examples/cpp.cpp -o build/run && ./build/run
+//   c++ -std=c++20 -I. examples/cpp.cpp -o build/run && ./build/run
 
 #include "include/coda.hpp"
 #include <iostream>

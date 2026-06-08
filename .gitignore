@@ -1,4 +1,18 @@
+# Build outputs
 build/
 _build/
-__pycache__/
 dist/
+wheelhouse/
+
+# Generated single-header amalgamation (see include/.gitignore)
+include/coda.hpp
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+
+# Stray built FFI libraries copied into the python package during wheel builds
+bindings/python/*.so
+bindings/python/*.dylib
+bindings/python/*.dll

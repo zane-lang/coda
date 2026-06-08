@@ -1,0 +1,3 @@
+# Generated single-header amalgamation (produced by `just generate` / quom).
+# Source of truth is src/. Do not commit this file.
+coda.hpp

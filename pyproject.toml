@@ -4,18 +4,17 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "coda-format"
-version = "2.2.2"
+version = "3.0.0"
 description = "Python bindings for the Coda configuration format"
 readme = "README.md"
 license = "MIT"
-requires-python = ">=3.9"
+# The bindings use typing.Self (PEP 673), which is 3.11+.
+requires-python = ">=3.11"
 keywords = ["coda", "configuration", "parser", "format"]
 classifiers = [
     "Development Status :: 3 - Alpha",
     "Intended Audience :: Developers",
     "Programming Language :: Python :: 3",
-    "Programming Language :: Python :: 3.9",
-    "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
     "Programming Language :: Python :: 3.13",

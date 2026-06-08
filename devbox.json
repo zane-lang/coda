@@ -16,7 +16,10 @@
     ],
     "scripts": {
       "test": [
-        "echo \"Error: no test specified\" && exit 1"
+        "just test"
+      ],
+      "build": [
+        "just build"
       ]
     }
   }

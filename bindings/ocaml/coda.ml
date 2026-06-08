@@ -127,6 +127,7 @@ let row_comment_get doc node = coda_row_comment_get_ocaml doc node
 let row_comment_set doc node s = status_of_int (coda_row_comment_set_ocaml doc node s)
 
 let node_order doc node = coda_node_order_ocaml doc node
+let node_order_weighted doc node weights = coda_node_order_weighted_ocaml doc node weights
 
 let new_string doc s = coda_new_string_ocaml doc s
 let new_block doc = coda_new_block_ocaml doc

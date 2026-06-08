@@ -62,6 +62,7 @@ external coda_row_comment_set_ocaml : native_doc -> int -> string -> int = "coda
 
 external coda_node_serialize_ocaml : native_doc -> int -> string option -> (string * int * (int * int * int * int * string) option) = "coda_node_serialize_ocaml"
 external coda_node_order_ocaml : native_doc -> int -> unit = "coda_node_order_ocaml"
+external coda_node_order_weighted_ocaml : native_doc -> int -> (string * float) list -> unit = "coda_node_order_weighted_ocaml"
 
 external coda_new_string_ocaml : native_doc -> string -> int = "coda_new_string_ocaml"
 external coda_new_block_ocaml : native_doc -> int = "coda_new_block_ocaml"

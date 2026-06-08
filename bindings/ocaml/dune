@@ -11,8 +11,3 @@
   (names coda_ffi_bridge)
   (include_dirs ../../ffi ../../include)
   (flags (:standard -std=c++20))))
-
-(executable
- (name test)
- (modules test)
- (libraries coda))

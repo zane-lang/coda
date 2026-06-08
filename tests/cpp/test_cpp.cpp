@@ -1,5 +1,4 @@
-#include "../harness/test_runner.hpp"
-#include "../harness/test_data.hpp"
+#include "../harness/cpp/runner.hpp"
 #include "../../include/coda.hpp"
 
 #include <iostream>
@@ -87,13 +86,25 @@ public:
 	}
 
 	int get_node_kind(const char* key) override {
-		return 0;
+		// No catalog op reads node kind by integer; map the variant to the
+		// FFI kind codes for parity, without try/catch.
+		return f()[key].visitContent(
+			[](const std::string&)      { return 2; }, // CODA_NODE_STRING
+			[](const coda::Block&)      { return 3; },
+			[](const coda::Array&)      { return 4; },
+			[](const coda::Table&)      { return 5; },
+			[](const coda::KeyedTable&) { return 6; });
 	}
 
 	size_t get_array_len(const char* key) override {
-		auto& v = f()[key];
-		try { return v.asArray().size(); } catch (...) {}
-		return v.asTable().size();
+		// Arrays and plain tables both expose a length; dispatch on kind
+		// rather than probing via exceptions.
+		return f()[key].visitContent(
+			[](const std::string&)      -> size_t { return 0; },
+			[](const coda::Block& b)    -> size_t { return b.size(); },
+			[](const coda::Array& a)    -> size_t { return a.size(); },
+			[](const coda::Table& t)    -> size_t { return t.size(); },
+			[](const coda::KeyedTable&) -> size_t { return 0; });
 	}
 
 	std::string get_array_element(const char* key, size_t idx) override {
@@ -101,8 +112,7 @@ public:
 	}
 
 	bool array_index_throws(const char* key, size_t idx) override {
-		try { (void)f()[key].asArray()[idx]; return false; }
-		catch (...) { return true; }
+		return throws([&] { (void)f()[key].asArray()[idx]; });
 	}
 
 	std::string get_array_block_field(const char* array_key, size_t idx,
@@ -126,11 +136,7 @@ public:
 	}
 
 	bool table_row_missing_throws(const char* table, const char* row) override {
-		try {
-			const auto& cf = f();
-			(void)cf[table].asKeyedTable()[row];
-			return false;
-		} catch (...) { return true; }
+		return throws([&] { const auto& cf = f(); (void)cf[table].asKeyedTable()[row]; });
 	}
 
 	bool table_row_missing_inserts(const char* table, const char* row) override {
@@ -214,45 +220,46 @@ public:
 		return f().serialize();
 	}
 
-	bool string_index_on_scalar_throws(const char* key, const char* sub) override {
-		try { (void)f()[key].asBlock()[sub]; return false; }
+	// These checks verify that the *library* throws on a type/lookup error,
+	// so try/catch is the operation under test (not control flow). One shared
+	// helper instead of six copy-pasted try/catch blocks.
+	template<typename Fn>
+	static bool throws(Fn&& fn) {
+		try { fn(); return false; }
 		catch (...) { return true; }
+	}
+
+	bool string_index_on_scalar_throws(const char* key, const char* sub) override {
+		return throws([&] { (void)f()[key].asBlock()[sub]; });
 	}
 
 	bool int_index_on_block_throws(const char* key, size_t idx) override {
-		try { (void)f()[key].asArray()[idx]; return false; }
-		catch (...) { return true; }
+		return throws([&] { (void)f()[key].asArray()[idx]; });
 	}
 
 	bool as_array_on_scalar_throws(const char* key) override {
-		try { (void)f()[key].asArray(); return false; }
-		catch (...) { return true; }
+		return throws([&] { (void)f()[key].asArray(); });
 	}
 
 	bool as_block_on_array_throws(const char* key) override {
-		try { (void)f()[key].asBlock(); return false; }
-		catch (...) { return true; }
+		return throws([&] { (void)f()[key].asBlock(); });
 	}
 
 	bool as_table_on_block_throws(const char* key) override {
-		try { (void)f()[key].asTable(); return false; }
-		catch (...) { return true; }
+		return throws([&] { (void)f()[key].asTable(); });
 	}
 
 	bool const_missing_key_throws(const char* key) override {
-		try {
-			const auto& cf = f();
-			(void)cf[key];
-			return false;
-		} catch (...) { return true; }
+		return throws([&] { const auto& cf = f(); (void)cf[key]; });
 	}
 
 	std::string get_header_comment(const char* key) override {
-		auto& v = f()[key];
-		try { return v.asArray().getHeaderComment(); }      catch (...) {}
-		try { return v.asKeyedTable().getHeaderComment(); } catch (...) {}
-		try { return v.asTable().getHeaderComment(); }      catch (...) {}
-		return "";
+		return f()[key].visitContent(
+			[](const std::string&)        { return std::string{}; },
+			[](const coda::Block&)        { return std::string{}; },
+			[](const coda::Array& a)      { return a.getHeaderComment(); },
+			[](const coda::Table& t)      { return t.getHeaderComment(); },
+			[](const coda::KeyedTable& t) { return t.getHeaderComment(); });
 	}
 };
 

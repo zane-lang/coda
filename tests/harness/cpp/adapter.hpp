@@ -1,7 +1,6 @@
 #pragma once
 
-#include "test_data.hpp"
-#include "../../include/coda.hpp"
+#include "../../../include/coda.hpp"
 
 #include <functional>
 #include <fstream>
@@ -105,7 +104,7 @@ using TestCatalog = std::vector<TestEntry>;
 
 // ─── Build the catalog ───────────────────────────────────────────────────────
 
-namespace {
+namespace detail {
 
 inline std::string read_file(const std::string& path) {
 	std::ifstream f(path, std::ios::binary);
@@ -124,11 +123,13 @@ inline bool block_has(const coda::detail::Value& v, const std::string& key) {
 	return v.asBlock().getContent().count(key) > 0;
 }
 
+// Read a string field out of a catalog block. Returns "" if the key is
+// absent (callers treat "" as "not specified"). No magic key fallbacks:
+// a missing key should be visible, not silently substituted.
 inline std::string block_string(
 	const coda::detail::Value& v, const std::string& key) {
 	const auto& b = v.asBlock().getContent();
 	if (b.count(key) > 0) return b.at(key)->asString();
-	if (b.count("field") > 0) return b.at("field")->asString();
 	return "";
 }
 
@@ -360,8 +361,6 @@ inline int parse_error_code(const std::string& code) {
 	return -1;
 }
 
-} // namespace
-
 inline TestCatalog build_catalog() {
 	TestCatalog t;
 	const std::string path = "tests/catalog/catalog.coda";
@@ -416,5 +415,11 @@ inline TestCatalog build_catalog() {
 
 	return t;
 }
+
+} // namespace detail
+
+// Public entry points used by the per-binary runners.
+using detail::build_catalog;
+using detail::run_check;
 
 } // namespace test_framework

@@ -222,7 +222,7 @@ public:
 		while (pos < src.size() && isIdentChar(peek()))
 			val += advance();
 
-		if (val == "key") return { TokenType::Key, val, tokenLoc };
+		if (val == RESERVED_KEY) return { TokenType::Key, val, tokenLoc };
 		return { TokenType::Ident, val, tokenLoc };
 	}
 };

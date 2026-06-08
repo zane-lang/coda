@@ -61,6 +61,10 @@ def _find_library() -> str:
 	if sys.platform == "win32":
 		dist_subdir = f"{arch}-windows-gnu"
 	elif sys.platform == "darwin":
+		# NOTE: this repo's `just cross-all` does NOT build macOS artifacts
+		# (no darwin target in scripts/tasks.py). This branch only resolves a
+		# user-supplied dylib placed under dist/{arch}-macos or set via
+		# CODA_FFI_LIB; it is not produced by the standard release pipeline.
 		dist_subdir = f"{arch}-macos"
 	else:
 		dist_subdir = f"{arch}-linux-{libc}"

@@ -90,6 +90,9 @@ val row_comment_get : doc -> node -> string
 val row_comment_set : doc -> node -> string -> status
 
 val node_order : doc -> node -> unit
+(* Reorder a sub-tree by weight (higher weight first; ties alphabetical),
+   matching coda_node_order_weighted / the C++ Block::order semantics. *)
+val node_order_weighted : doc -> node -> (string * float) list -> unit
 
 val new_string : doc -> string -> node
 val new_block : doc -> node

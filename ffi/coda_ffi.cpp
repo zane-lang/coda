@@ -1,9 +1,11 @@
 #include "coda_ffi.h"
 #include "coda.hpp"
 
+#include <algorithm>
 #include <cstdlib>
 #include <cstring>
 #include <fstream>
+#include <functional>
 #include <sstream>
 #include <string>
 #include <unordered_map>
@@ -154,93 +156,73 @@ static void intern_block_into(coda_doc& d, uint32_t id, const coda::Block& b) {
 	}
 }
 
+// Intern a single AST Row into a fresh ROW node and return its id.
+static uint32_t intern_row(coda_doc& d, const coda::Row& row) {
+	uint32_t rid = d.new_node(coda_doc::Kind::Row);
+	d.get(rid)->comment = row.getComment();
+	for (const auto& [col, val] : row) {
+		auto* rn = d.get(rid);
+		rn->field_index[col] = rn->fields.size();
+		rn->fields.emplace_back(col, val);
+	}
+	return rid;
+}
+
 static uint32_t intern_value(coda_doc& d, const coda::detail::Value& v) {
 	using K = coda_doc::Kind;
 
-	// ── String ──────────────────────────────────────────────────────────────
-	if (!v.isContainer()) {
-		uint32_t id = d.new_node(K::String);
-		auto* n = d.get(id);
-		n->s       = v.asString();
-		n->comment = v.getComment();
-		return id;
-	}
-
-	// Probe each container type in turn via the AST's as* accessors,
-	// which throw on mismatch. Block?
-	try {
-		const coda::Block& b = v.asBlock();
-		uint32_t id = d.new_node(K::Block);
-		d.get(id)->comment = v.getComment();
-		intern_block_into(d, id, b);
-		return id;
-	} catch (...) {}
-
-	// Array?
-	try {
-		const coda::Array& a = v.asArray();
-		uint32_t id = d.new_node(K::Array);
-		d.get(id)->comment        = v.getComment();
-		d.get(id)->header_comment = a.getHeaderComment();
-		for (const auto& vp : a) {
-			uint32_t child = intern_value(d, *vp);
-			d.get(id)->arr.push_back(child);
-		}
-		return id;
-	} catch (...) {}
-
-	// Table?
-	try {
-		const coda::Table& t = v.asTable();
-		uint32_t id = d.new_node(K::Table);
-		d.get(id)->comment = v.getComment();
-		d.get(id)->header_comment = t.getHeaderComment();
-		for (const auto& col : t.getHeaders())
-			d.get(id)->cols.push_back(col);
-		for (const auto& row : t) {
-			// Intern the row
-			uint32_t rid = d.new_node(coda_doc::Kind::Row);
-			d.get(rid)->comment = row.getComment();
-			for (const auto& [col, val] : row) {
-				auto* rn = d.get(rid);
-				rn->field_index[col] = rn->fields.size();
-				rn->fields.emplace_back(col, val);
+	// Type-dispatch via the AST's variant match (no exceptions on the hot path).
+	return v.visitContent(
+		[&](const std::string& s) {
+			uint32_t id = d.new_node(K::String);
+			auto* n = d.get(id);
+			n->s       = s;
+			n->comment = v.getComment();
+			return id;
+		},
+		[&](const coda::Block& b) {
+			uint32_t id = d.new_node(K::Block);
+			d.get(id)->comment = v.getComment();
+			intern_block_into(d, id, b);
+			return id;
+		},
+		[&](const coda::Array& a) {
+			uint32_t id = d.new_node(K::Array);
+			d.get(id)->comment        = v.getComment();
+			d.get(id)->header_comment = a.getHeaderComment();
+			for (const auto& vp : a) {
+				uint32_t child = intern_value(d, *vp);
+				d.get(id)->arr.push_back(child);
 			}
-			d.get(id)->arr.push_back(rid);
-		}
-		return id;
-	} catch (...) {}
-
-	// KeyedTable?
-	try {
-		const coda::KeyedTable& kt = v.asKeyedTable();
-		uint32_t id = d.new_node(K::KeyedTable);
-		d.get(id)->comment = v.getComment();
-		d.get(id)->header_comment = kt.getHeaderComment();
-		for (const auto& col : kt.getHeaders())
-			d.get(id)->cols.push_back(col);
-		for (const auto& [rowKey, row] : kt) {
-			// Intern the row
-			uint32_t rid = d.new_node(coda_doc::Kind::Row);
-			d.get(rid)->comment = row.getComment();
-			for (const auto& [col, val] : row) {
-				auto* rn = d.get(rid);
-				rn->field_index[col] = rn->fields.size();
-				rn->fields.emplace_back(col, val);
+			return id;
+		},
+		[&](const coda::Table& t) {
+			uint32_t id = d.new_node(K::Table);
+			d.get(id)->comment        = v.getComment();
+			d.get(id)->header_comment = t.getHeaderComment();
+			for (const auto& col : t.getColumnOrder())
+				d.get(id)->cols.push_back(col);
+			for (const auto& row : t) {
+				uint32_t rid = intern_row(d, row);
+				d.get(id)->arr.push_back(rid);
 			}
-			// Insert into keyed table
-			auto* ktn = d.get(id);
-			ktn->index[rowKey] = ktn->entries.size();
-			ktn->entries.emplace_back(rowKey, rid);
+			return id;
+		},
+		[&](const coda::KeyedTable& kt) {
+			uint32_t id = d.new_node(K::KeyedTable);
+			d.get(id)->comment        = v.getComment();
+			d.get(id)->header_comment = kt.getHeaderComment();
+			for (const auto& col : kt.getColumnOrder())
+				d.get(id)->cols.push_back(col);
+			for (const auto& [rowKey, row] : kt) {
+				uint32_t rid = intern_row(d, row);
+				auto* ktn = d.get(id);
+				ktn->index[rowKey] = ktn->entries.size();
+				ktn->entries.emplace_back(rowKey, rid);
+			}
+			return id;
 		}
-		return id;
-	} catch (...) {}
-
-	// Fallback — should be unreachable with a well-formed AST
-	uint32_t id = d.new_node(K::String);
-	d.get(id)->s       = "";
-	d.get(id)->comment = v.getComment();
-	return id;
+	);
 }
 
 // ─── DOM → AST (emit) ─────────────────────────────────────────────────────────
@@ -282,9 +264,8 @@ static coda::detail::Value emit_value(const coda_doc& d, uint32_t id) {
 		}
 
 		case coda_doc::Kind::Table: {
-			// Reconstruct a Table with headers derived from the stored col list.
-			std::set<std::string> hdrs(n->cols.begin(), n->cols.end());
-			coda::Table t(std::move(hdrs));
+			// Reconstruct a Table preserving the stored column order.
+			coda::Table t = coda::Table::withColumns(n->cols);
 			t.setHeaderComment(n->header_comment);
 			for (uint32_t rid : n->arr) {
 				const auto* rn = d.get(rid);
@@ -301,8 +282,7 @@ static coda::detail::Value emit_value(const coda_doc& d, uint32_t id) {
 		}
 
 		case coda_doc::Kind::KeyedTable: {
-			std::set<std::string> hdrs(n->cols.begin(), n->cols.end());
-			coda::KeyedTable kt(std::move(hdrs));
+			coda::KeyedTable kt = coda::KeyedTable::withColumns(n->cols);
 			kt.setHeaderComment(n->header_comment);
 			for (const auto& [rowKey, rid] : n->entries) {
 				const auto* rn = d.get(rid);
@@ -523,10 +503,21 @@ extern "C" CODA_FFI_EXPORT coda_node_t coda_doc_root(const coda_doc_t* doc) {
 
 // ─── C API — node-level serialize / order ────────────────────────────────────
 
-// Sort entries alphabetically and rebuild the index for a BLOCK/KEYED_TABLE node.
-static void sort_entries(coda_doc::Node* n) {
-	std::sort(n->entries.begin(), n->entries.end(),
-	          [](const auto& a, const auto& b) { return a.first < b.first; });
+// True when a node is a container kind (Block/Array/Table/KeyedTable).
+// Mirrors coda::detail::Value::isContainer() for the DOM representation.
+static bool node_is_container(const coda_doc::Node& n) {
+	switch (n.kind) {
+		case coda_doc::Kind::Block:
+		case coda_doc::Kind::Array:
+		case coda_doc::Kind::Table:
+		case coda_doc::Kind::KeyedTable:
+			return true;
+		default:
+			return false;
+	}
+}
+
+static void rebuild_entry_index(coda_doc::Node* n) {
 	n->index.clear();
 	for (size_t i = 0; i < n->entries.size(); ++i)
 		n->index[n->entries[i].first] = i;
@@ -542,18 +533,30 @@ static void dom_order_node(coda_doc& d, uint32_t id,
 
 	switch (n->kind) {
 		case coda_doc::Kind::Block: {
+			// Match the C++ semantics exactly (see OrderedMap::sort / sortByWeight
+			// and Block::order): stable_sort, and either
+			//   default:  scalars before containers, then alphabetical by key
+			//   weighted: HIGHER weight first, ties alphabetical by key
 			if (wfn) {
 				std::stable_sort(n->entries.begin(), n->entries.end(),
 				    [&](const auto& a, const auto& b) {
-				        return (*wfn)(a.first) < (*wfn)(b.first);
+				        float wa = (*wfn)(a.first);
+				        float wb = (*wfn)(b.first);
+				        if (wa != wb) return wa > wb;        // higher weight first
+				        return a.first < b.first;            // alphabetical tie-break
 				    });
 			} else {
-				sort_entries(n);
+				std::stable_sort(n->entries.begin(), n->entries.end(),
+				    [&](const auto& a, const auto& b) {
+				        const auto* na = d.get(a.second);
+				        const auto* nb = d.get(b.second);
+				        bool ca = na && node_is_container(*na);
+				        bool cb = nb && node_is_container(*nb);
+				        if (ca != cb) return !ca;            // scalars first
+				        return a.first < b.first;            // alphabetical
+				    });
 			}
-			// Rebuild index after sort
-			n->index.clear();
-			for (size_t i = 0; i < n->entries.size(); ++i)
-				n->index[n->entries[i].first] = i;
+			rebuild_entry_index(n);
 			// Recurse into children
 			for (const auto& [k, child] : n->entries)
 				dom_order_node(d, child, wfn);

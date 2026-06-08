@@ -50,14 +50,15 @@ public:
 	}
 
 	void save(const std::string& path) const {
-		std::ofstream f(path);
-		if (!f) throw std::runtime_error("could not open: " + path);
-		f << rootBlock.serialize(indentUnit);
+		save(path, indentUnit);
 	}
 
-	void save(const std::string& path, const std::string& unit) {
-		indentUnit = unit;
-		save(path);
+	/// Save using an explicit indent unit. Does NOT mutate the document's
+	/// default indent (`useTabs`/`useSpaces` set that). Pure, const operation.
+	void save(const std::string& path, const std::string& unit) const {
+		std::ofstream f(path);
+		if (!f) throw std::runtime_error("could not open: " + path);
+		f << rootBlock.serialize(unit);
 	}
 
 	std::string serialize() const {

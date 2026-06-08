@@ -58,16 +58,26 @@ with coda.Doc.parse_file("config.coda") as doc:
 
 ## Building & testing
 
-This repo is built and tested via `just`.
+This repo is built and tested inside a [Devbox](https://www.jetify.com/devbox)
+environment (which pins zig, just, python3, dune and ocaml). `just` recipes are
+thin wrappers around `scripts/tasks.py`.
 
 ```bash
-just generate     # regenerate include/coda.hpp (requires quom)
-just build        # build host shared library (libcoda_ffi.so)
-just cross-all    # cross-compile for all supported targets
-just test         # run all tests
-just test-cpp
-just test-c-ffi
-just test-py-ffi
+devbox run -- just test         # run all tests (C++, C FFI, Python, OCaml)
+devbox run -- just generate     # regenerate include/coda.hpp (requires quom)
+devbox run -- just build        # build host shared library (libcoda_ffi.so)
+devbox run -- just cross-all    # cross-compile for all supported targets
+devbox run -- just test-cpp
+devbox run -- just test-c-ffi
+devbox run -- just test-py-ffi
+devbox run -- just test-ocaml
 ```
+
+> `include/coda.hpp` is a generated single-header amalgamation (git-ignored);
+> the build recreates it on demand. The source of truth is `src/`.
+>
+> All four language test suites are driven by a single catalog,
+> `tests/catalog/catalog.coda`. To add a test, edit that file. See
+> [`contributing/`](contributing/README.md).
 
 Cross-compiled FFI artifacts are placed under `dist/<target>/`.

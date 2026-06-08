@@ -400,16 +400,21 @@ CODA_FFI_EXPORT coda_owned_str_t coda_node_serialize(
 	coda_error_t*     err
 );
 
-// Reorder a sub-tree rooted at n using default ordering.
+// Reorder a sub-tree rooted at n using default ordering
+// (scalars before containers, then alphabetical by key — identical to
+// coda_doc_order and the C++ Block::order).
 // Has no effect on non-container nodes.
 //
-// WARNING: All previously obtained coda_node_t handles become INVALID after
-//          this call. Re-acquire handles via traversal APIs.
+// Reordering is done IN PLACE: node handles (coda_node_t) remain valid, but
+// any *index-based* iteration you captured before the call (e.g. cached
+// coda_map_key_at positions) is now stale because the order changed.
+// Re-read positions after ordering.
 CODA_FFI_EXPORT void coda_node_order(coda_doc_t* doc, coda_node_t n);
 
-// Reorder a sub-tree rooted at n by weight.
+// Reorder a sub-tree rooted at n by weight (HIGHER weight first; ties
+// alphabetical) — identical to coda_doc_order_weighted and C++ Block::order.
 //
-// WARNING: Same handle invalidation caveat as coda_node_order().
+// Same in-place / stale-index caveat as coda_node_order().
 CODA_FFI_EXPORT void coda_node_order_weighted(
 	coda_doc_t*  doc,
 	coda_node_t  n,

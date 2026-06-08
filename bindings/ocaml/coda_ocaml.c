@@ -412,6 +412,41 @@ value coda_node_order_ocaml(value v_doc, value v_node) {
     return Val_unit;
 }
 
+/* Weighted ordering. v_weights is an OCaml list of (string * float) pairs.
+   We copy every key/weight into C-owned buffers BEFORE calling the FFI (which
+   may allocate / reorder), so no OCaml value is held live across the call. */
+value coda_node_order_weighted_ocaml(value v_doc, value v_node, value v_weights) {
+    coda_doc_t* doc = unwrap_doc(v_doc);
+    coda_node_t node = unwrap_node(v_node);
+
+    /* count list length */
+    size_t count = 0;
+    for (value p = v_weights; p != Val_emptylist; p = Field(p, 1)) count++;
+
+    char**  keys    = count ? (char**)  malloc(count * sizeof(char*))  : NULL;
+    float*  weights = count ? (float*)  malloc(count * sizeof(float))  : NULL;
+    size_t i = 0;
+    for (value p = v_weights; p != Val_emptylist; p = Field(p, 1)) {
+        value pair = Field(p, 0);          /* (string * float) */
+        value k    = Field(pair, 0);
+        value w    = Field(pair, 1);
+        size_t klen = caml_string_length(k);
+        char* kc = (char*)malloc(klen + 1);
+        memcpy(kc, String_val(k), klen);
+        kc[klen] = '\0';
+        keys[i]    = kc;
+        weights[i] = (float)Double_val(w);
+        i++;
+    }
+
+    coda_node_order_weighted(doc, node, (const char**)keys, weights, count);
+
+    for (size_t j = 0; j < count; j++) free(keys[j]);
+    free(keys);
+    free(weights);
+    return Val_unit;
+}
+
 value coda_new_string_ocaml(value v_doc, value v_s) {
     coda_doc_t* doc = unwrap_doc(v_doc);
     const char* s = String_val(v_s);

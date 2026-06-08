@@ -48,8 +48,22 @@ def ensure_dir(path: Path) -> None:
 	path.mkdir(parents=True, exist_ok=True)
 
 
+GENERATED_HEADER = ROOT / "include" / "coda.hpp"
+
+
 def generate() -> None:
+	ensure_dir(GENERATED_HEADER.parent)
 	run_cmd("quom", "src/coda.hpp", "include/coda.hpp")
+
+
+def ensure_generated() -> None:
+	"""Regenerate the single-header amalgamation if it is missing.
+
+	include/coda.hpp is a build artifact (git-ignored), so a clean checkout
+	must be able to produce it on demand before anything that includes it.
+	"""
+	if not GENERATED_HEADER.exists():
+		generate()
 
 
 def build() -> None:
@@ -67,12 +81,13 @@ def build() -> None:
 
 
 def test_cpp() -> None:
+	ensure_generated()
 	ensure_dir(BUILD_DIR)
 	run_cmd(
 		str(ZIG_CXX),
 		*TEST_FLAGS,
 		"-I.",
-		"tests/cpp/test_main.cpp",
+		"tests/cpp/test_cpp.cpp",
 		"-o",
 		"build/tests",
 	)
@@ -80,6 +95,7 @@ def test_cpp() -> None:
 
 
 def test_c_ffi() -> None:
+	ensure_generated()
 	ensure_dir(BUILD_DIR)
 	run_cmd(
 		str(ZIG_CXX),
@@ -97,7 +113,7 @@ def test_c_ffi() -> None:
 		str(ZIG_CXX),
 		*TEST_FLAGS,
 		"-I.",
-		"tests/cpp/test_c_ffi.cpp",
+		"tests/c/test_c_ffi.cpp",
 		"build/libcoda_ffi_native.a",
 		"-o",
 		"build/test_c_ffi",
@@ -110,10 +126,11 @@ def test_py_ffi() -> None:
 
 
 def test_ocaml() -> None:
-	run_cmd("dune", "exec", "./bindings/ocaml/test.exe")
+	run_cmd("dune", "exec", "./tests/ocaml/test_ocaml.exe")
 
 
 def run_sample() -> None:
+	ensure_generated()
 	ensure_dir(BUILD_DIR)
 	run_cmd(
 		str(ZIG_CXX),
