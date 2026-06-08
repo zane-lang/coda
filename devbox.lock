@@ -1,6 +1,54 @@
 {
   "lockfile_version": "1",
   "packages": {
+    "dune@latest": {
+      "last_modified": "2026-05-21T08:15:18Z",
+      "resolved": "github:NixOS/nixpkgs/4a29d733e8a7d5b824c3d8c958a946a9867b3eb2#dune",
+      "source": "devbox-search",
+      "version": "3.21.1",
+      "systems": {
+        "aarch64-darwin": {
+          "outputs": [
+            {
+              "name": "out",
+              "path": "/nix/store/i62ga7dgh2zx0wkwq5bhp7r0aq5l1qic-dune-3.21.1",
+              "default": true
+            }
+          ],
+          "store_path": "/nix/store/i62ga7dgh2zx0wkwq5bhp7r0aq5l1qic-dune-3.21.1"
+        },
+        "aarch64-linux": {
+          "outputs": [
+            {
+              "name": "out",
+              "path": "/nix/store/x7srvl1r3fxqlwrgic8xci2xw4vs4fpd-dune-3.21.1",
+              "default": true
+            }
+          ],
+          "store_path": "/nix/store/x7srvl1r3fxqlwrgic8xci2xw4vs4fpd-dune-3.21.1"
+        },
+        "x86_64-darwin": {
+          "outputs": [
+            {
+              "name": "out",
+              "path": "/nix/store/cwcy3w2hlik0xa6qirq7v7p3qpngqvcr-dune-3.21.1",
+              "default": true
+            }
+          ],
+          "store_path": "/nix/store/cwcy3w2hlik0xa6qirq7v7p3qpngqvcr-dune-3.21.1"
+        },
+        "x86_64-linux": {
+          "outputs": [
+            {
+              "name": "out",
+              "path": "/nix/store/3g9c7bq560gc93cjya06cgx3df0sl5yw-dune-3.21.1",
+              "default": true
+            }
+          ],
+          "store_path": "/nix/store/3g9c7bq560gc93cjya06cgx3df0sl5yw-dune-3.21.1"
+        }
+      }
+    },
     "github:NixOS/nixpkgs/nixpkgs-unstable": {
       "last_modified": "2026-05-01T13:14:57Z",
       "resolved": "github:NixOS/nixpkgs/c6d65881c5624c9cae5ea6cedef24699b0c0a4c0?lastModified=1777641297&narHash=sha256-WNGcmeOZ8Tr9dq6ztCspYbzWFswr2mPebM9LpsfGxPk%3D"
@@ -86,6 +134,54 @@
             }
           ],
           "store_path": "/nix/store/vr4agmy8jw7f8kqynpizagdaqxy0ayw4-just-1.50.0"
+        }
+      }
+    },
+    "ocaml@latest": {
+      "last_modified": "2026-05-21T08:15:18Z",
+      "resolved": "github:NixOS/nixpkgs/4a29d733e8a7d5b824c3d8c958a946a9867b3eb2#ocaml",
+      "source": "devbox-search",
+      "version": "5.4.1",
+      "systems": {
+        "aarch64-darwin": {
+          "outputs": [
+            {
+              "name": "out",
+              "path": "/nix/store/81yy39njdh1d5796qn84inbqq56fh71v-ocaml-5.4.1",
+              "default": true
+            }
+          ],
+          "store_path": "/nix/store/81yy39njdh1d5796qn84inbqq56fh71v-ocaml-5.4.1"
+        },
+        "aarch64-linux": {
+          "outputs": [
+            {
+              "name": "out",
+              "path": "/nix/store/zrdg31hnnr0lv3xndwvh74fd160483di-ocaml-5.4.1",
+              "default": true
+            }
+          ],
+          "store_path": "/nix/store/zrdg31hnnr0lv3xndwvh74fd160483di-ocaml-5.4.1"
+        },
+        "x86_64-darwin": {
+          "outputs": [
+            {
+              "name": "out",
+              "path": "/nix/store/2hrwc25yrvlwz6gmar9cd8zdsy89rfpa-ocaml-5.4.1",
+              "default": true
+            }
+          ],
+          "store_path": "/nix/store/2hrwc25yrvlwz6gmar9cd8zdsy89rfpa-ocaml-5.4.1"
+        },
+        "x86_64-linux": {
+          "outputs": [
+            {
+              "name": "out",
+              "path": "/nix/store/ryj2xb3cla5jvx41pxlk8vqm0z93g5cs-ocaml-5.4.1",
+              "default": true
+            }
+          ],
+          "store_path": "/nix/store/ryj2xb3cla5jvx41pxlk8vqm0z93g5cs-ocaml-5.4.1"
         }
       }
     },

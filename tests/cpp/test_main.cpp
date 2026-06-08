@@ -134,8 +134,9 @@ public:
 	}
 
 	bool table_row_missing_inserts(const char* table, const char* row) override {
-		f()[table].asKeyedTable()[row];  // non-const operator[] auto-inserts
-		return f()[table].asKeyedTable().getContent().count(row) > 0;
+		auto& kt = f()[table].asKeyedTable();
+		try { (void)kt[row]; } catch (...) {}
+		return kt.getContent().count(row) > 0;
 	}
 
 	std::string get_plain_table_cell(const char* table, size_t row,

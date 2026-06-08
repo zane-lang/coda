@@ -350,9 +350,8 @@ class Parser {
 	// ── duplicate-key guard for Block ───────────────────────────────────
 
 	// Inserts directly into the Block's underlying map so we can check for
-	// duplicates.  Block::operator[] auto-inserts without a duplicate check,
-	// and Block::insert() doesn't report whether the key already existed, so
-	// we access getContent() directly here.
+	// duplicates. Block::insert() doesn't report whether the key already
+	// existed, so we access getContent() directly here.
 	void blockInsertChecked(coda::Block& block,
 	                        const std::string& key,
 	                        coda::detail::Value value,
@@ -499,7 +498,7 @@ class Parser {
 			coda::Row row;
 			row.setComment(std::move(comment));
 			for (size_t i = 0; i < fieldToks.size(); ++i)
-				row[fieldToks[i].value] = rowTokens[i + 1].value;
+				row.insert(fieldToks[i].value, rowTokens[i + 1].value);
 
 			keyedTableInsertChecked(table, rowTokens[0].value, std::move(row), rowTokens[0].loc);
 		}
@@ -561,7 +560,7 @@ class Parser {
 			coda::Row row;
 			row.setComment(std::move(comment));
 			for (size_t i = 0; i < header.size(); ++i)
-				row[header[i].value] = rowTokens[i].value;
+				row.insert(header[i].value, rowTokens[i].value);
 
 			table.append(std::move(row));
 		}

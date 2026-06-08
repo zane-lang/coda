@@ -88,7 +88,7 @@ public:
 	}
 
 	const std::string& operator[](const std::string& key) const { return content.at(key); }
-	std::string&       operator[](const std::string& key)       { return content[key]; }
+	std::string&       operator[](const std::string& key)       { return content.at(key); }
 
 	auto begin() const { return content.begin(); }
 	auto begin()       { return content.begin(); }
@@ -171,7 +171,7 @@ public:
 	}
 
 	const Row& operator[](const std::string& key) const { return content.at(key); }
-	Row&       operator[](const std::string& key)       { return content[key]; }
+	Row&       operator[](const std::string& key)       { return content.at(key); }
 
 	bool empty() const { return content.empty(); }
 	const std::set<std::string>& getHeaders() const { return headers; }
@@ -358,10 +358,7 @@ inline Block& Block::insert(const std::string& key, detail::Value value) {
 	return *this;
 }
 inline const detail::Value& Block::operator[](const std::string& key) const { return *content.at(key); }
-inline detail::Value&       Block::operator[](const std::string& key) {
-	if (!content.count(key)) content[key] = std::make_unique<detail::Value>();
-	return *content[key];
-}
+inline detail::Value&       Block::operator[](const std::string& key)       { return *content.at(key); }
 
 inline Array::Array(const Array& o) {
 	for (const auto& v : o.content)

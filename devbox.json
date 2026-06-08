@@ -3,7 +3,9 @@
   "packages": [
     "zig@latest",
     "just@latest",
-    "python3@latest"
+    "python3@latest",
+    "dune@latest",
+    "ocaml@latest"
   ],
   "shell": {
     "init_hook": [

@@ -1,6 +1,4 @@
-(lang dune 3.0)
 (executable
  (name test_ocaml)
- (public_name coda_ocaml_test)
  (modules test_ocaml)
  (libraries coda))

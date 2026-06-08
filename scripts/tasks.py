@@ -85,6 +85,7 @@ def test_c_ffi() -> None:
 		str(ZIG_CXX),
 		*TEST_FLAGS,
 		"-I.",
+		*INC,
 		"-c",
 		"-fPIC",
 		"ffi/coda_ffi.cpp",
@@ -109,7 +110,7 @@ def test_py_ffi() -> None:
 
 
 def test_ocaml() -> None:
-	run_cmd("dune", "run", "-p", "coda_ocaml_test")
+	run_cmd("dune", "exec", "./bindings/ocaml/test.exe")
 
 
 def run_sample() -> None:
