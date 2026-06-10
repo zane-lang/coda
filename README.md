@@ -2,7 +2,7 @@
 
 <img width="700" alt="imprint_coda_20260403010920" src="images/coda-example.svg" />
 
-A compact configuration format designed to be easily read- and writeable. The name comes from music — a coda is the concluding passage that ties a composition together. A `.coda` file is the single source of truth for configuration.
+A compact configuration format designed to be easy to read and write. The name comes from music — a coda is the concluding passage that ties a composition together. A `.coda` file is the single source of truth for configuration.
 
 The above file in JSON:
 
@@ -36,13 +36,35 @@ with coda.Doc.parse_file("config.coda") as doc:
     print(doc.root()["key"])
 ```
 
-**C++** — Coda is a **header-only library**. Copy or symlink `include/coda.hpp` and `#include` it directly — no build step required.
+**C++** — Coda is a **header-only library**. Use the generated single header `include/coda.hpp` from a release artifact, or generate it from a source checkout before copying/symlinking it into your project:
+
+```bash
+devbox run -- just generate
+```
 
 ```cpp
 #include "path/to/coda.hpp"
 ```
 
 **C FFI / other languages** — build the shared library with `just build` (see [Building & testing](#building--testing) below).
+
+**OCaml** — the source tree includes Dune bindings in `bindings/ocaml/`, backed by the same C FFI implementation:
+
+```bash
+devbox run -- just test-ocaml
+```
+
+```ocaml
+open Coda
+
+match parse_file "config.coda" with
+| Ok doc ->
+    let root = root doc in
+    (match map_get doc root "key" with
+     | Some node -> print_endline (string_get doc node)
+     | None -> ())
+| Error e -> prerr_endline e.message
+```
 
 ---
 
@@ -52,6 +74,7 @@ with coda.Doc.parse_file("config.coda") as doc:
 |---|---|
 | C++ header (`include/coda.hpp`) | [`docs/API-CPP.md`](docs/API-CPP.md) |
 | Python bindings (`bindings/python/coda.py`) | [`docs/API-PYTHON.md`](docs/API-PYTHON.md) |
+| OCaml bindings (`bindings/ocaml/`) | [`docs/API-OCAML.md`](docs/API-OCAML.md) |
 | C FFI (`ffi/coda_ffi.h`) | [`docs/API-C-FFI.md`](docs/API-C-FFI.md) |
 
 ---
@@ -59,13 +82,13 @@ with coda.Doc.parse_file("config.coda") as doc:
 ## Building & testing
 
 This repo is built and tested inside a [Devbox](https://www.jetify.com/devbox)
-environment (which pins zig, just, python3, dune and ocaml). `just` recipes are
+environment (which pins zig, just, python3, dune, and ocaml). `just` recipes are
 thin wrappers around `scripts/tasks.py`.
 
 ```bash
 devbox run -- just test         # run all tests (C++, C FFI, Python, OCaml)
 devbox run -- just generate     # regenerate include/coda.hpp (requires quom)
-devbox run -- just build        # build host shared library (libcoda_ffi.so)
+devbox run -- just build        # build host shared library (build/libcoda_ffi.so)
 devbox run -- just cross-all    # cross-compile for all supported targets
 devbox run -- just test-cpp
 devbox run -- just test-c-ffi

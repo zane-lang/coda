@@ -1,13 +1,13 @@
 # C FFI API — `ffi/coda_ffi.h`
 
-`libcoda_ffi` exposes a stable C ABI so you can embed the Coda parser in any language with a C FFI (Python via ctypes, Ruby, Lua, Zig, etc.).
+`libcoda_ffi` exposes a stable C ABI so you can embed the Coda parser in any language with a C FFI (Python via ctypes, OCaml via the bundled stubs, Ruby, Lua, Zig, etc.).
 
 ## Setup
 
 Build the shared library:
 
 ```bash
-just build        # libcoda_ffi.so / .dylib / .dll for the host platform
+just build        # host shared library in build/ (build/libcoda_ffi.so)
 just cross-all    # cross-compile for all supported targets (output in dist/)
 ```
 

@@ -618,7 +618,8 @@ class Block(Node):
 	def get_or_insert(self, key: str) -> "Node":
 		"""Return the node for *key*, inserting an empty STRING node if absent.
 
-		Mirrors C++ Block::operator[] which auto-inserts on missing keys.
+		This is the explicit auto-insert API; normal ``block[key]`` lookups
+		raise ``KeyError`` when the key is absent.
 		"""
 		doc = self._check()
 		kb = _enc(key)

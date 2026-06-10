@@ -45,14 +45,14 @@ Keys follow the same rules as values — they can be bare tokens or quoted strin
 
 ### Reserved word: `key`
 
-`key` is a reserved keyword used exclusively as the first token of a keyed-table header row (see [Keyed table](#keyed-table)). It cannot appear as a bare identifier anywhere else. To use the literal string `key` as a key or value, quote it.
+`key` is reserved when a key name is expected, and it is the marker token for a keyed-table header row (see [Keyed table](#keyed-table)). To use the literal string `key` as a block key, quote it. In value and table-cell positions, bare `key` is accepted as the string `key`; the serialiser writes it quoted so the output cannot be confused with a keyed-table header.
 
 ```coda
 "key" value      # key named literally "key"
-value "key"      # value is the string "key"
+value key        # value is the string "key" (serialises as: value "key")
 ```
 
-Using bare `key` inside a block, or as a row value, is a parse error.
+Using bare `key` where a block entry key is expected is a parse error.
 
 ### Comments
 
@@ -141,7 +141,7 @@ compiler {
 compiler { debug false }
 ```
 
-The `key` keyword is not allowed inside a block. Use `[]` for tabular data.
+The bare `key` token is not allowed as a block entry key. Quote it (`"key"`) for a literal key named `key`, or use `[]` for tabular data.
 
 ---
 
@@ -262,7 +262,7 @@ The following conditions are hard parse errors. Line and column information is i
 
 | Error | Condition |
 |-------|-----------|
-| `UnexpectedToken` | A token appears where it is not grammatically valid (e.g. a bare `key` in a value position, a `]` with no opening `[`). |
+| `UnexpectedToken` | A token appears where it is not grammatically valid (e.g. a bare `key` where a top-level key name is expected, a `]` with no opening `[`). |
 | `UnexpectedEOF` | The file ends while a block `{}` or array `[]` is still open. |
 | `DuplicateKey` | The same key appears more than once in a block, or the same row key appears more than once in a keyed table. |
 | `DuplicateField` | The same field name appears more than once in a plain-table or keyed-table header row. |
@@ -271,7 +271,7 @@ The following conditions are hard parse errors. Line and column information is i
 | `UnterminatedString` | A quoted string is not closed before the end of the line or end of file. |
 | `NestedBlock` | A `{` or `[` appears inside a plain-table or keyed-table row. |
 | `ContentAfterBrace` | Non-whitespace content follows `{` or `[` on the same opening line. |
-| `KeyInBlock` | The reserved word `key` appears as a key or value inside a block. |
+| `KeyInBlock` | The reserved word `key` appears where an entry key is expected inside an explicit block. |
 
 Additional language-level invariants (not parse errors, but structural rules):
 

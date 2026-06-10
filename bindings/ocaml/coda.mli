@@ -1,4 +1,7 @@
-(* Coda OCaml bindings *)
+(* Thin OCaml bindings over the Coda C FFI.
+   A [doc] owns node storage; a [node] is an integer handle, with [0]
+   reserved by the C ABI as the null / invalid node. Mutating functions return
+   [status] instead of raising for normal bad-kind/not-found/out-of-range cases. *)
 
 type doc
 type node = int

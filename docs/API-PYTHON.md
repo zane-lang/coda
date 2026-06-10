@@ -26,7 +26,7 @@ just cross-all    # all supported targets
 from bindings.python.coda import (
     Doc, Block, Array,
     Table, KeyedTable, Row,
-    ParseError, get_abi_version,
+    ParseError, get_abi_version, parse_error_code_name,
 )
 ```
 
@@ -46,6 +46,11 @@ with Doc.parse(text, filename="project.coda") as doc:
 # From a file path
 with Doc.parse_file("project.coda") as doc:
     ...
+
+# From a file-like object (bytes or text)
+with open("project.coda", "rb") as fp:
+    with Doc.parse_fp(fp, filename="project.coda") as doc:
+        ...
 
 # Create an empty document
 doc = Doc.new()
@@ -180,7 +185,7 @@ doc.save("out.coda", indent="  ")
 ## Error handling
 
 ```python
-from bindings.python.coda import ParseError
+from coda import Doc, ParseError, parse_error_code_name
 
 try:
     doc = Doc.parse(bad_text)
@@ -190,6 +195,7 @@ except ParseError as e:
     print(e.line)
     print(e.col)
     print(e.offset)    # byte offset into the source
+    print(parse_error_code_name(e.code))
 ```
 
 `ParseError` inherits from `Error` (which inherits from `Exception`). All other coda runtime errors raise `Error` directly.
@@ -216,6 +222,7 @@ print(deps["plot"].comment)  # comment above the "plot" row
 |---|---|
 | `Doc.parse(text, filename?)` | Parse UTF-8 text; returns `Doc` |
 | `Doc.parse_file(path)` | Parse from a file path |
+| `Doc.parse_fp(fp, filename?)` | Parse from a file-like object by reading it as UTF-8 text |
 | `Doc.new()` | Create an empty document |
 | `root()` | Return the root `Block` |
 | `serialize(indent?)` | Return Coda text as `str` (default: tab indent) |
@@ -256,9 +263,10 @@ Ordered map of `str → Node`. Scalar values may be supplied as plain `str`; the
 
 | Operation | Description |
 |---|---|
-| `node["key"]` | Look up child node |
+| `node["key"]` | Look up child node; raises `KeyError` if absent |
 | `node["key"] = value` | Insert or replace a child (`str` or container node) |
 | `node.insert("key", value)` | Insert or replace a child; returns `node` for chaining |
+| `node.get_or_insert("key")` | Look up a child, inserting an empty string node if absent |
 | `del node["key"]` | Remove a child |
 | `node.has("key")` | Membership test (equivalent to `"key" in node`) |
 | `"key" in node` | Membership test (equivalent to `node.has("key")`) |
@@ -274,7 +282,7 @@ Ordered list of `Node`. Scalar values may be supplied as plain `str`.
 
 | Operation | Description |
 |---|---|
-| `node[i]` | Get item by index |
+| `node[i]` | Get item by index; raises `IndexError` if out of range |
 | `node[i] = value` | Replace item (`str` or container node) |
 | `del node[i]` | Remove item |
 | `node.append(value)` | Append a node; returns `node` for chaining |
@@ -289,7 +297,7 @@ Plain (anonymous-row) table.
 | Operation | Description |
 |---|---|
 | `Table(columns)` | Create a new table with an initial non-empty column list |
-| `node[i]` | Get row by index (returns `Row`) |
+| `node[i]` | Get row by index (returns `Row`); raises `IndexError` if out of range |
 | `node[i] = row` | Replace row |
 | `del node[i]` | Remove row |
 | `for row in node` | Iterate rows |
@@ -306,7 +314,7 @@ Keyed table — rows indexed by their key string.
 | Operation | Description |
 |---|---|
 | `KeyedTable(columns)` | Create a new keyed table with an initial non-empty column list |
-| `node["key"]` | Get row by key (returns `Row`) |
+| `node["key"]` | Get row by key (returns `Row`); raises `KeyError` if absent |
 | `node["key"] = row` | Insert or replace row |
 | `node.insert("key", row)` | Insert or replace row; returns `node` for chaining |
 | `del node["key"]` | Remove row |
@@ -325,7 +333,7 @@ A single table row — flat map of column name → string value.
 
 | Operation | Description |
 |---|---|
-| `row["col"]` | Get column value as `str` |
+| `row["col"]` | Get column value as `str`; raises `KeyError` if absent |
 | `row["col"] = "val"` | Set column value |
 | `row.insert("col", "val")` | Set column value; returns `row` for chaining |
 | `del row["col"]` | Remove column |
@@ -340,7 +348,7 @@ Base class for all Coda runtime errors. Inherits from `Exception`. Raised direct
 
 ### `ParseError`
 
-Raised by `Doc.parse` and `Doc.parse_file` on invalid input. Inherits from `Error`.
+Raised by `Doc.parse`, `Doc.parse_file`, and `Doc.parse_fp` on invalid input. Inherits from `Error`.
 
 | Attribute | Type | Description |
 |---|---|---|
@@ -358,3 +366,11 @@ get_abi_version() -> int
 ```
 
 Returns the integer ABI version of the loaded `libcoda_ffi` native library. Useful for verifying library compatibility at runtime.
+
+### `parse_error_code_name`
+
+```python
+parse_error_code_name(code: int) -> str
+```
+
+Returns the human-readable name for a numeric parse error code.

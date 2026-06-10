@@ -1,6 +1,6 @@
 # C++ API — `include/coda.hpp`
 
-Coda is a **header-only** C++17 library. Copy `include/coda.hpp` into your project and `#include` it — no build step required.
+Coda is a **header-only** C++17 library. Use the generated single header `include/coda.hpp` from a release artifact, or run `just generate` in a source checkout before copying it into your project and including it — no runtime library is required.
 
 ---
 
@@ -34,7 +34,7 @@ All forms throw `coda::ParseError` on invalid input.
 
 ## Reading values
 
-`doc.root()` returns a `coda::Block&` — the top-level map of the document. Chain `operator[]` to reach nested nodes, then cast to a concrete type with one of the `as*()` helpers.
+`doc.root()` returns a `coda::Block&` — the top-level map of the document. For existing keys and indices, chain `operator[]` to reach nested nodes, then cast to a concrete type with one of the `as*()` helpers.
 
 ```cpp
 const coda::Block& root = doc.root();
@@ -87,14 +87,14 @@ coda::Doc doc;
 coda::Block& root = doc.root();
 
 // Scalars
-root["name"]    = "myproject";
-root["version"] = "1.0.0";
+root.insert("name",    "myproject")
+    .insert("version", "1.0.0");
 
 // Block
 coda::Block compiler;
-compiler["debug"]    = "false";
-compiler["optimize"] = "true";
-root["compiler"] = std::move(compiler);
+compiler.insert("debug",    "false")
+        .insert("optimize", "true");
+root.insert("compiler", std::move(compiler));
 
 // Array
 coda::Array targets;
@@ -102,13 +102,13 @@ targets.setHeaderComment("supported build targets");
 targets.append("x86_64-linux")
        .append("x86_64-windows")
        .append("aarch64-macos");
-root["targets"] = std::move(targets);
+root.insert("targets", std::move(targets));
 
 // Plain table (column set defined at construction, validated on append)
 coda::Table releases({"version", "date"});
 releases.append(coda::Row().insert("version", "1.0.0").insert("date", "2025-01-01"));
 releases.append(coda::Row().insert("version", "1.1.0").insert("date", "2025-06-15"));
-root["releases"] = std::move(releases);
+root.insert("releases", std::move(releases));
 
 // Keyed table
 coda::KeyedTable deps({"link", "version"});
@@ -116,7 +116,7 @@ deps.setHeaderComment("optional");
 deps.insert("plot", coda::Row()
     .insert("link",    "github.com/zane-lang/plot")
     .insert("version", "4.0.3"));
-root["deps"] = std::move(deps);
+root.insert("deps", std::move(deps));
 root["deps"].setComment("dependency table");
 
 // Modify an existing scalar in-place
@@ -128,11 +128,7 @@ root["targets"].asArray().append("wasm32-wasi");
 doc.save("out.coda");
 ```
 
-Non-const `Block::operator[]` auto-inserts an empty string node when the key is absent, so you can also write:
-
-```cpp
-root["version"].asString() = "1.0.0";  // inserts then assigns in one step
-```
+Use `Block::insert(key, value)` to create or replace entries. `Block::operator[]` is lookup-only: both const and non-const overloads throw `std::out_of_range` when the key is absent, so call `has()` first when a key may be missing.
 
 ---
 
@@ -247,12 +243,12 @@ Comments are stored and serialised without the leading `#` — the serialiser ad
 | `useTabs()` | `void` | Set indent unit to `\t` (default) |
 | `useSpaces(n)` | `void` | Set indent unit to `n` spaces |
 | `save(path)` | `void` | Serialise and write to disk using the current indent unit |
-| `save(path, unit)` | `void` | Set the indent unit, then write to disk |
+| `save(path, unit)` | `void` | Write to disk using an explicit indent unit without changing the document default |
 | `serialize()` | `std::string` | Return Coda text using the current indent unit |
 
 ### `coda::detail::Value`
 
-Every node stored in a `Block` or `Array` is a `coda::detail::Value`. You don't construct these directly — they are returned by `operator[]`.
+Every node stored in a `Block` or `Array` is a `coda::detail::Value`. You usually do not construct these directly — they are created from strings and container objects passed to `Block::insert` or `Array::append`, and they are returned by `operator[]`.
 
 | Member | Return type | Description |
 |---|---|---|
@@ -265,14 +261,14 @@ Every node stored in a `Block` or `Array` is a `coda::detail::Value`. You don't 
 | `getComment()` | `const std::string&` | Pre-node `#` comment (without the `#`) |
 | `setComment(s)` | `void` | Set pre-node comment |
 
-Values are constructed implicitly when assigning to `Block::operator[]`:
+Values are constructed implicitly when inserting into a block:
 
 ```cpp
-root["x"]        = "hello";            // std::string / const char*
-root["compiler"] = coda::Block{};      // Block
-root["targets"]  = coda::Array{};      // Array
-root["releases"] = coda::Table({"version", "date"});       // Table
-root["deps"]     = coda::KeyedTable({"link", "version"});  // KeyedTable
+root.insert("x",        "hello");                               // std::string / const char*
+root.insert("compiler", coda::Block{});                         // Block
+root.insert("targets",  coda::Array{});                         // Array
+root.insert("releases", coda::Table({"version", "date"}));      // Table
+root.insert("deps",     coda::KeyedTable({"link", "version"})); // KeyedTable
 ```
 
 ### `coda::Block`
@@ -282,7 +278,7 @@ Ordered map of `string → Value`. The root of every document is a `Block`.
 | Member | Return type | Description |
 |---|---|---|
 | `Block()` | — | Construct an empty block |
-| `operator[](key)` | `detail::Value&` | Non-const: auto-inserts empty string if absent; const: throws `std::out_of_range` |
+| `operator[](key)` | `detail::Value&` | Lookup an existing key; throws `std::out_of_range` if absent (const and non-const) |
 | `insert(key, value)` | `Block&` | Insert or replace a value; returns `*this` for chaining |
 | `has(key)` | `bool` | `true` if the key exists |
 | `order()` | `void` | Sort keys alphabetically (scalars first, then containers) |
@@ -329,7 +325,7 @@ Keyed table — rows indexed by a key string. Column names are validated on `ins
 |---|---|---|
 | `KeyedTable(headers)` | — | Construct with a non-empty `std::set<std::string>` of (non-key) column names |
 | `insert(key, row)` | `KeyedTable&` | Insert or replace a row; validates fields; returns `*this` for chaining |
-| `operator[](key)` | `Row&` | Non-const: auto-inserts empty row if absent; const: throws `std::out_of_range` |
+| `operator[](key)` | `Row&` | Lookup an existing row; throws `std::out_of_range` if absent (const and non-const) |
 | `empty()` | `bool` | `true` if there are no rows |
 | `getHeaderComment()` | `const std::string&` | Comment before the header row |
 | `setHeaderComment(s)` | `void` | Set header comment |
@@ -343,7 +339,7 @@ A single table row — flat map of `string → string`.
 |---|---|---|
 | `Row()` | — | Construct an empty row |
 | `insert(col, value)` | `Row&` | Set column value; returns `*this` for chaining |
-| `operator[](col)` | `std::string&` | Non-const: auto-inserts empty string if absent; const: throws `std::out_of_range` |
+| `operator[](col)` | `std::string&` | Lookup an existing column; throws `std::out_of_range` if absent (const and non-const) |
 | `getComment()` | `const std::string&` | Row-level `#` comment (without the `#`) |
 | `setComment(s)` | `void` | Set row-level comment |
 | `begin()` / `end()` | iterator | Iterate `pair<string, string>` in insertion order |
