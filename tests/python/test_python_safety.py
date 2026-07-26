@@ -39,6 +39,11 @@ def main() -> None:
 		doc.order()
 		assert str(z) == "last"
 
+	with coda.Doc.parse("table [\n z a\n]\n") as doc:
+		table = doc.root()["table"].as_table()
+		assert table.columns() == ["z", "a"]
+		assert "\n\tz a\n" in doc.serialize()
+
 	with coda.Doc.new() as doc:
 		root = doc.root()
 		root["value"] = "old"
@@ -58,6 +63,9 @@ def main() -> None:
 			table[key] = row
 		table.order()
 		assert [key for key, _ in table] == ["a", "z"]
+		expect_error(lambda: table.append_col("later"), "column append invalidated existing rows")
+		expect_error(lambda: table["z"].insert("unknown", "x"), "attached row accepted an unknown field")
+		expect_error(lambda: table["z"].__delitem__("value"), "attached row removed a required field")
 
 	print("Python safety tests passed")
 
