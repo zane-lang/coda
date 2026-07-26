@@ -1,376 +1,243 @@
-# Python API — `bindings/python/coda.py`
+# Python API — `coda`
 
-The Python wrapper uses `ctypes` to talk to `libcoda_ffi` and exposes a class hierarchy that mirrors the Coda node types.
+The Python package uses `ctypes` over the hardened C FFI and exposes classes for each Coda node kind.
 
-## Setup
-
-**From PyPI** (includes the compiled native library — no build step needed):
+## Installation and imports
 
 ```bash
 pip install coda-format
 ```
 
 ```python
-import coda
-from coda import Doc, Block, Array, Table, KeyedTable, Row, ParseError
-```
-
-**From source** — build the shared library first, then import directly:
-
-```bash
-just build        # host platform only
-just cross-all    # all supported targets
-```
-
-```python
-from bindings.python.coda import (
-    Doc, Block, Array,
-    Table, KeyedTable, Row,
-    ParseError, get_abi_version, parse_error_code_name,
+from coda import (
+    Doc, Block, Array, Table, KeyedTable, Row,
+    Error, ParseError, get_abi_version, parse_error_code_name,
 )
 ```
 
----
-
-## Parsing
+From a source checkout, import the package rather than the implementation module so the runtime safety hooks are installed:
 
 ```python
-# From a string (use as a context manager to auto-free)
-with Doc.parse(text) as doc:
-    ...
+from bindings.python import Doc, Block, Array, Table, KeyedTable, Row
+```
 
-# From a string with an optional filename hint for error messages
+Build the native library first:
+
+```bash
+devbox run -- just build
+```
+
+## Documents and lifetime
+
+```python
 with Doc.parse(text, filename="project.coda") as doc:
-    ...
+    root = doc.root()
 
-# From a file path
 with Doc.parse_file("project.coda") as doc:
     ...
 
-# From a file-like object (bytes or text)
-with open("project.coda", "rb") as fp:
-    with Doc.parse_fp(fp, filename="project.coda") as doc:
+with open("project.coda", "rb") as file:
+    with Doc.parse_fp(file, filename="project.coda") as doc:
         ...
 
-# Create an empty document
-doc = Doc.new()
+with Doc.new() as doc:
+    ...
 ```
 
----
+A document owns all of its nodes. The context manager calls `free()` on exit; `__del__` is only a fallback.
+
+Node wrappers become invalid when their document is freed or when their node/subtree is removed or replaced. Using an invalid wrapper raises `Error`; stale wrappers never alias newly created nodes.
+
+```python
+node = doc.root()["name"]
+doc.free()
+str(node)  # raises Error
+```
+
+Ordering does not invalidate node wrappers.
+
+## Ownership when building
+
+A newly created container or row starts detached. Inserting it transfers it into exactly one parent in the same document.
+
+The binding rejects:
+
+- inserting a node created in another document;
+- attaching the same node to two parents;
+- attaching a node beneath itself or one of its descendants;
+- reusing a node after it was removed or replaced.
+
+```python
+with Doc.new() as doc:
+    root = doc.root()
+    block = Block()
+    root["compiler"] = block
+    block["debug"] = "false"
+```
+
+Create a fresh node for each destination rather than reusing one attached instance.
 
 ## Reading values
 
-`doc.root()` returns a `Block` — the top-level map. From there, index with `[]` to reach child nodes and cast them with `as_*()`.
-
 ```python
 with Doc.parse(text) as doc:
-    root = doc.root()                          # Block
+    root = doc.root()
 
-    # Scalar string — as_string() returns the node; .value gives the str
-    name  = root["name"].as_string().value     # "myproject"
-    debug = root["compiler"]["debug"].as_string().value
-
-    # Block (nested key-value map)
+    name = root["name"].as_string().value
     compiler = root["compiler"].as_block()
-    for key, node in compiler:
-        print(key, node.as_string().value)
-
-    # Bare-list array
     targets = root["targets"].as_array()
-    for item in targets:
-        print(item.as_string().value)
-
-    # Plain table (rows by index)
     releases = root["releases"].as_table()
-    for row in releases:
-        print(row["version"])
-
-    # Keyed table (rows by key)
     deps = root["deps"].as_keyed_table()
-    print(deps.header_comment)                 # "optional deps"
-    plot_row = deps["plot"]                    # Row
-    print(plot_row["link"])                    # "github.com/zane-lang/plot"
 ```
 
----
+`as_string`, `as_block`, `as_array`, `as_table`, and `as_keyed_table` raise `TypeError` for the wrong kind.
 
-## Creating and modifying
+String nodes also implement `str(node)` and comparison with Python strings.
 
-Scalar string values are represented as plain Python `str`. Container nodes (`Block`, `Array`, `Table`, `KeyedTable`) are created without passing a `doc` argument and are materialized into the document when they are first inserted.
+## Blocks
 
 ```python
-doc  = Doc.new()
-root = doc.root()
+root["name"] = "myproject"
+root.insert("version", "1.0.0")
 
-# Scalars — pass a plain str
-root["name"]    = "myproject"
-root["version"] = "1.0.0"
+value = root["name"]       # raises KeyError when absent
+exists = "name" in root
+length = len(root)
 
-# Block — insert into doc first (to materialize it), then set fields
-compiler = Block()
-root["compiler"] = compiler   # materializes
-compiler["debug"]    = "false"
-compiler["optimize"] = "true"
+del root["version"]
+```
 
-# Array — header_comment and append must be called after insertion
+Iteration yields `(key, Node)` pairs in insertion order.
+
+`get_or_insert(key)` is the explicit operation that creates an empty string node when the key is absent. Normal indexing never inserts.
+
+## Arrays
+
+```python
 root["targets"] = Array()
 targets = root["targets"].as_array()
-targets.header_comment = "supported build targets"
-targets.append("x86_64-linux").append("x86_64-windows").append("aarch64-macos")
 
-# Plain table — pass the column list to the constructor
+targets.append("x86_64-linux")
+targets.append(Block())
+
+item = targets[0]
+targets[-1] = "replacement"
+del targets[0]
+```
+
+Python-style negative indices are supported. Array order is preserved by document ordering.
+
+## Plain tables
+
+Column declaration order is preserved, including empty tables. Duplicate columns are rejected.
+
+```python
 root["releases"] = Table(["version", "date"])
 releases = root["releases"].as_table()
-r1 = Row()
-r1["version"] = "1.0.0"
-r1["date"]    = "2025-01-01"
-releases.append(r1)
 
-# Keyed table
+row = Row()
+row["version"] = "1.0.0"
+row["date"] = "2026-01-01"
+releases.append(row)
+
+assert releases.columns() == ["version", "date"]
+```
+
+A row must contain exactly the declared fields when attached. Columns can only be appended before the first row. Once attached, existing field values may be changed, but required fields cannot be deleted and unknown fields cannot be added.
+
+```python
+releases[0]["version"] = "1.1.0"
+```
+
+Table indexing supports negative indices and returns `Row`.
+
+## Keyed tables
+
+```python
 root["deps"] = KeyedTable(["link", "version"])
-root["deps"].comment = "dependency table"
 deps = root["deps"].as_keyed_table()
-deps.header_comment = "optional"
-plot = Row()
-plot["link"]    = "github.com/zane-lang/plot"
-plot["version"] = "4.0.3"
-deps.insert("plot", plot)
 
-# Modify an existing scalar in-place
-root["name"].as_string().value = "renamed"
+row = Row()
+row["link"] = "github.com/zane-lang/plot"
+row["version"] = "4.0.3"
+deps["plot"] = row
 
-doc.save("out.coda")
+link = deps["plot"]["link"]
 ```
 
-`Table` and `KeyedTable` require a non-empty column list in the constructor. Methods that operate on the document (such as `append_col`, `append`, `insert`, `header_comment`) require the node to be inserted first.
-
-`Row` fields set before insertion are buffered and applied automatically on materialization:
+Missing keys raise `KeyError` and do not insert. Iteration yields `(key, Row)` pairs.
 
 ```python
-r = Row()
-r["version"] = "2.0.0"   # buffered
-r["date"]    = "2026-01-01"
-releases.append(r)        # materializes and applies buffered fields
+deps.order()
+deps.order_weighted([("plot", 100.0), ("http", 50.0)])
 ```
 
----
+These methods sort keyed rows by row key. Document-level ordering applies the same behavior recursively.
 
-## Sorting
+## Rows
+
+A row is a flat insertion-ordered mapping of strings:
 
 ```python
-doc.order()                                         # alphabetical, scalars first
-doc.order_weighted([("name", 100), ("version", 90)])  # by weight (higher → top)
+row = Row()
+row["name"] = "example"
+row.insert("version", "1")
+
+for column, value in row:
+    ...
 ```
 
-Sorting can also be applied to an individual sub-tree:
+Before attachment, fields can be freely added and removed. Attached rows obey their table schema.
+
+## Comments
+
+Every node has a `.comment` property. Arrays and tables also have `.header_comment`.
 
 ```python
+node.comment = "shown above this node"
+table.header_comment = "shown above the table header"
+row.comment = "shown above this row"
+```
+
+Comments are stored without the leading `#`.
+
+## Ordering
+
+```python
+doc.order()
+doc.order_weighted([("name", 100.0), ("version", 90.0)])
+
 root["compiler"].as_block().order()
+root["deps"].as_keyed_table().order()
 ```
 
----
+Block fields are ordered with scalars first, then containers, alphabetically within each group. Weighted ordering sorts by descending weight with alphabetical ties. Keyed-table rows use their keys. Array and plain-table row order is preserved.
 
-## Serialisation
+Existing node wrappers remain valid after ordering; only index-based iteration order changes.
+
+## Serialization
 
 ```python
-text = doc.serialize()           # default tab indent
+text = doc.serialize()
 text = doc.serialize(indent="  ")
 
 doc.save("out.coda")
 doc.save("out.coda", indent="  ")
+
+subtree = root["compiler"].serialize()
 ```
 
----
+Serializing an invalid or stale node raises `Error` rather than returning the document root.
 
-## Error handling
+## Errors
 
 ```python
-from coda import Doc, ParseError, parse_error_code_name
-
 try:
-    doc = Doc.parse(bad_text)
-except ParseError as e:
-    print(e)           # "unexpected token (line 3, col 5)"
-    print(e.code)      # integer error code
-    print(e.line)
-    print(e.col)
-    print(e.offset)    # byte offset into the source
-    print(parse_error_code_name(e.code))
+    Doc.parse(bad_text, filename="project.coda")
+except ParseError as error:
+    print(error.code)
+    print(error.line, error.col, error.offset)
+    print(parse_error_code_name(error.code))
 ```
 
-`ParseError` inherits from `Error` (which inherits from `Exception`). All other coda runtime errors raise `Error` directly.
-
----
-
-## Comments
-
-Every node class exposes a `.comment` property for the `#` lines that appear directly above it in the source file. `Array`, `Table`, and `KeyedTable` additionally expose `.header_comment` for the comment that appears before the first element or header row.
-
-```python
-deps = root["deps"].as_keyed_table()
-print(deps.header_comment)   # comment before the column header line
-print(deps["plot"].comment)  # comment above the "plot" row
-```
-
----
-
-## Class reference
-
-### `Doc`
-
-| Method / attribute | Description |
-|---|---|
-| `Doc.parse(text, filename?)` | Parse UTF-8 text; returns `Doc` |
-| `Doc.parse_file(path)` | Parse from a file path |
-| `Doc.parse_fp(fp, filename?)` | Parse from a file-like object by reading it as UTF-8 text |
-| `Doc.new()` | Create an empty document |
-| `root()` | Return the root `Block` |
-| `serialize(indent?)` | Return Coda text as `str` (default: tab indent) |
-| `save(path, indent?)` | Serialise and write to disk |
-| `order()` | Sort all keys alphabetically (scalars first) |
-| `order_weighted(weights)` | Sort by `[(key, float), …]` weight list (higher → top) |
-| `free()` | Explicitly free the document (auto-called by context manager) |
-
-`Doc` implements the context-manager protocol (`with Doc.parse(...) as doc:`), which calls `free()` on exit.
-
-### `Node`
-
-Base class for all node types. Never instantiated directly.
-
-| Method / attribute | Description |
-|---|---|
-| `node.comment` | Pre-node `#` comment (get/set) |
-| `node.is_container()` | `True` for `Block`, `Array`, `Table`, `KeyedTable` |
-| `node.serialize(indent?)` | Serialise this sub-tree to a `str` |
-| `node.as_string()` | Narrow to a string node; raises `TypeError` if wrong type |
-| `node.as_block()` | Narrow to `Block`; raises `TypeError` if wrong type |
-| `node.as_array()` | Narrow to `Array`; raises `TypeError` if wrong type |
-| `node.as_table()` | Narrow to `Table`; raises `TypeError` if wrong type |
-| `node.as_keyed_table()` | Narrow to `KeyedTable`; raises `TypeError` if wrong type |
-
-`as_string()` returns the node itself with a `.value` property exposed:
-
-```python
-node = root["name"].as_string()
-print(node.value)       # read
-node.value = "renamed"  # write
-print(str(node))        # same as node.value
-```
-
-### `Block`
-
-Ordered map of `str → Node`. Scalar values may be supplied as plain `str`; they are wrapped automatically.
-
-| Operation | Description |
-|---|---|
-| `node["key"]` | Look up child node; raises `KeyError` if absent |
-| `node["key"] = value` | Insert or replace a child (`str` or container node) |
-| `node.insert("key", value)` | Insert or replace a child; returns `node` for chaining |
-| `node.get_or_insert("key")` | Look up a child, inserting an empty string node if absent |
-| `del node["key"]` | Remove a child |
-| `node.has("key")` | Membership test (equivalent to `"key" in node`) |
-| `"key" in node` | Membership test (equivalent to `node.has("key")`) |
-| `for key, child in node` | Iterate in insertion order |
-| `len(node)` | Number of entries |
-| `node.order()` | Sort this block's keys alphabetically (scalars first) |
-| `node.order_weighted(weights)` | Sort by `[(key, float), …]` weight list |
-| `node.comment` | Pre-node comment string (get/set) |
-
-### `Array`
-
-Ordered list of `Node`. Scalar values may be supplied as plain `str`.
-
-| Operation | Description |
-|---|---|
-| `node[i]` | Get item by index; raises `IndexError` if out of range |
-| `node[i] = value` | Replace item (`str` or container node) |
-| `del node[i]` | Remove item |
-| `node.append(value)` | Append a node; returns `node` for chaining |
-| `for item in node` | Iterate |
-| `len(node)` | Length |
-| `node.header_comment` | Comment before the first element (get/set) |
-
-### `Table`
-
-Plain (anonymous-row) table.
-
-| Operation | Description |
-|---|---|
-| `Table(columns)` | Create a new table with an initial non-empty column list |
-| `node[i]` | Get row by index (returns `Row`); raises `IndexError` if out of range |
-| `node[i] = row` | Replace row |
-| `del node[i]` | Remove row |
-| `for row in node` | Iterate rows |
-| `len(node)` | Row count |
-| `node.columns()` | List of column name strings |
-| `node.append_col(name)` | Add a column |
-| `node.append(row)` | Append a `Row`; returns `node` for chaining |
-| `node.header_comment` | Comment before the header row (get/set) |
-
-### `KeyedTable`
-
-Keyed table — rows indexed by their key string.
-
-| Operation | Description |
-|---|---|
-| `KeyedTable(columns)` | Create a new keyed table with an initial non-empty column list |
-| `node["key"]` | Get row by key (returns `Row`); raises `KeyError` if absent |
-| `node["key"] = row` | Insert or replace row |
-| `node.insert("key", row)` | Insert or replace row; returns `node` for chaining |
-| `del node["key"]` | Remove row |
-| `"key" in node` | Membership test |
-| `for key, row in node` | Iterate in insertion order |
-| `len(node)` | Row count |
-| `node.columns()` | List of (non-key) column name strings |
-| `node.append_col(name)` | Add a column |
-| `node.header_comment` | Comment before the header row (get/set) |
-| `node.order()` | Sort rows alphabetically by key |
-| `node.order_weighted(weights)` | Sort rows by weight |
-
-### `Row`
-
-A single table row — flat map of column name → string value.
-
-| Operation | Description |
-|---|---|
-| `row["col"]` | Get column value as `str`; raises `KeyError` if absent |
-| `row["col"] = "val"` | Set column value |
-| `row.insert("col", "val")` | Set column value; returns `row` for chaining |
-| `del row["col"]` | Remove column |
-| `"col" in row` | Membership test |
-| `for col, val in row` | Iterate columns |
-| `len(row)` | Column count |
-| `row.comment` | Row-level comment (get/set) |
-
-### `Error`
-
-Base class for all Coda runtime errors. Inherits from `Exception`. Raised directly for non-parse errors (e.g. type mismatches, serialization failures).
-
-### `ParseError`
-
-Raised by `Doc.parse`, `Doc.parse_file`, and `Doc.parse_fp` on invalid input. Inherits from `Error`.
-
-| Attribute | Type | Description |
-|---|---|---|
-| `code` | `int` | Numeric error code |
-| `line` | `int` | 1-based line number where the error occurred |
-| `col` | `int` | 1-based column number where the error occurred |
-| `offset` | `int` | Byte offset into the source |
-
-`str(e)` returns the message with line/col appended when available (e.g. `"unexpected token (line 3, col 5)"`).
-
-### `get_abi_version`
-
-```python
-get_abi_version() -> int
-```
-
-Returns the integer ABI version of the loaded `libcoda_ffi` native library. Useful for verifying library compatibility at runtime.
-
-### `parse_error_code_name`
-
-```python
-parse_error_code_name(code: int) -> str
-```
-
-Returns the human-readable name for a numeric parse error code.
+`ParseError` inherits from `Error`. Ownership, stale-handle, schema, type, and serialization failures raise `Error` or the standard lookup/type exception documented by the operation.

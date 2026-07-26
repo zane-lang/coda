@@ -39,8 +39,8 @@ public:
 			return false;
 		} catch (const coda::ParseError& e) {
 			std::string_view msg(e.what());
-			for (const auto& n : needles)
-				if (msg.find(n) != std::string_view::npos) return true;
+			for (const auto& needle : needles)
+				if (msg.find(needle) != std::string_view::npos) return true;
 			return needles.empty();
 		} catch (...) { return false; }
 	}
@@ -86,10 +86,8 @@ public:
 	}
 
 	int get_node_kind(const char* key) override {
-		// No catalog op reads node kind by integer; map the variant to the
-		// FFI kind codes for parity, without try/catch.
 		return f()[key].visitContent(
-			[](const std::string&)      { return 2; }, // CODA_NODE_STRING
+			[](const std::string&)      { return 2; },
 			[](const coda::Block&)      { return 3; },
 			[](const coda::Array&)      { return 4; },
 			[](const coda::Table&)      { return 5; },
@@ -97,8 +95,6 @@ public:
 	}
 
 	size_t get_array_len(const char* key) override {
-		// Arrays and plain tables both expose a length; dispatch on kind
-		// rather than probing via exceptions.
 		return f()[key].visitContent(
 			[](const std::string&)      -> size_t { return 0; },
 			[](const coda::Block& b)    -> size_t { return b.size(); },
@@ -220,9 +216,6 @@ public:
 		return f().serialize();
 	}
 
-	// These checks verify that the *library* throws on a type/lookup error,
-	// so try/catch is the operation under test (not control flow). One shared
-	// helper instead of six copy-pasted try/catch blocks.
 	template<typename Fn>
 	static bool throws(Fn&& fn) {
 		try { fn(); return false; }
@@ -262,8 +255,6 @@ public:
 			[](const coda::KeyedTable& t) { return t.getHeaderComment(); });
 	}
 };
-
-// ─── Main ─────────────────────────────────────────────────────────────────────
 
 int main() {
 	std::cout << "\n" << ANSI_BOLD << ANSI_BLUE

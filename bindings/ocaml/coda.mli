@@ -1,7 +1,7 @@
 (* Thin OCaml bindings over the Coda C FFI.
-   A [doc] owns node storage; a [node] is an integer handle, with [0]
-   reserved by the C ABI as the null / invalid node. Mutating functions return
-   [status] instead of raising for normal bad-kind/not-found/out-of-range cases. *)
+   A [doc] owns node storage and is automatically finalized. Call [free] for
+   deterministic release; using a document after [free] raises Failure.
+   A [node] is an opaque integer handle, with [0] reserved as null/invalid. *)
 
 type doc
 type node = int
@@ -32,6 +32,7 @@ type error = {
 
 val parse_file : string -> (doc, error) result
 val parse : string -> string option -> (doc, error) result
+val free : doc -> unit
 val serialize : doc -> string option -> (string, error) result
 val serialize_node : doc -> node -> string option -> (string, error) result
 

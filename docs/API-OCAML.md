@@ -1,55 +1,76 @@
 # OCaml API — `bindings/ocaml/`
 
-The OCaml binding is a thin Dune library over the C FFI. It exposes opaque document handles, integer node handles, variant status values, and functions that closely mirror `ffi/coda_ffi.h`.
+The OCaml binding is a thin, typed layer over the hardened C FFI.
 
-Compared with the Python and C++ wrappers, the OCaml surface is deliberately low-level: lookups return `option` where absence is expected, mutations return a `status`, and type mismatches generally return the C FFI's neutral value (`0`, `""`, or a non-`Ok` status) instead of raising.
-
----
-
-## Setup
-
-The binding lives in `bindings/ocaml/` and is built by the repository's root `dune-project`.
+## Build and test
 
 ```bash
-devbox run -- dune build
 devbox run -- just test-ocaml
 ```
 
-The library stanza is named `coda`, so OCaml code in this workspace can use:
+The Dune library embeds the native implementation; no separately installed shared library is required.
 
 ```ocaml
 open Coda
 ```
 
-The OCaml stubs compile `ffi/coda_ffi.cpp` into the OCaml library via `bindings/ocaml/coda_ffi_bridge.cpp`, so the test binding does not require a separately installed `libcoda_ffi` shared library.
-
----
-
-## Parsing
+## Documents and lifetime
 
 ```ocaml
-open Coda
-
-let doc =
-  match parse_file "project.coda" with
-  | Ok d -> d
-  | Error e -> failwith e.message
-
-let doc_from_string =
-  match parse "name myproject\n" (Some "inline.coda") with
-  | Ok d -> d
-  | Error e -> failwith e.message
-
-(* Empty editable document: parse an empty source string. *)
-let empty_doc =
-  match parse "" None with
-  | Ok d -> d
-  | Error e -> failwith e.message
+match parse_file "project.coda" with
+| Ok doc ->
+    let root_node = root doc in
+    (* use document *)
+    free doc
+| Error error ->
+    prerr_endline error.message
 ```
 
-Parsing returns `(doc, error) result`. `error` contains the C FFI parse code, 1-based line and column, byte offset, and formatted message.
+A `doc` is an owning OCaml custom block. Native memory is released automatically by its finalizer, and `free` provides deterministic release.
+
+Using a document after `free` raises `Failure`. Calling `free` more than once is safe.
 
 ```ocaml
+val free : doc -> unit
+```
+
+A `node` is an opaque integer handle scoped to its document. `0` represents null/invalid.
+
+Handles remain stable across ordering. Removing or replacing a subtree invalidates its handles; stale handles never alias newly created nodes. Node handles cannot be moved between documents, attached to multiple parents, or used to create cycles; such mutations return `Err`.
+
+## Parsing and serialization
+
+```ocaml
+val parse_file : string -> (doc, error) result
+val parse : string -> string option -> (doc, error) result
+val serialize : doc -> string option -> (string, error) result
+val serialize_node : doc -> node -> string option -> (string, error) result
+```
+
+Examples:
+
+```ocaml
+match parse source (Some "project.coda") with
+| Error error ->
+    Printf.eprintf "%d:%d: %s\n" error.line error.col error.message
+| Ok doc ->
+    match serialize doc (Some "  ") with
+    | Ok text -> print_string text
+    | Error error -> prerr_endline error.message
+```
+
+Serializing an invalid or stale node returns `Error`; it is never interpreted as the document root.
+
+## Errors and status values
+
+```ocaml
+type status =
+  | Ok
+  | Err
+  | NotFound
+  | BadKind
+  | OutOfRange
+
 type error = {
   code : int;
   line : int;
@@ -59,288 +80,166 @@ type error = {
 }
 ```
 
-> The current OCaml wrapper does not expose an explicit `doc_free` function. The public API treats `doc` as an opaque handle owned by the binding for the lifetime of the process.
+Lookups that naturally have absence use `option`; mutations use `status`.
 
----
-
-## Reading values
-
-`root doc` returns the root block node. A `node` is an integer handle; `0` is the null / invalid handle. Use `map_get` and `keyed_table_row_get` for optional lookups.
-
-```ocaml
-let root_node = root doc
-
-(* Scalar string *)
-let name =
-  match map_get doc root_node "name" with
-  | Some n -> string_get doc n
-  | None -> ""
-
-(* Membership test *)
-let has_version = map_get doc root_node "version" <> None
-
-(* Block entries in insertion order *)
-let compiler =
-  match map_get doc root_node "compiler" with
-  | Some n -> n
-  | None -> 0
-
-let keys =
-  List.init (map_len doc compiler) (fun i -> map_key_at doc compiler i)
-
-(* Array elements *)
-let targets = Option.get (map_get doc root_node "targets")
-let target_values =
-  List.init (array_len doc targets) (fun i ->
-    string_get doc (array_get doc targets i))
-
-(* Plain table rows *)
-let releases = Option.get (map_get doc root_node "releases")
-let first_release = table_row_at doc releases 0
-let first_version = row_get doc first_release "version"
-
-(* Keyed table rows *)
-let deps = Option.get (map_get doc root_node "deps")
-let plot_link =
-  match keyed_table_row_get doc deps "plot" with
-  | Some row -> row_get doc row "link"
-  | None -> ""
-```
-
-Node kinds and status values are mapped to variants:
+## Node inspection
 
 ```ocaml
 type node_kind =
-  | NodeNull | NodeString | NodeBlock | NodeArray
-  | NodeTable | NodeKeyedTable | NodeRow
+  | NodeNull
+  | NodeString
+  | NodeBlock
+  | NodeArray
+  | NodeTable
+  | NodeKeyedTable
+  | NodeRow
 
-type status = Ok | Err | NotFound | BadKind | OutOfRange
+val root : doc -> node
+val node_kind : doc -> node -> node_kind
+val node_is_container : doc -> node -> bool
 ```
 
----
-
-## Creating and modifying
-
-Create new nodes in the target document arena, then attach them with the relevant mutator. To create an empty document, parse an empty string.
+## Strings
 
 ```ocaml
-let doc =
-  match parse "" None with
-  | Ok d -> d
-  | Error e -> failwith e.message
-
-let root_node = root doc
-
-(* Scalar *)
-let name = new_string doc "myproject"
-let _ = map_set doc root_node "name" name
-
-let version = map_get_or_insert doc root_node "version"
-let _ = string_set doc version "1.0.0"
-
-(* Block *)
-let compiler = new_block doc
-let _ = map_set doc compiler "debug" (new_string doc "false")
-let _ = map_set doc compiler "optimize" (new_string doc "true")
-let _ = map_set doc root_node "compiler" compiler
-
-(* Array *)
-let targets = new_array doc
-let _ = node_header_comment_set doc targets "supported build targets"
-let _ = array_push doc targets (new_string doc "x86_64-linux")
-let _ = array_push doc targets (new_string doc "x86_64-windows")
-let _ = map_set doc root_node "targets" targets
-
-(* Plain table *)
-let releases = new_table doc
-let _ = table_col_append doc releases "version"
-let _ = table_col_append doc releases "date"
-let release_row = new_row doc
-let _ = row_set doc release_row "version" "1.0.0"
-let _ = row_set doc release_row "date" "2025-01-01"
-let _ = table_row_append doc releases release_row
-let _ = map_set doc root_node "releases" releases
-
-(* Keyed table *)
-let deps = new_keyed_table doc
-let _ = keyed_table_col_append doc deps "link"
-let _ = keyed_table_col_append doc deps "version"
-let plot = new_row doc
-let _ = row_set doc plot "link" "github.com/zane-lang/plot"
-let _ = row_set doc plot "version" "4.0.3"
-let _ = keyed_table_row_set doc deps "plot" plot
-let _ = map_set doc root_node "deps" deps
+val string_get : doc -> node -> string
+val string_set : doc -> node -> string -> status
 ```
 
-Check mutation results when you need to distinguish `BadKind`, `OutOfRange`, or `NotFound`:
+## Blocks
 
 ```ocaml
-match row_remove doc release_row "missing" with
-| Ok -> ()
-| NotFound -> prerr_endline "column did not exist"
-| BadKind | OutOfRange | Err -> prerr_endline "row_remove failed"
+val map_len : doc -> node -> int
+val map_key_at : doc -> node -> int -> string
+val map_value_at : doc -> node -> int -> node
+val map_get : doc -> node -> string -> node option
+val map_get_or_insert : doc -> node -> string -> node
+val map_set : doc -> node -> string -> node -> status
+val map_remove : doc -> node -> string -> status
 ```
 
----
-
-## Sorting
-
-The OCaml public API exposes sub-tree ordering. Apply it to `root doc` to sort the whole document.
+Normal `map_get` does not insert:
 
 ```ocaml
-node_order doc (root doc)
+match map_get doc (root doc) "name" with
+| Some value -> print_endline (string_get doc value)
+| None -> ()
+```
 
+## Arrays
+
+```ocaml
+val array_len : doc -> node -> int
+val array_get : doc -> node -> int -> node
+val array_set : doc -> node -> int -> node -> status
+val array_push : doc -> node -> node -> status
+val array_remove : doc -> node -> int -> status
+```
+
+The OCaml API uses non-negative integer indices. Out-of-range accessors return the C ABI sentinel or an `OutOfRange` status as appropriate.
+
+## Plain tables
+
+```ocaml
+val table_col_count : doc -> node -> int
+val table_col_name : doc -> node -> int -> string
+val table_col_append : doc -> node -> string -> status
+val table_row_count : doc -> node -> int
+val table_row_at : doc -> node -> int -> node
+val table_row_append : doc -> node -> node -> status
+val table_row_set : doc -> node -> int -> node -> status
+val table_row_remove : doc -> node -> int -> status
+```
+
+Column declaration order is preserved. Duplicate columns are rejected, and columns can only be added before the first row is attached.
+
+Rows must contain exactly the declared fields at attachment time. Once attached, existing values may be changed, but required fields cannot be removed and unknown fields cannot be added.
+
+## Keyed tables
+
+```ocaml
+val keyed_table_col_count : doc -> node -> int
+val keyed_table_col_name : doc -> node -> int -> string
+val keyed_table_col_append : doc -> node -> string -> status
+val keyed_table_row_count : doc -> node -> int
+val keyed_table_row_key_at : doc -> node -> int -> string
+val keyed_table_row_at : doc -> node -> int -> node
+val keyed_table_row_get : doc -> node -> string -> node option
+val keyed_table_row_set : doc -> node -> string -> node -> status
+val keyed_table_row_remove : doc -> node -> string -> status
+```
+
+```ocaml
+match keyed_table_row_get doc table "plot" with
+| Some row -> print_endline (row_get doc row "link")
+| None -> ()
+```
+
+## Rows
+
+```ocaml
+val row_get : doc -> node -> string -> string
+val row_set : doc -> node -> string -> string -> status
+val row_remove : doc -> node -> string -> status
+val row_col_count : doc -> node -> int
+val row_col_name_at : doc -> node -> int -> string
+val row_col_value_at : doc -> node -> int -> string
+```
+
+Detached rows may be built freely. Attached rows obey the schema of their containing table.
+
+## Comments
+
+```ocaml
+val node_comment_get : doc -> node -> string
+val node_comment_set : doc -> node -> string -> status
+val node_header_comment_get : doc -> node -> string
+val node_header_comment_set : doc -> node -> string -> status
+val row_comment_get : doc -> node -> string
+val row_comment_set : doc -> node -> string -> status
+```
+
+Header comments apply to arrays, plain tables, and keyed tables.
+
+## Ordering
+
+```ocaml
+val node_order : doc -> node -> unit
+val node_order_weighted : doc -> node -> (string * float) list -> unit
+```
+
+```ocaml
+node_order doc (root doc);
 node_order_weighted doc (root doc) [
   ("name", 100.0);
   ("version", 90.0);
 ]
 ```
 
-Default ordering groups scalar strings before containers and sorts alphabetically inside each group. Weighted ordering places higher weights first and uses alphabetical order for ties.
+Block keys are ordered with scalars first, then containers, alphabetically within each group. Weighted ordering uses descending weight with alphabetical ties. Keyed-table rows are ordered by row key or row-key weight. Arrays and plain-table row order are preserved.
 
----
+Ordering changes index-based iteration order but does not invalidate handles.
 
-## Serialisation
+## Creating nodes
 
-```ocaml
-match serialize doc None with
-| Ok text -> print_string text
-| Error e -> prerr_endline e.message
-
-match serialize doc (Some "  ") with
-| Ok text -> print_string text
-| Error e -> prerr_endline e.message
-
-match serialize_node doc compiler None with
-| Ok text -> print_string text
-| Error e -> prerr_endline e.message
-```
-
-`None` uses the default tab indent. `Some "  "` uses two spaces.
-
----
-
-## Comments
-
-Node comments are stored without the leading `#`; the serialiser adds it back. Arrays, tables, and keyed tables also have a header comment. Table rows use separate row-comment accessors.
+New nodes are detached and must be attached exactly once to a container in the same document.
 
 ```ocaml
-let deps = Option.get (map_get doc (root doc) "deps")
-
-let _ = node_comment_set doc deps "dependency table"
-let comment = node_comment_get doc deps
-
-let _ = node_header_comment_set doc deps "optional"
-let header_comment = node_header_comment_get doc deps
-
-let plot = Option.get (keyed_table_row_get doc deps "plot")
-let _ = row_comment_set doc plot "main dependency"
-let row_comment = row_comment_get doc plot
+val new_string : doc -> string -> node
+val new_block : doc -> node
+val new_array : doc -> node
+val new_table : doc -> node
+val new_keyed_table : doc -> node
+val new_row : doc -> node
 ```
 
----
+Example:
 
-## Function reference
-
-### Document
-
-| Function | Description |
-|---|---|
-| `parse_file path` | Parse a file path; returns `(doc, error) result` |
-| `parse src filename` | Parse UTF-8 text with optional filename; returns `(doc, error) result` |
-| `serialize doc indent` | Serialise a document with optional indent string |
-| `serialize_node doc node indent` | Serialise a single node with optional indent string |
-| `root doc` | Return the root block node handle |
-
-### Node inspection and comments
-
-| Function | Description |
-|---|---|
-| `node_kind doc node` | Return `node_kind` |
-| `node_is_container doc node` | `true` for block, array, table, or keyed table |
-| `node_comment_get doc node` | Get pre-node comment |
-| `node_comment_set doc node text` | Set pre-node comment; returns `status` |
-| `node_header_comment_get doc node` | Get array/table header comment |
-| `node_header_comment_set doc node text` | Set array/table header comment; returns `status` |
-| `row_comment_get doc row` | Get row-level comment |
-| `row_comment_set doc row text` | Set row-level comment; returns `status` |
-
-### Strings and maps
-
-| Function | Description |
-|---|---|
-| `string_get doc node` | Read a string node |
-| `string_set doc node value` | Set a string node; returns `status` |
-| `map_len doc block` | Number of entries in a block |
-| `map_key_at doc block i` | Key at index `i` |
-| `map_value_at doc block i` | Value node at index `i` |
-| `map_get doc block key` | Lookup by key; returns `node option` |
-| `map_get_or_insert doc block key` | Lookup or create an empty string node |
-| `map_set doc block key node` | Insert or replace a block entry; returns `status` |
-| `map_remove doc block key` | Remove a block entry; returns `status` |
-
-### Arrays
-
-| Function | Description |
-|---|---|
-| `array_len doc array` | Number of elements |
-| `array_get doc array i` | Element at index `i` (`0` if absent/out of range) |
-| `array_set doc array i node` | Replace an element; returns `status` |
-| `array_push doc array node` | Append an element; returns `status` |
-| `array_remove doc array i` | Remove an element; returns `status` |
-
-### Plain tables
-
-| Function | Description |
-|---|---|
-| `table_col_count doc table` | Column count |
-| `table_col_name doc table i` | Column name at index `i` |
-| `table_col_append doc table name` | Append a column; returns `status` |
-| `table_row_count doc table` | Row count |
-| `table_row_at doc table i` | Row node at index `i` |
-| `table_row_append doc table row` | Append a row; returns `status` |
-| `table_row_set doc table i row` | Replace a row; returns `status` |
-| `table_row_remove doc table i` | Remove a row; returns `status` |
-
-### Keyed tables
-
-| Function | Description |
-|---|---|
-| `keyed_table_col_count doc table` | Non-key column count |
-| `keyed_table_col_name doc table i` | Non-key column name at index `i` |
-| `keyed_table_col_append doc table name` | Append a non-key column; returns `status` |
-| `keyed_table_row_count doc table` | Row count |
-| `keyed_table_row_key_at doc table i` | Row key at index `i` |
-| `keyed_table_row_at doc table i` | Row node at index `i` |
-| `keyed_table_row_get doc table key` | Lookup by row key; returns `node option` |
-| `keyed_table_row_set doc table key row` | Insert or replace a row; returns `status` |
-| `keyed_table_row_remove doc table key` | Remove a row; returns `status` |
-
-### Rows
-
-| Function | Description |
-|---|---|
-| `row_get doc row col` | Get a column value; returns `""` if absent |
-| `row_set doc row col value` | Set a column value; returns `status` |
-| `row_remove doc row col` | Remove a column; returns `status` |
-| `row_col_count doc row` | Number of stored columns |
-| `row_col_name_at doc row i` | Column name at index `i` |
-| `row_col_value_at doc row i` | Column value at index `i` |
-
-### Ordering
-
-| Function | Description |
-|---|---|
-| `node_order doc node` | Sort a sub-tree with the default ordering |
-| `node_order_weighted doc node weights` | Sort a sub-tree by `(key * weight)` list |
-
-### Node creation
-
-| Function | Description |
-|---|---|
-| `new_string doc value` | Create a string node |
-| `new_block doc` | Create a block node |
-| `new_array doc` | Create an array node |
-| `new_table doc` | Create a plain table node |
-| `new_keyed_table doc` | Create a keyed table node |
-| `new_row doc` | Create a row node |
+```ocaml
+match parse "" None with
+| Error error -> prerr_endline error.message
+| Ok doc ->
+    let value = new_string doc "myproject" in
+    ignore (map_set doc (root doc) "name" value);
+    free doc
+```

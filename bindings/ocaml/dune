@@ -4,10 +4,10 @@
  (libraries unix)
  (foreign_stubs
   (language c)
-  (names coda_ocaml)
+  (names coda_ocaml_safe)
   (include_dirs ../../ffi))
  (foreign_stubs
   (language cxx)
   (names coda_ffi_bridge)
   (include_dirs ../../ffi ../../include)
-  (flags (:standard -std=c++20))))
+  (flags (:standard -std=c++17))))

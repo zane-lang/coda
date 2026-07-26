@@ -2,7 +2,9 @@ name: CI
 
 on:
   push:
-    branches: ["main"]
+    branches:
+      - main
+      - agent/**
   pull_request:
 
 permissions:
@@ -19,5 +21,42 @@ jobs:
       - name: Install devbox + packages
         uses: jetify-com/devbox-install-action@v0.15.0
 
-      - name: Run tests
-        run: devbox run -- just test
+      - name: Test C++ API
+        shell: bash
+        run: |
+          devbox run -- just test-cpp > /tmp/cpp.log 2>&1 || {
+            cat /tmp/cpp.log
+            exit 1
+          }
+
+      - name: Test C FFI
+        shell: bash
+        run: |
+          devbox run -- just test-c-ffi > /tmp/c-ffi.log 2>&1 || {
+            cat /tmp/c-ffi.log
+            exit 1
+          }
+
+      - name: Test Python binding
+        shell: bash
+        run: |
+          devbox run -- just test-py-ffi > /tmp/python.log 2>&1 || {
+            cat /tmp/python.log
+            exit 1
+          }
+
+      - name: Test OCaml binding
+        shell: bash
+        run: |
+          devbox run -- just test-ocaml > /tmp/ocaml.log 2>&1 || {
+            cat /tmp/ocaml.log
+            exit 1
+          }
+
+      - name: Upload failure logs
+        if: failure()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: ci-failure-logs
+          path: /tmp/*.log
+          if-no-files-found: ignore

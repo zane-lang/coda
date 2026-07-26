@@ -8,16 +8,12 @@
 #include <functional>
 #include <stdexcept>
 #include <memory>
+#include <initializer_list>
 
 namespace coda {
 
-// ─── detail helpers (no Value dependency) ────────────────────────────────────
-
 namespace detail {
 
-// Single source of truth for the one reserved bare word in the grammar:
-// `key` always introduces a keyed-table header, so as a plain value/identifier
-// it must be quoted on output. Both the lexer and the serializer reference this.
 inline constexpr const char* RESERVED_KEY = "key";
 
 inline std::string pad(int level, const std::string& unit) {
@@ -73,9 +69,13 @@ inline std::string serializeComment(const std::string& comment, int indent, cons
 	return out;
 }
 
-} // namespace detail
+inline void validateColumns(const std::vector<std::string>& orderedCols, const char* typeName) {
+	std::set<std::string> unique(orderedCols.begin(), orderedCols.end());
+	if (unique.size() != orderedCols.size())
+		throw std::invalid_argument(std::string(typeName) + " — duplicate column name");
+}
 
-// ─── Row ─────────────────────────────────────────────────────────────────────
+} // namespace detail
 
 class Row {
 	detail::OrderedMap<std::string, std::string> content;
@@ -101,26 +101,27 @@ public:
 	auto end()         { return content.end(); }
 };
 
-// ─── Table ───────────────────────────────────────────────────────────────────
-
 class Table {
 	std::vector<Row> content;
 	std::string headerComment;
+	std::vector<std::string> colOrder;
 	std::set<std::string> headers;
-	std::vector<std::string> colOrder; // declared column order (for empty tables)
 
 public:
-	explicit Table(std::set<std::string> headers) : headers(std::move(headers)) {
-		colOrder.assign(this->headers.begin(), this->headers.end());
+	explicit Table(std::vector<std::string> orderedCols)
+		: colOrder(std::move(orderedCols))
+		, headers(colOrder.begin(), colOrder.end()) {
+		detail::validateColumns(colOrder, "Table");
 	}
 
-	// Construct preserving an explicit, ordered column list (FFI / builders).
-	// Named factory (not a ctor) so brace-init like Table({"a","b"}) stays
-	// unambiguous and keeps using the set-based constructor.
+	Table(std::initializer_list<std::string> orderedCols)
+		: Table(std::vector<std::string>(orderedCols)) {}
+
+	explicit Table(std::set<std::string> headers)
+		: Table(std::vector<std::string>(headers.begin(), headers.end())) {}
+
 	static Table withColumns(std::vector<std::string> orderedCols) {
-		Table t{std::set<std::string>(orderedCols.begin(), orderedCols.end())};
-		t.colOrder = std::move(orderedCols);
-		return t;
+		return Table(std::move(orderedCols));
 	}
 
 	void setHeaderComment(const std::string& c) { headerComment = c; }
@@ -159,24 +160,27 @@ public:
 	std::string serialize(int indent, const std::string& unit) const;
 };
 
-// ─── KeyedTable ──────────────────────────────────────────────────────────────
-
 class KeyedTable {
 	detail::OrderedMap<std::string, Row> content;
 	std::string headerComment;
+	std::vector<std::string> colOrder;
 	std::set<std::string> headers;
-	std::vector<std::string> colOrder; // declared column order (for empty tables)
 
 public:
-	explicit KeyedTable(std::set<std::string> headers) : headers(std::move(headers)) {
-		colOrder.assign(this->headers.begin(), this->headers.end());
+	explicit KeyedTable(std::vector<std::string> orderedCols)
+		: colOrder(std::move(orderedCols))
+		, headers(colOrder.begin(), colOrder.end()) {
+		detail::validateColumns(colOrder, "KeyedTable");
 	}
 
-	// Construct preserving an explicit, ordered column list (FFI / builders).
+	KeyedTable(std::initializer_list<std::string> orderedCols)
+		: KeyedTable(std::vector<std::string>(orderedCols)) {}
+
+	explicit KeyedTable(std::set<std::string> headers)
+		: KeyedTable(std::vector<std::string>(headers.begin(), headers.end())) {}
+
 	static KeyedTable withColumns(std::vector<std::string> orderedCols) {
-		KeyedTable t{std::set<std::string>(orderedCols.begin(), orderedCols.end())};
-		t.colOrder = std::move(orderedCols);
-		return t;
+		return KeyedTable(std::move(orderedCols));
 	}
 
 	void setHeaderComment(const std::string& c) { headerComment = c; }
@@ -202,6 +206,7 @@ public:
 	Row&       operator[](const std::string& key)       { return content.at(key); }
 
 	bool empty() const { return content.empty(); }
+	size_t size() const { return content.size(); }
 	const std::set<std::string>& getHeaders() const { return headers; }
 	const std::vector<std::string>& getColumnOrder() const { return colOrder; }
 
@@ -213,14 +218,15 @@ public:
 	const detail::OrderedMap<std::string, Row>& getContent() const { return content; }
 	detail::OrderedMap<std::string, Row>&       getContent()       { return content; }
 
+	void order() { content.sort(); }
+	void order(const std::function<float(const std::string&)>& weightFn) {
+		content.sortByWeight(weightFn);
+	}
+
 	std::string serialize(int indent, const std::string& unit) const;
 };
 
-// ─── Value (forward) ─────────────────────────────────────────────────────────
-
 namespace detail { class Value; }
-
-// ─── Block ───────────────────────────────────────────────────────────────────
 
 class Block {
 	detail::OrderedMap<std::string, std::unique_ptr<detail::Value>> content;
@@ -258,8 +264,6 @@ public:
 	std::string serialize(const std::string& unit = "\t") const;
 };
 
-// ─── Array ───────────────────────────────────────────────────────────────────
-
 class Array {
 	std::vector<std::unique_ptr<detail::Value>> content;
 	std::string headerComment;
@@ -289,8 +293,6 @@ public:
 	std::string serialize(int indent, const std::string& unit) const;
 };
 
-// ─── Value ───────────────────────────────────────────────────────────────────
-
 namespace detail {
 
 class Value {
@@ -313,9 +315,6 @@ public:
 		return !std::holds_alternative<std::string>(content.value);
 	}
 
-	// Type-dispatch over the underlying value without exceptions.
-	// Callbacks receive (const std::string&, const Block&, const Array&,
-	// const Table&, const KeyedTable&) respectively.
 	template<typename... Callbacks>
 	decltype(auto) visitContent(Callbacks&&... cbs) const {
 		return content.match(std::forward<Callbacks>(cbs)...);
@@ -386,8 +385,6 @@ public:
 
 } // namespace detail
 
-// ─── Block/Array out-of-line (Value now complete) ─────────────────────────────
-
 inline Block::Block(const Block& o) {
 	for (const auto& [k, v] : o.content)
 		content[k] = std::make_unique<detail::Value>(*v);
@@ -422,8 +419,6 @@ inline Array& Array::append(detail::Value value) {
 inline const detail::Value& Array::operator[](size_t i) const { return *content.at(i); }
 inline detail::Value&       Array::operator[](size_t i)       { return *content.at(i); }
 
-// ─── serializeMap ─────────────────────────────────────────────────────────────
-
 namespace detail {
 
 inline std::string serializeMap(
@@ -441,15 +436,9 @@ inline std::string serializeMap(
 	return out;
 }
 
-// ─── orderMap ────────────────────────────────────────────────────────────────
-
 inline void orderMap(OrderedMap<std::string, std::unique_ptr<Value>>& m) {
 	for (auto& [k, v] : m) v->order();
 	m.sort([](const std::unique_ptr<Value>& v) { return v->isContainer(); });
-}
-
-inline void orderMap(OrderedMap<std::string, Row>& /*m*/) {
-	// Rows have no sub-ordering
 }
 
 inline void orderMapWeighted(
@@ -459,15 +448,7 @@ inline void orderMapWeighted(
 	m.sortByWeight(weightFn);
 }
 
-inline void orderMapWeighted(
-		OrderedMap<std::string, Row>& /*m*/,
-		const std::function<float(const std::string&)>& /*weightFn*/) {
-	// Rows have no sub-ordering
-}
-
-} // namespace detail (serializeMap / orderMap)
-
-// ─── serialize impls ──────────────────────────────────────────────────────────
+} // namespace detail
 
 inline std::string Block::serialize(const std::string& unit) const {
 	return detail::serializeMap(getContent(), 0, unit);
@@ -478,27 +459,18 @@ inline std::string Block::serialize(int indent, const std::string& unit) const {
 }
 
 inline std::string KeyedTable::serialize(int indent, const std::string& unit) const {
-	std::vector<const std::string*> fields;
-	if (content.empty()) {
-		for (const auto& h : colOrder)
-			fields.push_back(&h);
-	} else {
-		for (const auto& [k, _] : content.begin()->second)
-			fields.push_back(&k);
-	}
-
 	std::string out = "[\n";
 	out += detail::serializeComment(headerComment, indent + 1, unit);
 	out += detail::pad(indent + 1, unit) + "key";
-	for (const auto& f : fields)
-		out += " " + detail::serializeToken(*f);
+	for (const auto& field : colOrder)
+		out += " " + detail::serializeToken(field);
 	out += "\n";
 
 	for (const auto& [rowKey, row] : content) {
 		out += detail::serializeComment(row.getComment(), indent + 1, unit);
 		out += detail::pad(indent + 1, unit) + detail::serializeToken(rowKey);
-		for (const auto& f : fields)
-			out += " " + detail::serializeToken(row[*f]);
+		for (const auto& field : colOrder)
+			out += " " + detail::serializeToken(row[field]);
 		out += "\n";
 	}
 
@@ -506,27 +478,18 @@ inline std::string KeyedTable::serialize(int indent, const std::string& unit) co
 }
 
 inline std::string Table::serialize(int indent, const std::string& unit) const {
-	std::vector<const std::string*> fields;
-	if (content.empty()) {
-		for (const auto& h : colOrder)
-			fields.push_back(&h);
-	} else {
-		for (const auto& [k, _] : content.front())
-			fields.push_back(&k);
-	}
-
 	std::string out = "[\n";
 	out += detail::serializeComment(headerComment, indent + 1, unit);
 	out += detail::pad(indent + 1, unit);
-	for (size_t i = 0; i < fields.size(); ++i)
-		out += detail::serializeToken(*fields[i]) + (i < fields.size() - 1 ? " " : "");
+	for (size_t i = 0; i < colOrder.size(); ++i)
+		out += detail::serializeToken(colOrder[i]) + (i + 1 < colOrder.size() ? " " : "");
 	out += "\n";
 
 	for (const auto& row : content) {
 		out += detail::serializeComment(row.getComment(), indent + 1, unit);
 		out += detail::pad(indent + 1, unit);
-		for (size_t i = 0; i < fields.size(); ++i)
-			out += detail::serializeToken(row[*fields[i]]) + (i < fields.size() - 1 ? " " : "");
+		for (size_t i = 0; i < colOrder.size(); ++i)
+			out += detail::serializeToken(row[colOrder[i]]) + (i + 1 < colOrder.size() ? " " : "");
 		out += "\n";
 	}
 
@@ -547,8 +510,6 @@ inline std::string Array::serialize(int indent, const std::string& unit) const {
 	return out + detail::pad(indent, unit) + "]";
 }
 
-// ─── Value::order / Block::order ──────────────────────────────────────────────
-
 namespace detail {
 
 inline void Value::order() {
@@ -557,7 +518,7 @@ inline void Value::order() {
 		[](Block& b)      { detail::orderMap(b.getContent()); },
 		[](Array& a)      { for (auto& v : a) v->order(); },
 		[](Table&)        {},
-		[](KeyedTable& t) { detail::orderMap(t.getContent()); }
+		[](KeyedTable& t) { t.order(); }
 	);
 }
 
@@ -567,7 +528,7 @@ inline void Value::order(const std::function<float(const std::string&)>& weightF
 		[&](Block& b)      { detail::orderMapWeighted(b.getContent(), weightFn); },
 		[&](Array& a)      { for (auto& v : a) v->order(weightFn); },
 		[](Table&)         {},
-		[&](KeyedTable& t) { detail::orderMapWeighted(t.getContent(), weightFn); }
+		[&](KeyedTable& t) { t.order(weightFn); }
 	);
 }
 
