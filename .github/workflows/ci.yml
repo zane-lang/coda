@@ -22,13 +22,33 @@ jobs:
         uses: jetify-com/devbox-install-action@v0.15.0
 
       - name: Test C++ API
-        run: devbox run -- just test-cpp
+        shell: bash
+        run: |
+          devbox run -- just test-cpp > /tmp/cpp.log 2>&1 || {
+            cat /tmp/cpp.log
+            exit 1
+          }
 
       - name: Test C FFI
-        run: devbox run -- just test-c-ffi
+        shell: bash
+        run: |
+          devbox run -- just test-c-ffi > /tmp/c-ffi.log 2>&1 || {
+            cat /tmp/c-ffi.log
+            exit 1
+          }
 
       - name: Test Python binding
-        run: devbox run -- just test-py-ffi
+        shell: bash
+        run: |
+          devbox run -- just test-py-ffi > /tmp/python.log 2>&1 || {
+            cat /tmp/python.log
+            exit 1
+          }
 
       - name: Test OCaml binding
-        run: devbox run -- just test-ocaml
+        shell: bash
+        run: |
+          devbox run -- just test-ocaml > /tmp/ocaml.log 2>&1 || {
+            cat /tmp/ocaml.log
+            exit 1
+          }
