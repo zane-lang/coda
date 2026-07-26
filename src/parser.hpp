@@ -475,9 +475,10 @@ class Parser {
 		checkUniqueFields(fieldToks);
 		skipNewlines();
 
-		std::set<std::string> headerSet;
-		for (const auto& tok : fieldToks) headerSet.insert(tok.value);
-		coda::KeyedTable table(std::move(headerSet));
+		std::vector<std::string> columns;
+		columns.reserve(fieldToks.size());
+		for (const auto& tok : fieldToks) columns.push_back(tok.value);
+		coda::KeyedTable table = coda::KeyedTable::withColumns(std::move(columns));
 		table.setHeaderComment(std::move(headerComment));
 
 		while (current.type != TokenType::RBracket && current.type != TokenType::Eof) {
@@ -538,9 +539,10 @@ class Parser {
 	coda::detail::Value parsePlainTable(std::vector<Token> header, std::string headerComment) {
 		checkUniqueFields(header);
 
-		std::set<std::string> headerSet;
-		for (const auto& tok : header) headerSet.insert(tok.value);
-		coda::Table table(std::move(headerSet));
+		std::vector<std::string> columns;
+		columns.reserve(header.size());
+		for (const auto& tok : header) columns.push_back(tok.value);
+		coda::Table table = coda::Table::withColumns(std::move(columns));
 		table.setHeaderComment(std::move(headerComment));
 
 		while (current.type != TokenType::RBracket && current.type != TokenType::Eof) {
