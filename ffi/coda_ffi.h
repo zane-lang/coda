@@ -8,54 +8,42 @@
 extern "C" {
 #endif
 
-// ─── Export / ABI helpers ────────────────────────────────────────────────────
-
 #if defined(_WIN32)
 #define CODA_FFI_EXPORT __declspec(dllexport)
 #else
 #define CODA_FFI_EXPORT __attribute__((visibility("default")))
 #endif
 
-// ─── Basic types ─────────────────────────────────────────────────────────────
-
 typedef struct coda_doc coda_doc_t;
 
-// 0 is reserved as "null/invalid".
+// Opaque, document-scoped node handle. Zero is always null/invalid.
+//
+// Handles remain stable across ordering operations. They become invalid when
+// their node is removed/replaced or when the owning document is freed. A stale
+// handle never aliases a later node, even when the implementation recycles its
+// internal arena slot.
 typedef uint32_t coda_node_t;
 
-// ─── Borrowed string view ─────────────────────────────────────────────────────
-//
-// LIFETIME WARNING: coda_str_t is a *borrowed* view into the document's internal
-// storage. The pointer is only valid as long as:
-//   (a) the coda_doc_t that owns the string is alive, AND
-//   (b) no mutation is made to the document (insert, set, remove, order, etc.)
-//
-// You MUST copy the contents (e.g. memcpy / strncpy) before performing any
-// mutation or before the document is freed. Do NOT store coda_str_t across
-// calls that modify the document.
-//
-// Returned by: coda_string_get, coda_map_key_at, coda_table_col_name,
-//   coda_keyed_table_col_name, coda_keyed_table_row_key_at, coda_row_get,
-//   coda_row_col_name_at, coda_row_col_value_at, coda_node_comment_get,
-//   coda_node_header_comment_get, coda_row_comment_get, coda_parse_error_code_name.
+// Borrowed string view into document storage. Copy it before mutating/freeing
+// the document. Any document mutation may invalidate previously returned views.
 typedef struct coda_str {
 	const char* ptr;
 	size_t      len;
 } coda_str_t;
 
 typedef struct coda_owned_str {
-	char*  ptr;  // null-terminated for convenience
-	size_t len;  // excludes the null terminator
+	char*  ptr;
+	size_t len;
 } coda_owned_str_t;
 
 typedef enum coda_node_kind {
 	CODA_NODE_NULL         = 0,
 	CODA_NODE_STRING       = 2,
-	CODA_NODE_BLOCK        = 3,  // { key value ... } — also used for the root node
-	CODA_NODE_ARRAY        = 4,  // [ ... ] — homogeneous or nested values
-	CODA_NODE_TABLE        = 5,  // anonymous-row table: header row + data rows
-	CODA_NODE_KEYED_TABLE  = 6,  // keyed-row table: "key col..." header + keyed rows
-	CODA_NODE_ROW          = 7,  // a single row inside TABLE or KEYED_TABLE
+	CODA_NODE_BLOCK        = 3,
+	CODA_NODE_ARRAY        = 4,
+	CODA_NODE_TABLE        = 5,
+	CODA_NODE_KEYED_TABLE  = 6,
+	CODA_NODE_ROW          = 7,
 } coda_node_kind_t;
 
 typedef enum coda_status {
@@ -67,11 +55,11 @@ typedef enum coda_status {
 } coda_status_t;
 
 typedef struct coda_error {
-	uint32_t         code;     // maps from coda::ParseErrorCode when available
-	uint32_t         line;     // 1-based
-	uint32_t         col;      // 1-based
-	size_t           offset;   // byte offset in source
-	coda_owned_str_t message;  // owned formatted error string
+	uint32_t         code;
+	uint32_t         line;
+	uint32_t         col;
+	size_t           offset;
+	coda_owned_str_t message;
 } coda_error_t;
 
 typedef enum coda_parse_error_code {
@@ -89,345 +77,190 @@ typedef enum coda_parse_error_code {
 
 CODA_FFI_EXPORT coda_str_t coda_parse_error_code_name(uint32_t code);
 
-// ─── Memory management ───────────────────────────────────────────────────────
-//
-// Every buffer the library hands you falls into exactly one of three categories;
-// use the matching free function — mixing them is undefined behaviour and will
-// crash on Windows when the library and caller link different CRT instances.
-//
-//   coda_doc_t*       → coda_doc_free()
-//   coda_owned_str_t  → coda_owned_str_free()
-//   coda_error_t      → coda_error_clear() for the embedded message buffer
-//                        (the struct itself is caller-allocated, no free needed)
-//
-// coda_free() exists only for symmetry and must only be used on pointers
-// returned by future API functions that explicitly document it as the correct
-// free function.  Do NOT call coda_free() on coda_doc_t* or coda_owned_str_t.
-
-// Generic free using the library's allocator.  See note above before using.
+// Allocation families must be released by their matching functions.
 CODA_FFI_EXPORT void coda_free(void* p);
-
-// Frees the message buffer inside err (does NOT free err itself).
 CODA_FFI_EXPORT void coda_error_clear(coda_error_t* err);
-
 CODA_FFI_EXPORT void coda_owned_str_free(coda_owned_str_t s);
-
-// ─── ABI versioning ──────────────────────────────────────────────────────────
-
 CODA_FFI_EXPORT uint32_t coda_ffi_abi_version(void);
 
-// ─── Doc lifecycle ───────────────────────────────────────────────────────────
-
-// Create an empty document with an empty root Block node.
+// Document lifecycle.
 CODA_FFI_EXPORT coda_doc_t* coda_doc_new(void);
 CODA_FFI_EXPORT void        coda_doc_free(coda_doc_t* doc);
-
-// Parse UTF-8 text. Returns NULL on failure and fills *err (if non-NULL).
 CODA_FFI_EXPORT coda_doc_t* coda_doc_parse(
-	const char*   src,
-	size_t        len,
-	const char*   filename,  // optional, may be NULL
-	coda_error_t* err        // optional, may be NULL
-);
-
+	const char* src, size_t len, const char* filename, coda_error_t* err);
 CODA_FFI_EXPORT coda_doc_t* coda_doc_parse_file(
-	const char*   path,
-	coda_error_t* err
-);
-
+	const char* path, coda_error_t* err);
 CODA_FFI_EXPORT coda_doc_t* coda_doc_parse_fp(
-	FILE*         fp,
-	const char*   filename,
-	coda_error_t* err
-);
+	FILE* fp, const char* filename, coda_error_t* err);
 
-// Serialize the document to Coda text.
-// indent_unit: e.g. "\t" or "  " (pass NULL for default "\t")
-// Returns {NULL,0} on error and fills *err.
 CODA_FFI_EXPORT coda_owned_str_t coda_doc_serialize(
 	const coda_doc_t* doc,
-	const char*       indent_unit,
-	size_t            indent_unit_len,
-	coda_error_t*     err
-);
+	const char* indent_unit,
+	size_t indent_unit_len,
+	coda_error_t* err);
 
-// Reorder all keys using default ordering (scalars first, then containers;
-// alphabetical within each group). Array and table row order is preserved.
-//
-// WARNING: All previously obtained coda_node_t handles become INVALID after
-//          this call. Re-acquire handles via coda_doc_root() and the
-//          traversal APIs.
+// Ordering is in-place. Node handles remain valid; index-based iteration order
+// changes and must be read again. Arrays and plain-table rows keep their order;
+// keyed-table rows are ordered by key (or by the supplied key weights).
 CODA_FFI_EXPORT void coda_doc_order(coda_doc_t* doc);
-
-// Reorder all keys by weight (higher weight → closer to top).
-// Keys absent from the table get weight 0.0; equal weights sort alphabetically.
-//
-// WARNING: Same handle invalidation caveat as coda_doc_order().
 CODA_FFI_EXPORT void coda_doc_order_weighted(
-	coda_doc_t*  doc,
+	coda_doc_t* doc,
 	const char** keys,
 	const float* weights,
-	size_t       count
-);
-
-// Returns the root Block node of the document.
+	size_t count);
 CODA_FFI_EXPORT coda_node_t coda_doc_root(const coda_doc_t* doc);
 
-// ─── Node inspection ─────────────────────────────────────────────────────────
-
+// General node inspection and comments.
 CODA_FFI_EXPORT coda_node_kind_t coda_node_kind(
-	const coda_doc_t* doc, coda_node_t n
-);
-
-// Returns 1 if the node is a container (BLOCK, ARRAY, TABLE, KEYED_TABLE),
-// 0 otherwise (STRING, ROW, NULL).
-CODA_FFI_EXPORT int coda_node_is_container(const coda_doc_t* doc, coda_node_t n);
-
-// Pre-node comment (the # lines above a key/row).
+	const coda_doc_t* doc, coda_node_t n);
+CODA_FFI_EXPORT int coda_node_is_container(
+	const coda_doc_t* doc, coda_node_t n);
 CODA_FFI_EXPORT coda_str_t coda_node_comment_get(
-	const coda_doc_t* doc, coda_node_t n
-);
+	const coda_doc_t* doc, coda_node_t n);
 CODA_FFI_EXPORT coda_status_t coda_node_comment_set(
-	coda_doc_t* doc, coda_node_t n,
-	const char* s, size_t len
-);
-
-// Header comment: the # lines before the header row inside a TABLE or
-// KEYED_TABLE, or before the first item inside an ARRAY.
-// Returns empty string if not applicable or absent.
+	coda_doc_t* doc, coda_node_t n, const char* s, size_t len);
 CODA_FFI_EXPORT coda_str_t coda_node_header_comment_get(
-	const coda_doc_t* doc, coda_node_t n
-);
+	const coda_doc_t* doc, coda_node_t n);
 CODA_FFI_EXPORT coda_status_t coda_node_header_comment_set(
-	coda_doc_t* doc, coda_node_t n,
-	const char* s, size_t len
-);
+	coda_doc_t* doc, coda_node_t n, const char* s, size_t len);
 
-// ─── String nodes ────────────────────────────────────────────────────────────
-
+// String nodes.
 CODA_FFI_EXPORT coda_str_t coda_string_get(
-	const coda_doc_t* doc, coda_node_t n
-);
+	const coda_doc_t* doc, coda_node_t n);
 CODA_FFI_EXPORT coda_status_t coda_string_set(
-	coda_doc_t* doc, coda_node_t n,
-	const char* s, size_t len
-);
+	coda_doc_t* doc, coda_node_t n, const char* s, size_t len);
 
-// ─── Array nodes ─────────────────────────────────────────────────────────────
+// Ownership rule for all container attachment APIs below:
+// - the value/row must have been created in the same document;
+// - it must currently be detached (except replacing a slot with itself);
+// - attaching transfers it to exactly one parent;
+// - cycles, cross-document handles and multiple parents return CODA_ERR.
+// Removal/replacement recursively destroys the old subtree and invalidates all
+// handles to it.
 
-// Valid for: CODA_NODE_ARRAY
-// For TABLE, use coda_table_*. For KEYED_TABLE, use coda_keyed_table_*.
-
-CODA_FFI_EXPORT size_t      coda_array_len(const coda_doc_t* doc, coda_node_t a);
-CODA_FFI_EXPORT coda_node_t coda_array_get(const coda_doc_t* doc, coda_node_t a, size_t idx);
-
+// Arrays.
+CODA_FFI_EXPORT size_t coda_array_len(
+	const coda_doc_t* doc, coda_node_t a);
+CODA_FFI_EXPORT coda_node_t coda_array_get(
+	const coda_doc_t* doc, coda_node_t a, size_t idx);
 CODA_FFI_EXPORT coda_status_t coda_array_set(
-	coda_doc_t* doc, coda_node_t a, size_t idx, coda_node_t value
-);
+	coda_doc_t* doc, coda_node_t a, size_t idx, coda_node_t value);
 CODA_FFI_EXPORT coda_status_t coda_array_push(
-	coda_doc_t* doc, coda_node_t a, coda_node_t value
-);
+	coda_doc_t* doc, coda_node_t a, coda_node_t value);
 CODA_FFI_EXPORT coda_status_t coda_array_remove(
-	coda_doc_t* doc, coda_node_t a, size_t idx
-);
+	coda_doc_t* doc, coda_node_t a, size_t idx);
 
-// ─── Map-like nodes (BLOCK) ───────────────────────────────────────────────────
-
-// Valid for: CODA_NODE_BLOCK
-
-CODA_FFI_EXPORT size_t      coda_map_len(const coda_doc_t* doc, coda_node_t m);
-CODA_FFI_EXPORT coda_str_t  coda_map_key_at(const coda_doc_t* doc, coda_node_t m, size_t idx);
-CODA_FFI_EXPORT coda_node_t coda_map_value_at(const coda_doc_t* doc, coda_node_t m, size_t idx);
-
-// Returns 0 if key is not found.
+// Blocks/maps.
+CODA_FFI_EXPORT size_t coda_map_len(
+	const coda_doc_t* doc, coda_node_t m);
+CODA_FFI_EXPORT coda_str_t coda_map_key_at(
+	const coda_doc_t* doc, coda_node_t m, size_t idx);
+CODA_FFI_EXPORT coda_node_t coda_map_value_at(
+	const coda_doc_t* doc, coda_node_t m, size_t idx);
 CODA_FFI_EXPORT coda_node_t coda_map_get(
 	const coda_doc_t* doc, coda_node_t m,
-	const char* key, size_t key_len
-);
-
-// Like coda_map_get but inserts an empty STRING node if the key is absent.
+	const char* key, size_t key_len);
 CODA_FFI_EXPORT coda_node_t coda_map_get_or_insert(
 	coda_doc_t* doc, coda_node_t m,
-	const char* key, size_t key_len
-);
-
+	const char* key, size_t key_len);
 CODA_FFI_EXPORT coda_status_t coda_map_set(
 	coda_doc_t* doc, coda_node_t m,
 	const char* key, size_t key_len,
-	coda_node_t value
-);
-
+	coda_node_t value);
 CODA_FFI_EXPORT coda_status_t coda_map_remove(
 	coda_doc_t* doc, coda_node_t m,
-	const char* key, size_t key_len
-);
+	const char* key, size_t key_len);
 
-// ─── Plain table nodes (TABLE) ───────────────────────────────────────────────
-//
-// A TABLE has:
-//   - An ordered list of column names (the header row).
-//   - An ordered list of ROW nodes, each of which is a map of column→string.
-//
-// Iteration pattern:
-//   size_t ncols = coda_table_col_count(doc, t);
-//   for (size_t c = 0; c < ncols; ++c)  coda_table_col_name(doc, t, c);
-//   size_t nrows = coda_table_row_count(doc, t);
-//   for (size_t r = 0; r < nrows; ++r) {
-//       coda_node_t row = coda_table_row_at(doc, t, r);
-//       coda_str_t  val = coda_row_get(doc, row, "col", 3);
-//   }
-
-CODA_FFI_EXPORT size_t     coda_table_col_count(const coda_doc_t* doc, coda_node_t t);
-CODA_FFI_EXPORT coda_str_t coda_table_col_name(const coda_doc_t* doc, coda_node_t t, size_t col_idx);
-
-// Appends a new column name.  Existing rows are NOT automatically extended.
+// Plain tables. Column declaration order is preserved. Duplicate columns are
+// rejected. Columns may only be appended before the first row is attached.
+CODA_FFI_EXPORT size_t coda_table_col_count(
+	const coda_doc_t* doc, coda_node_t t);
+CODA_FFI_EXPORT coda_str_t coda_table_col_name(
+	const coda_doc_t* doc, coda_node_t t, size_t col_idx);
 CODA_FFI_EXPORT coda_status_t coda_table_col_append(
 	coda_doc_t* doc, coda_node_t t,
-	const char* name, size_t name_len
-);
-
-CODA_FFI_EXPORT size_t      coda_table_row_count(const coda_doc_t* doc, coda_node_t t);
-CODA_FFI_EXPORT coda_node_t coda_table_row_at(const coda_doc_t* doc, coda_node_t t, size_t row_idx);
-
-// Appends an existing ROW node to the table and returns CODA_OK.
-// The node must have been created with coda_new_row().
+	const char* name, size_t name_len);
+CODA_FFI_EXPORT size_t coda_table_row_count(
+	const coda_doc_t* doc, coda_node_t t);
+CODA_FFI_EXPORT coda_node_t coda_table_row_at(
+	const coda_doc_t* doc, coda_node_t t, size_t row_idx);
 CODA_FFI_EXPORT coda_status_t coda_table_row_append(
-	coda_doc_t* doc, coda_node_t t, coda_node_t row
-);
-
+	coda_doc_t* doc, coda_node_t t, coda_node_t row);
 CODA_FFI_EXPORT coda_status_t coda_table_row_set(
-	coda_doc_t* doc, coda_node_t t, size_t row_idx, coda_node_t row
-);
-
+	coda_doc_t* doc, coda_node_t t, size_t row_idx, coda_node_t row);
 CODA_FFI_EXPORT coda_status_t coda_table_row_remove(
-	coda_doc_t* doc, coda_node_t t, size_t row_idx
-);
+	coda_doc_t* doc, coda_node_t t, size_t row_idx);
 
-// ─── Keyed table nodes (KEYED_TABLE) ─────────────────────────────────────────
-//
-// A KEYED_TABLE has:
-//   - An ordered list of column names (NOT including the key column itself).
-//   - An ordered map of key→ROW, where each ROW maps column→string.
-//
-// Iteration pattern:
-//   size_t ncols = coda_keyed_table_col_count(doc, kt);
-//   for (size_t c = 0; c < ncols; ++c)  coda_keyed_table_col_name(doc, kt, c);
-//   size_t nrows = coda_keyed_table_row_count(doc, kt);
-//   for (size_t r = 0; r < nrows; ++r) {
-//       coda_str_t  key = coda_keyed_table_row_key_at(doc, kt, r);
-//       coda_node_t row = coda_keyed_table_row_at(doc, kt, r);
-//       coda_str_t  val = coda_row_get(doc, row, "col", 3);
-//   }
-
-CODA_FFI_EXPORT size_t     coda_keyed_table_col_count(const coda_doc_t* doc, coda_node_t kt);
-CODA_FFI_EXPORT coda_str_t coda_keyed_table_col_name(const coda_doc_t* doc, coda_node_t kt, size_t col_idx);
-
+// Keyed tables. Column rules match plain tables.
+CODA_FFI_EXPORT size_t coda_keyed_table_col_count(
+	const coda_doc_t* doc, coda_node_t kt);
+CODA_FFI_EXPORT coda_str_t coda_keyed_table_col_name(
+	const coda_doc_t* doc, coda_node_t kt, size_t col_idx);
 CODA_FFI_EXPORT coda_status_t coda_keyed_table_col_append(
 	coda_doc_t* doc, coda_node_t kt,
-	const char* name, size_t name_len
-);
-
-CODA_FFI_EXPORT size_t      coda_keyed_table_row_count(const coda_doc_t* doc, coda_node_t kt);
-CODA_FFI_EXPORT coda_str_t  coda_keyed_table_row_key_at(const coda_doc_t* doc, coda_node_t kt, size_t row_idx);
-CODA_FFI_EXPORT coda_node_t coda_keyed_table_row_at(const coda_doc_t* doc, coda_node_t kt, size_t row_idx);
-
-// Returns 0 if key not found.
+	const char* name, size_t name_len);
+CODA_FFI_EXPORT size_t coda_keyed_table_row_count(
+	const coda_doc_t* doc, coda_node_t kt);
+CODA_FFI_EXPORT coda_str_t coda_keyed_table_row_key_at(
+	const coda_doc_t* doc, coda_node_t kt, size_t row_idx);
+CODA_FFI_EXPORT coda_node_t coda_keyed_table_row_at(
+	const coda_doc_t* doc, coda_node_t kt, size_t row_idx);
 CODA_FFI_EXPORT coda_node_t coda_keyed_table_row_get(
 	const coda_doc_t* doc, coda_node_t kt,
-	const char* key, size_t key_len
-);
-
-// Inserts or replaces the row for the given key.
+	const char* key, size_t key_len);
 CODA_FFI_EXPORT coda_status_t coda_keyed_table_row_set(
 	coda_doc_t* doc, coda_node_t kt,
 	const char* key, size_t key_len,
-	coda_node_t row
-);
-
+	coda_node_t row);
 CODA_FFI_EXPORT coda_status_t coda_keyed_table_row_remove(
 	coda_doc_t* doc, coda_node_t kt,
-	const char* key, size_t key_len
-);
+	const char* key, size_t key_len);
 
-// ─── Row nodes ───────────────────────────────────────────────────────────────
-//
-// A ROW is a flat map of column-name → string value.
-// Both TABLE rows and KEYED_TABLE rows use this API.
-
-// Returns empty string if column is not present.
+// Rows are flat column->string maps. A detached row may be built freely. Once
+// attached to a table, its schema is fixed: existing values may be changed, but
+// required columns cannot be removed and unknown columns cannot be added.
 CODA_FFI_EXPORT coda_str_t coda_row_get(
 	const coda_doc_t* doc, coda_node_t row,
-	const char* col, size_t col_len
-);
-
-// Sets (or inserts) a column value in the row.
+	const char* col, size_t col_len);
 CODA_FFI_EXPORT coda_status_t coda_row_set(
 	coda_doc_t* doc, coda_node_t row,
 	const char* col, size_t col_len,
-	const char* val, size_t val_len
-);
-
-// Removes a column from the row; returns CODA_NOT_FOUND if absent.
+	const char* val, size_t val_len);
 CODA_FFI_EXPORT coda_status_t coda_row_remove(
 	coda_doc_t* doc, coda_node_t row,
-	const char* col, size_t col_len
-);
-
-// Iterate over a row's columns in insertion order.
-CODA_FFI_EXPORT size_t     coda_row_col_count(const coda_doc_t* doc, coda_node_t row);
-CODA_FFI_EXPORT coda_str_t coda_row_col_name_at(const coda_doc_t* doc, coda_node_t row, size_t idx);
-CODA_FFI_EXPORT coda_str_t coda_row_col_value_at(const coda_doc_t* doc, coda_node_t row, size_t idx);
-
-// Row-level comment (the # lines above this row inside the table).
+	const char* col, size_t col_len);
+CODA_FFI_EXPORT size_t coda_row_col_count(
+	const coda_doc_t* doc, coda_node_t row);
+CODA_FFI_EXPORT coda_str_t coda_row_col_name_at(
+	const coda_doc_t* doc, coda_node_t row, size_t idx);
+CODA_FFI_EXPORT coda_str_t coda_row_col_value_at(
+	const coda_doc_t* doc, coda_node_t row, size_t idx);
 CODA_FFI_EXPORT coda_str_t coda_row_comment_get(
-	const coda_doc_t* doc, coda_node_t row
-);
+	const coda_doc_t* doc, coda_node_t row);
 CODA_FFI_EXPORT coda_status_t coda_row_comment_set(
 	coda_doc_t* doc, coda_node_t row,
-	const char* s, size_t len
-);
+	const char* s, size_t len);
 
-// Serialize a single node to Coda text.
-// For the root BLOCK node this is the same as coda_doc_serialize() (no braces).
-// For nested BLOCK nodes the output is wrapped in { }.
-// indent_unit: e.g. "\t" or "  " (pass NULL for default "\t")
-// Returns {NULL,0} on error and fills *err.
+// Invalid/stale handles return {NULL,0} and populate err; they are never treated
+// as the document root.
 CODA_FFI_EXPORT coda_owned_str_t coda_node_serialize(
 	const coda_doc_t* doc,
-	coda_node_t       n,
-	const char*       indent_unit,
-	size_t            indent_unit_len,
-	coda_error_t*     err
-);
-
-// Reorder a sub-tree rooted at n using default ordering
-// (scalars before containers, then alphabetical by key — identical to
-// coda_doc_order and the C++ Block::order).
-// Has no effect on non-container nodes.
-//
-// Reordering is done IN PLACE: node handles (coda_node_t) remain valid, but
-// any *index-based* iteration you captured before the call (e.g. cached
-// coda_map_key_at positions) is now stale because the order changed.
-// Re-read positions after ordering.
-CODA_FFI_EXPORT void coda_node_order(coda_doc_t* doc, coda_node_t n);
-
-// Reorder a sub-tree rooted at n by weight (HIGHER weight first; ties
-// alphabetical) — identical to coda_doc_order_weighted and C++ Block::order.
-//
-// Same in-place / stale-index caveat as coda_node_order().
+	coda_node_t n,
+	const char* indent_unit,
+	size_t indent_unit_len,
+	coda_error_t* err);
+CODA_FFI_EXPORT void coda_node_order(
+	coda_doc_t* doc, coda_node_t n);
 CODA_FFI_EXPORT void coda_node_order_weighted(
-	coda_doc_t*  doc,
-	coda_node_t  n,
+	coda_doc_t* doc,
+	coda_node_t n,
 	const char** keys,
 	const float* weights,
-	size_t       count
-);
+	size_t count);
 
-// ─── Node creation ───────────────────────────────────────────────────────────
-
+// New nodes start detached and must be attached exactly once.
 CODA_FFI_EXPORT coda_node_t coda_new_string(
-	coda_doc_t* doc, const char* s, size_t len
-);
+	coda_doc_t* doc, const char* s, size_t len);
 CODA_FFI_EXPORT coda_node_t coda_new_block(coda_doc_t* doc);
 CODA_FFI_EXPORT coda_node_t coda_new_array(coda_doc_t* doc);
 CODA_FFI_EXPORT coda_node_t coda_new_table(coda_doc_t* doc);
