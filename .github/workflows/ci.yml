@@ -52,3 +52,11 @@ jobs:
             cat /tmp/ocaml.log
             exit 1
           }
+
+      - name: Upload failure logs
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ci-failure-logs
+          path: /tmp/*.log
+          if-no-files-found: ignore
