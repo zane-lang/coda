@@ -54,6 +54,7 @@ int main() {
 		coda_error_t error = {};
 		coda_owned_str_t serialized = coda_node_serialize(doc, old, nullptr, 0, &error);
 		assert(serialized.ptr == nullptr);
+		assert(error.code == CODA_ERROR_INVALID_HANDLE);
 		assert(error.message.ptr != nullptr);
 		coda_error_clear(&error);
 		coda_doc_free(doc);
