@@ -75,6 +75,12 @@ typedef enum coda_parse_error_code {
 	CODA_PARSE_KEY_IN_BLOCK        = 9,
 } coda_parse_error_code_t;
 
+// Non-parse error sentinels stored in coda_error_t.code by APIs that can fail
+// outside parsing. These values never overlap coda_parse_error_code_t.
+typedef enum coda_error_code {
+	CODA_ERROR_INVALID_HANDLE = UINT32_MAX,
+} coda_error_code_t;
+
 CODA_FFI_EXPORT coda_str_t coda_parse_error_code_name(uint32_t code);
 
 // Allocation families must be released by their matching functions.
@@ -241,14 +247,16 @@ CODA_FFI_EXPORT coda_status_t coda_row_comment_set(
 	coda_doc_t* doc, coda_node_t row,
 	const char* s, size_t len);
 
-// Invalid/stale handles return {NULL,0} and populate err; they are never treated
-// as the document root.
+// coda_node_serialize: invalid/stale handles return {NULL,0}, set err->code to
+// CODA_ERROR_INVALID_HANDLE, and populate err; they are never treated as root.
 CODA_FFI_EXPORT coda_owned_str_t coda_node_serialize(
 	const coda_doc_t* doc,
 	coda_node_t n,
 	const char* indent_unit,
 	size_t indent_unit_len,
 	coda_error_t* err);
+
+// Invalid/stale handles are silently ignored by the node ordering functions.
 CODA_FFI_EXPORT void coda_node_order(
 	coda_doc_t* doc, coda_node_t n);
 CODA_FFI_EXPORT void coda_node_order_weighted(
