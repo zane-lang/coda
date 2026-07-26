@@ -1,8 +1,10 @@
-(* Foreign function declarations for Coda *)
+(* Foreign function declarations for Coda. The runtime value is an owning
+   custom block with a finalizer; Obj.t keeps that representation private. *)
 
-type native_doc = nativeint
+type native_doc = Obj.t
 
 external coda_doc_new_ocaml : unit -> native_doc = "coda_doc_new_ocaml"
+external coda_doc_free_ocaml : native_doc -> unit = "coda_doc_free_ocaml"
 external coda_doc_parse_ocaml : string -> string option -> (native_doc * int * (int * int * int * int * string) option) = "coda_doc_parse_ocaml"
 external coda_doc_parse_file_ocaml : string -> (native_doc * int * (int * int * int * int * string) option) = "coda_doc_parse_file_ocaml"
 external coda_doc_serialize_ocaml : native_doc -> string option -> (string * int * (int * int * int * int * string) option) = "coda_doc_serialize_ocaml"
