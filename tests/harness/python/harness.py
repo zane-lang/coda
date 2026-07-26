@@ -11,7 +11,7 @@ import sys
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "..")))
 
-from bindings.python.coda import (
+from bindings.python import (
 	Doc,
 	Block,
 	Array,
@@ -74,7 +74,7 @@ class CodaTestRunner:
 			return False
 
 	def _try_access(self, fn) -> bool:
-		"""Execute fn and return True; catch exceptions and return False."""
+		"""Execute fn and return whether it raised an expected access error."""
 		try:
 			fn()
 			return False
@@ -245,9 +245,7 @@ class CodaTestRunner:
 				for entry in check["weights"].as_array()
 			]
 			self.doc.order_weighted(weights)
-			return self._order_contains(
-				self.doc.serialize(), order
-			)
+			return self._order_contains(self.doc.serialize(), order)
 
 		if op == "serialize_contains":
 			return str(check["contains"]) in self.doc.serialize(str(check["indent"]))
@@ -259,9 +257,10 @@ def run_catalog_tests(catalog_path: str) -> None:
 	def test_parse_fail_msg(src: str, test: Block) -> bool:
 		try:
 			Doc.parse(src)
-		except ParseError as e:
+		except ParseError as error:
 			needles = [str(v) for v in test["needles"].as_array()]
-			return any(n in str(e) for n in needles) or not needles
+			message = str(error)
+			return all(needle in message for needle in needles)
 		return False
 
 	def test_parse_fail_code(src: str, test: Block) -> bool:
@@ -274,22 +273,21 @@ def run_catalog_tests(catalog_path: str) -> None:
 		}
 		try:
 			Doc.parse(src)
-		except ParseError as e:
-			return int(e.code) == code_map.get(str(test["code"]), -1)
+		except ParseError as error:
+			return int(error.code) == code_map.get(str(test["code"]), -1)
 		return False
 
 	def test_roundtrip(src: str, test: Block) -> bool:
-		with Doc.parse(src) as d1:
-			s1 = d1.serialize()
-		with Doc.parse(s1) as d2:
-			s2 = d2.serialize()
-		return s1 == s2
+		with Doc.parse(src) as first:
+			serialized = first.serialize()
+		with Doc.parse(serialized) as second:
+			return serialized == second.serialize()
 
 	def test_check_all(src: str, test: Block) -> bool:
 		with Doc.parse(src) as doc:
 			runner = CodaTestRunner(doc)
 			try:
-				checks = list(doc.root()["checks"].as_array())
+				checks = list(test["checks"].as_array())
 			except KeyError:
 				checks = []
 			for check_node in checks:
@@ -297,8 +295,8 @@ def run_catalog_tests(catalog_path: str) -> None:
 					return False
 		return True
 
-	with open(catalog_path, "r", encoding="utf-8") as f:
-		catalog_text = f.read()
+	with open(catalog_path, "r", encoding="utf-8") as file:
+		catalog_text = file.read()
 
 	with Doc.parse(catalog_text) as catalog_doc:
 		catalog = catalog_doc.root()
