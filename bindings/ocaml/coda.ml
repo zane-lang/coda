@@ -45,19 +45,21 @@ let status_of_int = function
   | 4 -> OutOfRange
   | _ -> invalid_arg "Unknown status"
 
-let parse_result (val_, status, err) =
-  if status = 0 then Stdlib.Ok val_
+let parse_result (value, status, err) =
+  if status = 0 then Stdlib.Ok value
   else
     match err with
     | None -> Stdlib.Error { code = status; line = 0; col = 0; offset = 0; message = "Unknown error" }
-    | Some (code, line, col, offset, msg) ->
-        Stdlib.Error { code; line; col; offset; message = msg }
+    | Some (code, line, col, offset, message) ->
+        Stdlib.Error { code; line; col; offset; message }
 
 let parse_file path =
   parse_result (coda_doc_parse_file_ocaml path)
 
 let parse src filename =
   parse_result (coda_doc_parse_ocaml src filename)
+
+let free doc = coda_doc_free_ocaml doc
 
 let serialize doc indent =
   parse_result (coda_doc_serialize_ocaml doc indent)
@@ -87,7 +89,7 @@ let array_remove doc node idx = status_of_int (coda_array_remove_ocaml doc node 
 let map_len doc node = coda_map_len_ocaml doc node
 let map_key_at doc node idx = coda_map_key_at_ocaml doc node idx
 let map_value_at doc node idx = coda_map_value_at_ocaml doc node idx
-let map_get doc node key = 
+let map_get doc node key =
   let n = coda_map_get_ocaml doc node key in
   if n = 0 then None else Some n
 let map_get_or_insert doc node key = coda_map_get_or_insert_ocaml doc node key
@@ -111,14 +113,14 @@ let keyed_table_col_append doc node name = status_of_int (coda_keyed_table_col_a
 let keyed_table_row_count doc node = coda_keyed_table_row_count_ocaml doc node
 let keyed_table_row_key_at doc node idx = coda_keyed_table_row_key_at_ocaml doc node idx
 let keyed_table_row_at doc node idx = coda_keyed_table_row_at_ocaml doc node idx
-let keyed_table_row_get doc node key = 
+let keyed_table_row_get doc node key =
   let n = coda_keyed_table_row_get_ocaml doc node key in
   if n = 0 then None else Some n
 let keyed_table_row_set doc node key row = status_of_int (coda_keyed_table_row_set_ocaml doc node key row)
 let keyed_table_row_remove doc node key = status_of_int (coda_keyed_table_row_remove_ocaml doc node key)
 
 let row_get doc node col = coda_row_get_ocaml doc node col
-let row_set doc node col val_ = status_of_int (coda_row_set_ocaml doc node col val_)
+let row_set doc node col value = status_of_int (coda_row_set_ocaml doc node col value)
 let row_remove doc node col = status_of_int (coda_row_remove_ocaml doc node col)
 let row_col_count doc node = coda_row_col_count_ocaml doc node
 let row_col_name_at doc node idx = coda_row_col_name_at_ocaml doc node idx
