@@ -2,7 +2,9 @@ name: CI
 
 on:
   push:
-    branches: ["main"]
+    branches:
+      - main
+      - agent/**
   pull_request:
 
 permissions:
@@ -19,5 +21,14 @@ jobs:
       - name: Install devbox + packages
         uses: jetify-com/devbox-install-action@v0.15.0
 
-      - name: Run tests
-        run: devbox run -- just test
+      - name: Test C++ API
+        run: devbox run -- just test-cpp
+
+      - name: Test C FFI
+        run: devbox run -- just test-c-ffi
+
+      - name: Test Python binding
+        run: devbox run -- just test-py-ffi
+
+      - name: Test OCaml binding
+        run: devbox run -- just test-ocaml
