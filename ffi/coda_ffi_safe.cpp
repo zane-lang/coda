@@ -248,6 +248,7 @@ bool canAttach(const coda_doc_t* doc, const SafeDocState& state, uint32_t parent
 void setInvalidHandleError(coda_error_t* err) {
 	if (!err) return;
 	coda_error_clear(err);
+	err->code = CODA_ERROR_INVALID_HANDLE;
 	err->message = owned_from_std("invalid or stale node handle");
 }
 
@@ -707,7 +708,7 @@ extern "C" CODA_FFI_EXPORT coda_status_t coda_row_set(
 	const uint32_t r = state ? unwrapExternal(*state, row) : 0;
 	auto* rowNode = doc && r ? doc->get(r) : nullptr;
 	if (!rowNode || rowNode->kind != coda_doc::Kind::Row) return CODA_BAD_KIND;
-	const uint32_t parent = state->parent[r];
+	const uint32_t parent = state->parent.at(r);
 	if (parent != 0) {
 		const auto* parentNode = doc->get(parent);
 		const std::string name(column ? column : "", columnLen);
@@ -725,7 +726,7 @@ extern "C" CODA_FFI_EXPORT coda_status_t coda_row_remove(
 	auto* state = findState(doc);
 	const uint32_t r = state ? unwrapExternal(*state, row) : 0;
 	if (!r) return CODA_ERR;
-	if (state->parent[r] != 0) return CODA_ERR;
+	if (state->parent.at(r) != 0) return CODA_ERR;
 	return coda_unsafe_row_remove(doc, r, column, columnLen);
 }
 
