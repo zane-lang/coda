@@ -98,7 +98,7 @@ coda_doc_parse_file(path, err);
 coda_doc_parse_fp(fp, filename, err);
 ```
 
-`coda_error_t.code` maps to `coda_parse_error_code_t`. Use `coda_parse_error_code_name(code)` for its stable name.
+For parse failures, `coda_error_t.code` maps to `coda_parse_error_code_t`. Use `coda_parse_error_code_name(code)` for its stable name. Non-parse failures use the documented `coda_error_code_t` sentinels.
 
 ## Node kinds
 
@@ -263,7 +263,7 @@ coda_error_t err = {0};
 coda_owned_str_t text = coda_node_serialize(doc, node, "  ", 2, &err);
 ```
 
-The root block serializes without braces. Nested blocks include braces. Invalid or stale handles return `{NULL, 0}` and populate `err`; they are never interpreted as the document root.
+The root block serializes without braces. Nested blocks include braces. Invalid or stale handles return `{NULL, 0}`, set `err.code` to `CODA_ERROR_INVALID_HANDLE`, and populate `err.message`; they are never interpreted as the document root.
 
 ## Status codes
 
