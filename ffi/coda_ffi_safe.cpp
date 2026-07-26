@@ -133,7 +133,9 @@
 #undef coda_new_row
 
 #include <algorithm>
+#include <atomic>
 #include <cstdint>
+#include <memory>
 #include <mutex>
 #include <unordered_map>
 #include <utility>
@@ -142,18 +144,20 @@
 namespace {
 
 struct SafeDocState {
+	std::mutex mutex;
 	std::unordered_map<coda_node_t, uint32_t> externalToInternal;
 	std::unordered_map<uint32_t, coda_node_t> internalToExternal;
 	std::unordered_map<uint32_t, uint32_t> parent;
 };
 
-std::mutex gStateMutex;
-std::unordered_map<const coda_doc_t*, SafeDocState> gStates;
-coda_node_t gNextHandle = 1;
+std::mutex gRegistryMutex;
+std::unordered_map<const coda_doc_t*, std::shared_ptr<SafeDocState>> gStates;
+std::atomic<coda_node_t> gNextHandle{1};
 
 coda_node_t allocateHandle() {
-	coda_node_t handle = gNextHandle++;
-	if (handle == 0) handle = gNextHandle++;
+	coda_node_t handle = gNextHandle.fetch_add(1, std::memory_order_relaxed);
+	if (handle == 0)
+		handle = gNextHandle.fetch_add(1, std::memory_order_relaxed);
 	return handle;
 }
 
@@ -198,8 +202,9 @@ void registerSubtree(coda_doc_t* doc, SafeDocState& state, uint32_t internal, ui
 
 void registerDocument(coda_doc_t* doc) {
 	if (!doc) return;
-	SafeDocState state;
-	registerSubtree(doc, state, doc->root, 0);
+	auto state = std::make_shared<SafeDocState>();
+	registerSubtree(doc, *state, doc->root, 0);
+	std::lock_guard<std::mutex> lock(gRegistryMutex);
 	gStates[doc] = std::move(state);
 }
 
@@ -299,34 +304,41 @@ void orderInternal(coda_doc_t& doc, uint32_t internal,
 	}
 }
 
-SafeDocState* findState(coda_doc_t* doc) {
+std::shared_ptr<SafeDocState> lockState(
+		const coda_doc_t* doc, std::unique_lock<std::mutex>& stateLock) {
+	std::lock_guard<std::mutex> registryLock(gRegistryMutex);
 	auto it = gStates.find(doc);
-	return it == gStates.end() ? nullptr : &it->second;
-}
-
-const SafeDocState* findState(const coda_doc_t* doc) {
-	auto it = gStates.find(doc);
-	return it == gStates.end() ? nullptr : &it->second;
+	if (it == gStates.end()) return {};
+	auto state = it->second;
+	stateLock = std::unique_lock<std::mutex>(state->mutex);
+	return state;
 }
 
 } // namespace
 
 extern "C" CODA_FFI_EXPORT coda_doc_t* coda_doc_new(void) {
-	std::lock_guard<std::mutex> lock(gStateMutex);
 	coda_doc_t* doc = coda_unsafe_doc_new();
 	registerDocument(doc);
 	return doc;
 }
 
 extern "C" CODA_FFI_EXPORT void coda_doc_free(coda_doc_t* doc) {
-	std::lock_guard<std::mutex> lock(gStateMutex);
-	gStates.erase(doc);
+	if (!doc) return;
+	std::shared_ptr<SafeDocState> state;
+	std::unique_lock<std::mutex> stateLock;
+	{
+		std::lock_guard<std::mutex> registryLock(gRegistryMutex);
+		auto it = gStates.find(doc);
+		if (it == gStates.end()) return;
+		state = it->second;
+		stateLock = std::unique_lock<std::mutex>(state->mutex);
+		gStates.erase(it);
+	}
 	coda_unsafe_doc_free(doc);
 }
 
 extern "C" CODA_FFI_EXPORT coda_doc_t* coda_doc_parse(
 		const char* src, size_t len, const char* filename, coda_error_t* err) {
-	std::lock_guard<std::mutex> lock(gStateMutex);
 	coda_doc_t* doc = coda_unsafe_doc_parse(src, len, filename, err);
 	registerDocument(doc);
 	return doc;
@@ -334,7 +346,6 @@ extern "C" CODA_FFI_EXPORT coda_doc_t* coda_doc_parse(
 
 extern "C" CODA_FFI_EXPORT coda_doc_t* coda_doc_parse_file(
 		const char* path, coda_error_t* err) {
-	std::lock_guard<std::mutex> lock(gStateMutex);
 	coda_doc_t* doc = coda_unsafe_doc_parse_file(path, err);
 	registerDocument(doc);
 	return doc;
@@ -342,27 +353,28 @@ extern "C" CODA_FFI_EXPORT coda_doc_t* coda_doc_parse_file(
 
 extern "C" CODA_FFI_EXPORT coda_doc_t* coda_doc_parse_fp(
 		FILE* fp, const char* filename, coda_error_t* err) {
-	std::lock_guard<std::mutex> lock(gStateMutex);
 	coda_doc_t* doc = coda_unsafe_doc_parse_fp(fp, filename, err);
 	registerDocument(doc);
 	return doc;
 }
 
 extern "C" CODA_FFI_EXPORT coda_node_t coda_doc_root(const coda_doc_t* doc) {
-	std::lock_guard<std::mutex> lock(gStateMutex);
-	auto* state = const_cast<SafeDocState*>(findState(doc));
+	std::unique_lock<std::mutex> lock;
+	auto state = lockState(doc, lock);
 	return doc && state ? wrapInternal(*state, doc->root) : 0;
 }
 
 extern "C" CODA_FFI_EXPORT void coda_doc_order(coda_doc_t* doc) {
-	std::lock_guard<std::mutex> lock(gStateMutex);
-	if (doc && findState(doc)) orderInternal(*doc, doc->root, nullptr);
+	std::unique_lock<std::mutex> lock;
+	auto state = lockState(doc, lock);
+	if (doc && state) orderInternal(*doc, doc->root, nullptr);
 }
 
 extern "C" CODA_FFI_EXPORT void coda_doc_order_weighted(
 		coda_doc_t* doc, const char** keys, const float* weights, size_t count) {
-	std::lock_guard<std::mutex> lock(gStateMutex);
-	if (!doc || !findState(doc)) return;
+	std::unique_lock<std::mutex> lock;
+	auto state = lockState(doc, lock);
+	if (!doc || !state) return;
 	std::unordered_map<std::string, float> values;
 	for (size_t i = 0; i < count; ++i)
 		values[keys && keys[i] ? keys[i] : ""] = weights ? weights[i] : 0.0f;
@@ -375,24 +387,24 @@ extern "C" CODA_FFI_EXPORT void coda_doc_order_weighted(
 
 extern "C" CODA_FFI_EXPORT coda_node_kind_t coda_node_kind(
 		const coda_doc_t* doc, coda_node_t node) {
-	std::lock_guard<std::mutex> lock(gStateMutex);
-	const auto* state = findState(doc);
+	std::unique_lock<std::mutex> lock;
+	auto state = lockState(doc, lock);
 	const uint32_t internal = state ? unwrapExternal(*state, node) : 0;
 	return internal ? coda_unsafe_node_kind(doc, internal) : CODA_NODE_NULL;
 }
 
 extern "C" CODA_FFI_EXPORT int coda_node_is_container(
 		const coda_doc_t* doc, coda_node_t node) {
-	std::lock_guard<std::mutex> lock(gStateMutex);
-	const auto* state = findState(doc);
+	std::unique_lock<std::mutex> lock;
+	auto state = lockState(doc, lock);
 	const uint32_t internal = state ? unwrapExternal(*state, node) : 0;
 	return internal ? coda_unsafe_node_is_container(doc, internal) : 0;
 }
 
 #define CODA_WRAP_NODE_GETTER(name, unsafeName, resultType, fallback) \
 extern "C" CODA_FFI_EXPORT resultType name(const coda_doc_t* doc, coda_node_t node) { \
-	std::lock_guard<std::mutex> lock(gStateMutex); \
-	const auto* state = findState(doc); \
+	std::unique_lock<std::mutex> lock; \
+	auto state = lockState(doc, lock); \
 	const uint32_t internal = state ? unwrapExternal(*state, node) : 0; \
 	return internal ? unsafeName(doc, internal) : fallback; \
 }
@@ -400,8 +412,8 @@ extern "C" CODA_FFI_EXPORT resultType name(const coda_doc_t* doc, coda_node_t no
 #define CODA_WRAP_NODE_SETTER(name, unsafeName) \
 extern "C" CODA_FFI_EXPORT coda_status_t name( \
 		coda_doc_t* doc, coda_node_t node, const char* text, size_t len) { \
-	std::lock_guard<std::mutex> lock(gStateMutex); \
-	auto* state = findState(doc); \
+	std::unique_lock<std::mutex> lock; \
+	auto state = lockState(doc, lock); \
 	const uint32_t internal = state ? unwrapExternal(*state, node) : 0; \
 	return internal ? unsafeName(doc, internal, text, len) : CODA_ERR; \
 }
@@ -427,16 +439,16 @@ CODA_WRAP_NODE_SETTER(coda_row_comment_set, coda_unsafe_row_comment_set)
 
 extern "C" CODA_FFI_EXPORT coda_node_t coda_array_get(
 		const coda_doc_t* doc, coda_node_t array, size_t index) {
-	std::lock_guard<std::mutex> lock(gStateMutex);
-	auto* state = const_cast<SafeDocState*>(findState(doc));
+	std::unique_lock<std::mutex> lock;
+	auto state = lockState(doc, lock);
 	const uint32_t internal = state ? unwrapExternal(*state, array) : 0;
 	return internal ? wrapInternal(*state, coda_unsafe_array_get(doc, internal, index)) : 0;
 }
 
 extern "C" CODA_FFI_EXPORT coda_status_t coda_array_push(
 		coda_doc_t* doc, coda_node_t array, coda_node_t value) {
-	std::lock_guard<std::mutex> lock(gStateMutex);
-	auto* state = findState(doc);
+	std::unique_lock<std::mutex> lock;
+	auto state = lockState(doc, lock);
 	const uint32_t a = state ? unwrapExternal(*state, array) : 0;
 	const uint32_t v = state ? unwrapExternal(*state, value) : 0;
 	if (!a || !v || !canAttach(doc, *state, a, v)) return CODA_ERR;
@@ -447,8 +459,8 @@ extern "C" CODA_FFI_EXPORT coda_status_t coda_array_push(
 
 extern "C" CODA_FFI_EXPORT coda_status_t coda_array_set(
 		coda_doc_t* doc, coda_node_t array, size_t index, coda_node_t value) {
-	std::lock_guard<std::mutex> lock(gStateMutex);
-	auto* state = findState(doc);
+	std::unique_lock<std::mutex> lock;
+	auto state = lockState(doc, lock);
 	const uint32_t a = state ? unwrapExternal(*state, array) : 0;
 	const uint32_t v = state ? unwrapExternal(*state, value) : 0;
 	if (!a || !v) return CODA_ERR;
@@ -467,8 +479,8 @@ extern "C" CODA_FFI_EXPORT coda_status_t coda_array_set(
 
 extern "C" CODA_FFI_EXPORT coda_status_t coda_array_remove(
 		coda_doc_t* doc, coda_node_t array, size_t index) {
-	std::lock_guard<std::mutex> lock(gStateMutex);
-	auto* state = findState(doc);
+	std::unique_lock<std::mutex> lock;
+	auto state = lockState(doc, lock);
 	const uint32_t a = state ? unwrapExternal(*state, array) : 0;
 	if (!a) return CODA_ERR;
 	const uint32_t old = coda_unsafe_array_get(doc, a, index);
@@ -481,32 +493,32 @@ extern "C" CODA_FFI_EXPORT coda_status_t coda_array_remove(
 
 extern "C" CODA_FFI_EXPORT coda_str_t coda_map_key_at(
 		const coda_doc_t* doc, coda_node_t map, size_t index) {
-	std::lock_guard<std::mutex> lock(gStateMutex);
-	const auto* state = findState(doc);
+	std::unique_lock<std::mutex> lock;
+	auto state = lockState(doc, lock);
 	const uint32_t internal = state ? unwrapExternal(*state, map) : 0;
 	return internal ? coda_unsafe_map_key_at(doc, internal, index) : view_of(g_empty);
 }
 
 extern "C" CODA_FFI_EXPORT coda_node_t coda_map_value_at(
 		const coda_doc_t* doc, coda_node_t map, size_t index) {
-	std::lock_guard<std::mutex> lock(gStateMutex);
-	auto* state = const_cast<SafeDocState*>(findState(doc));
+	std::unique_lock<std::mutex> lock;
+	auto state = lockState(doc, lock);
 	const uint32_t internal = state ? unwrapExternal(*state, map) : 0;
 	return internal ? wrapInternal(*state, coda_unsafe_map_value_at(doc, internal, index)) : 0;
 }
 
 extern "C" CODA_FFI_EXPORT coda_node_t coda_map_get(
 		const coda_doc_t* doc, coda_node_t map, const char* key, size_t keyLen) {
-	std::lock_guard<std::mutex> lock(gStateMutex);
-	auto* state = const_cast<SafeDocState*>(findState(doc));
+	std::unique_lock<std::mutex> lock;
+	auto state = lockState(doc, lock);
 	const uint32_t internal = state ? unwrapExternal(*state, map) : 0;
 	return internal ? wrapInternal(*state, coda_unsafe_map_get(doc, internal, key, keyLen)) : 0;
 }
 
 extern "C" CODA_FFI_EXPORT coda_node_t coda_map_get_or_insert(
 		coda_doc_t* doc, coda_node_t map, const char* key, size_t keyLen) {
-	std::lock_guard<std::mutex> lock(gStateMutex);
-	auto* state = findState(doc);
+	std::unique_lock<std::mutex> lock;
+	auto state = lockState(doc, lock);
 	const uint32_t internal = state ? unwrapExternal(*state, map) : 0;
 	if (!internal) return 0;
 	const uint32_t child = coda_unsafe_map_get_or_insert(doc, internal, key, keyLen);
@@ -516,8 +528,8 @@ extern "C" CODA_FFI_EXPORT coda_node_t coda_map_get_or_insert(
 
 extern "C" CODA_FFI_EXPORT coda_status_t coda_map_set(
 		coda_doc_t* doc, coda_node_t map, const char* key, size_t keyLen, coda_node_t value) {
-	std::lock_guard<std::mutex> lock(gStateMutex);
-	auto* state = findState(doc);
+	std::unique_lock<std::mutex> lock;
+	auto state = lockState(doc, lock);
 	const uint32_t m = state ? unwrapExternal(*state, map) : 0;
 	const uint32_t v = state ? unwrapExternal(*state, value) : 0;
 	if (!m || !v) return CODA_ERR;
@@ -536,8 +548,8 @@ extern "C" CODA_FFI_EXPORT coda_status_t coda_map_set(
 
 extern "C" CODA_FFI_EXPORT coda_status_t coda_map_remove(
 		coda_doc_t* doc, coda_node_t map, const char* key, size_t keyLen) {
-	std::lock_guard<std::mutex> lock(gStateMutex);
-	auto* state = findState(doc);
+	std::unique_lock<std::mutex> lock;
+	auto state = lockState(doc, lock);
 	const uint32_t m = state ? unwrapExternal(*state, map) : 0;
 	if (!m) return CODA_ERR;
 	const uint32_t old = coda_unsafe_map_get(doc, m, key, keyLen);
@@ -551,8 +563,8 @@ extern "C" CODA_FFI_EXPORT coda_status_t coda_map_remove(
 #define CODA_WRAP_INDEXED_STR(name, unsafeName) \
 extern "C" CODA_FFI_EXPORT coda_str_t name( \
 		const coda_doc_t* doc, coda_node_t node, size_t index) { \
-	std::lock_guard<std::mutex> lock(gStateMutex); \
-	const auto* state = findState(doc); \
+	std::unique_lock<std::mutex> lock; \
+	auto state = lockState(doc, lock); \
 	const uint32_t internal = state ? unwrapExternal(*state, node) : 0; \
 	return internal ? unsafeName(doc, internal, index) : view_of(g_empty); \
 }
@@ -566,8 +578,8 @@ CODA_WRAP_INDEXED_STR(coda_row_col_value_at, coda_unsafe_row_col_value_at)
 
 extern "C" CODA_FFI_EXPORT coda_status_t coda_table_col_append(
 		coda_doc_t* doc, coda_node_t table, const char* name, size_t nameLen) {
-	std::lock_guard<std::mutex> lock(gStateMutex);
-	auto* state = findState(doc);
+	std::unique_lock<std::mutex> lock;
+	auto state = lockState(doc, lock);
 	const uint32_t t = state ? unwrapExternal(*state, table) : 0;
 	auto* node = doc && t ? doc->get(t) : nullptr;
 	if (!node || node->kind != coda_doc::Kind::Table) return CODA_BAD_KIND;
@@ -578,8 +590,8 @@ extern "C" CODA_FFI_EXPORT coda_status_t coda_table_col_append(
 
 extern "C" CODA_FFI_EXPORT coda_status_t coda_keyed_table_col_append(
 		coda_doc_t* doc, coda_node_t table, const char* name, size_t nameLen) {
-	std::lock_guard<std::mutex> lock(gStateMutex);
-	auto* state = findState(doc);
+	std::unique_lock<std::mutex> lock;
+	auto state = lockState(doc, lock);
 	const uint32_t t = state ? unwrapExternal(*state, table) : 0;
 	auto* node = doc && t ? doc->get(t) : nullptr;
 	if (!node || node->kind != coda_doc::Kind::KeyedTable) return CODA_BAD_KIND;
@@ -590,16 +602,16 @@ extern "C" CODA_FFI_EXPORT coda_status_t coda_keyed_table_col_append(
 
 extern "C" CODA_FFI_EXPORT coda_node_t coda_table_row_at(
 		const coda_doc_t* doc, coda_node_t table, size_t index) {
-	std::lock_guard<std::mutex> lock(gStateMutex);
-	auto* state = const_cast<SafeDocState*>(findState(doc));
+	std::unique_lock<std::mutex> lock;
+	auto state = lockState(doc, lock);
 	const uint32_t t = state ? unwrapExternal(*state, table) : 0;
 	return t ? wrapInternal(*state, coda_unsafe_table_row_at(doc, t, index)) : 0;
 }
 
 extern "C" CODA_FFI_EXPORT coda_status_t coda_table_row_append(
 		coda_doc_t* doc, coda_node_t table, coda_node_t row) {
-	std::lock_guard<std::mutex> lock(gStateMutex);
-	auto* state = findState(doc);
+	std::unique_lock<std::mutex> lock;
+	auto state = lockState(doc, lock);
 	const uint32_t t = state ? unwrapExternal(*state, table) : 0;
 	const uint32_t r = state ? unwrapExternal(*state, row) : 0;
 	if (!t || !r || !canAttach(doc, *state, t, r)) return CODA_ERR;
@@ -610,8 +622,8 @@ extern "C" CODA_FFI_EXPORT coda_status_t coda_table_row_append(
 
 extern "C" CODA_FFI_EXPORT coda_status_t coda_table_row_set(
 		coda_doc_t* doc, coda_node_t table, size_t index, coda_node_t row) {
-	std::lock_guard<std::mutex> lock(gStateMutex);
-	auto* state = findState(doc);
+	std::unique_lock<std::mutex> lock;
+	auto state = lockState(doc, lock);
 	const uint32_t t = state ? unwrapExternal(*state, table) : 0;
 	const uint32_t r = state ? unwrapExternal(*state, row) : 0;
 	if (!t || !r) return CODA_ERR;
@@ -630,8 +642,8 @@ extern "C" CODA_FFI_EXPORT coda_status_t coda_table_row_set(
 
 extern "C" CODA_FFI_EXPORT coda_status_t coda_table_row_remove(
 		coda_doc_t* doc, coda_node_t table, size_t index) {
-	std::lock_guard<std::mutex> lock(gStateMutex);
-	auto* state = findState(doc);
+	std::unique_lock<std::mutex> lock;
+	auto state = lockState(doc, lock);
 	const uint32_t t = state ? unwrapExternal(*state, table) : 0;
 	if (!t) return CODA_ERR;
 	const uint32_t old = coda_unsafe_table_row_at(doc, t, index);
@@ -644,24 +656,24 @@ extern "C" CODA_FFI_EXPORT coda_status_t coda_table_row_remove(
 
 extern "C" CODA_FFI_EXPORT coda_node_t coda_keyed_table_row_at(
 		const coda_doc_t* doc, coda_node_t table, size_t index) {
-	std::lock_guard<std::mutex> lock(gStateMutex);
-	auto* state = const_cast<SafeDocState*>(findState(doc));
+	std::unique_lock<std::mutex> lock;
+	auto state = lockState(doc, lock);
 	const uint32_t t = state ? unwrapExternal(*state, table) : 0;
 	return t ? wrapInternal(*state, coda_unsafe_keyed_table_row_at(doc, t, index)) : 0;
 }
 
 extern "C" CODA_FFI_EXPORT coda_node_t coda_keyed_table_row_get(
 		const coda_doc_t* doc, coda_node_t table, const char* key, size_t keyLen) {
-	std::lock_guard<std::mutex> lock(gStateMutex);
-	auto* state = const_cast<SafeDocState*>(findState(doc));
+	std::unique_lock<std::mutex> lock;
+	auto state = lockState(doc, lock);
 	const uint32_t t = state ? unwrapExternal(*state, table) : 0;
 	return t ? wrapInternal(*state, coda_unsafe_keyed_table_row_get(doc, t, key, keyLen)) : 0;
 }
 
 extern "C" CODA_FFI_EXPORT coda_status_t coda_keyed_table_row_set(
 		coda_doc_t* doc, coda_node_t table, const char* key, size_t keyLen, coda_node_t row) {
-	std::lock_guard<std::mutex> lock(gStateMutex);
-	auto* state = findState(doc);
+	std::unique_lock<std::mutex> lock;
+	auto state = lockState(doc, lock);
 	const uint32_t t = state ? unwrapExternal(*state, table) : 0;
 	const uint32_t r = state ? unwrapExternal(*state, row) : 0;
 	if (!t || !r) return CODA_ERR;
@@ -680,8 +692,8 @@ extern "C" CODA_FFI_EXPORT coda_status_t coda_keyed_table_row_set(
 
 extern "C" CODA_FFI_EXPORT coda_status_t coda_keyed_table_row_remove(
 		coda_doc_t* doc, coda_node_t table, const char* key, size_t keyLen) {
-	std::lock_guard<std::mutex> lock(gStateMutex);
-	auto* state = findState(doc);
+	std::unique_lock<std::mutex> lock;
+	auto state = lockState(doc, lock);
 	const uint32_t t = state ? unwrapExternal(*state, table) : 0;
 	if (!t) return CODA_ERR;
 	const uint32_t old = coda_unsafe_keyed_table_row_get(doc, t, key, keyLen);
@@ -694,8 +706,8 @@ extern "C" CODA_FFI_EXPORT coda_status_t coda_keyed_table_row_remove(
 
 extern "C" CODA_FFI_EXPORT coda_str_t coda_row_get(
 		const coda_doc_t* doc, coda_node_t row, const char* column, size_t columnLen) {
-	std::lock_guard<std::mutex> lock(gStateMutex);
-	const auto* state = findState(doc);
+	std::unique_lock<std::mutex> lock;
+	auto state = lockState(doc, lock);
 	const uint32_t r = state ? unwrapExternal(*state, row) : 0;
 	return r ? coda_unsafe_row_get(doc, r, column, columnLen) : view_of(g_empty);
 }
@@ -703,8 +715,8 @@ extern "C" CODA_FFI_EXPORT coda_str_t coda_row_get(
 extern "C" CODA_FFI_EXPORT coda_status_t coda_row_set(
 		coda_doc_t* doc, coda_node_t row, const char* column, size_t columnLen,
 		const char* value, size_t valueLen) {
-	std::lock_guard<std::mutex> lock(gStateMutex);
-	auto* state = findState(doc);
+	std::unique_lock<std::mutex> lock;
+	auto state = lockState(doc, lock);
 	const uint32_t r = state ? unwrapExternal(*state, row) : 0;
 	auto* rowNode = doc && r ? doc->get(r) : nullptr;
 	if (!rowNode || rowNode->kind != coda_doc::Kind::Row) return CODA_BAD_KIND;
@@ -722,8 +734,8 @@ extern "C" CODA_FFI_EXPORT coda_status_t coda_row_set(
 
 extern "C" CODA_FFI_EXPORT coda_status_t coda_row_remove(
 		coda_doc_t* doc, coda_node_t row, const char* column, size_t columnLen) {
-	std::lock_guard<std::mutex> lock(gStateMutex);
-	auto* state = findState(doc);
+	std::unique_lock<std::mutex> lock;
+	auto state = lockState(doc, lock);
 	const uint32_t r = state ? unwrapExternal(*state, row) : 0;
 	if (!r) return CODA_ERR;
 	if (state->parent.at(r) != 0) return CODA_ERR;
@@ -733,8 +745,8 @@ extern "C" CODA_FFI_EXPORT coda_status_t coda_row_remove(
 extern "C" CODA_FFI_EXPORT coda_owned_str_t coda_node_serialize(
 		const coda_doc_t* doc, coda_node_t node, const char* indent, size_t indentLen,
 		coda_error_t* err) {
-	std::lock_guard<std::mutex> lock(gStateMutex);
-	const auto* state = findState(doc);
+	std::unique_lock<std::mutex> lock;
+	auto state = lockState(doc, lock);
 	const uint32_t internal = state ? unwrapExternal(*state, node) : 0;
 	if (!internal) {
 		setInvalidHandleError(err);
@@ -744,8 +756,8 @@ extern "C" CODA_FFI_EXPORT coda_owned_str_t coda_node_serialize(
 }
 
 extern "C" CODA_FFI_EXPORT void coda_node_order(coda_doc_t* doc, coda_node_t node) {
-	std::lock_guard<std::mutex> lock(gStateMutex);
-	auto* state = findState(doc);
+	std::unique_lock<std::mutex> lock;
+	auto state = lockState(doc, lock);
 	const uint32_t internal = state ? unwrapExternal(*state, node) : 0;
 	if (internal) orderInternal(*doc, internal, nullptr);
 }
@@ -753,8 +765,8 @@ extern "C" CODA_FFI_EXPORT void coda_node_order(coda_doc_t* doc, coda_node_t nod
 extern "C" CODA_FFI_EXPORT void coda_node_order_weighted(
 		coda_doc_t* doc, coda_node_t node, const char** keys, const float* weights,
 		size_t count) {
-	std::lock_guard<std::mutex> lock(gStateMutex);
-	auto* state = findState(doc);
+	std::unique_lock<std::mutex> lock;
+	auto state = lockState(doc, lock);
 	const uint32_t internal = state ? unwrapExternal(*state, node) : 0;
 	if (!internal) return;
 	std::unordered_map<std::string, float> values;
@@ -769,15 +781,15 @@ extern "C" CODA_FFI_EXPORT void coda_node_order_weighted(
 
 #define CODA_WRAP_NEW_NODE(name, unsafeName) \
 extern "C" CODA_FFI_EXPORT coda_node_t name(coda_doc_t* doc) { \
-	std::lock_guard<std::mutex> lock(gStateMutex); \
-	auto* state = findState(doc); \
+	std::unique_lock<std::mutex> lock; \
+	auto state = lockState(doc, lock); \
 	return state ? wrapInternal(*state, unsafeName(doc)) : 0; \
 }
 
 extern "C" CODA_FFI_EXPORT coda_node_t coda_new_string(
 		coda_doc_t* doc, const char* value, size_t valueLen) {
-	std::lock_guard<std::mutex> lock(gStateMutex);
-	auto* state = findState(doc);
+	std::unique_lock<std::mutex> lock;
+	auto state = lockState(doc, lock);
 	return state ? wrapInternal(*state, coda_unsafe_new_string(doc, value, valueLen)) : 0;
 }
 
