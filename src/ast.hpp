@@ -104,13 +104,13 @@ public:
 class Table {
 	std::vector<Row> content;
 	std::string headerComment;
-	std::set<std::string> headers;
 	std::vector<std::string> colOrder;
+	std::set<std::string> headers;
 
 public:
 	explicit Table(std::vector<std::string> orderedCols)
-		: headers(orderedCols.begin(), orderedCols.end())
-		, colOrder(std::move(orderedCols)) {
+		: colOrder(std::move(orderedCols))
+		, headers(colOrder.begin(), colOrder.end()) {
 		detail::validateColumns(colOrder, "Table");
 	}
 
@@ -163,13 +163,13 @@ public:
 class KeyedTable {
 	detail::OrderedMap<std::string, Row> content;
 	std::string headerComment;
-	std::set<std::string> headers;
 	std::vector<std::string> colOrder;
+	std::set<std::string> headers;
 
 public:
 	explicit KeyedTable(std::vector<std::string> orderedCols)
-		: headers(orderedCols.begin(), orderedCols.end())
-		, colOrder(std::move(orderedCols)) {
+		: colOrder(std::move(orderedCols))
+		, headers(colOrder.begin(), colOrder.end()) {
 		detail::validateColumns(colOrder, "KeyedTable");
 	}
 
