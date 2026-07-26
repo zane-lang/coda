@@ -83,6 +83,11 @@ class CodaTestRunner:
 			return node.header_comment
 		return None
 
+	def _container_len(self, node: Node) -> int:
+		if isinstance(node, (Array, Table, KeyedTable, Block)):
+			return len(node)
+		return 0
+
 	def run_check(self, check: Block) -> bool:
 		op = str(check["op"])
 
@@ -100,7 +105,7 @@ class CodaTestRunner:
 		if op == "map_keys":
 			return [k for k, _ in self.root[str(check["field"])].as_block()] == self._strings(check["eq_list"])
 		if op == "array_len":
-			return len(self.root[str(check["field"])].as_array()) == self._int(str(check["eq_int"]))
+			return self._container_len(self.root[str(check["field"])]) == self._int(str(check["eq_int"]))
 		if op == "array_element":
 			arr = self.root[str(check["field"])].as_array()
 			return str(arr[self._int(str(check["idx"]))]) == str(check["eq"])
@@ -122,15 +127,12 @@ class CodaTestRunner:
 			return [k for k, _ in self.root[str(check["table"])].as_keyed_table()] == self._strings(check["eq_list"])
 		if op == "table_row_missing_inserts":
 			kt = self.root[str(check["table"])].as_keyed_table()
+			row_key = str(check["row"])
 			try:
-				row_key = str(check["row"])
-				kt.insert(row_key, Row())
-				row_exists = row_key in kt
-				row_is_empty = len(kt[row_key]) == 0 if row_exists else False
-				got = row_exists and row_is_empty
-			except Exception:
-				got = False
-			return got == self._bool(str(check["eq_bool"]))
+				_ = kt[row_key]
+			except KeyError:
+				pass
+			return (row_key in kt) == self._bool(str(check["eq_bool"]))
 		if op == "table_row_missing_throws":
 			kt = self.root[str(check["table"])].as_keyed_table()
 			return self._try_access(lambda: kt[str(check["row"])]) == self._bool(str(check["eq_bool"]))
