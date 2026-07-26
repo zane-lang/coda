@@ -39,9 +39,9 @@ public:
 			return false;
 		} catch (const coda::ParseError& e) {
 			std::string_view msg(e.what());
-			for (const auto& n : needles)
-				if (msg.find(n) != std::string_view::npos) return true;
-			return needles.empty();
+			for (const auto& needle : needles)
+				if (msg.find(needle) == std::string_view::npos) return false;
+			return true;
 		} catch (...) { return false; }
 	}
 
