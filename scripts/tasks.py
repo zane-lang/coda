@@ -17,10 +17,13 @@ DIST_DIR = ROOT / "dist"
 ZIG_CXX = SCRIPTS / "zig-cxx"
 ZIG_AR = SCRIPTS / "zig-ar"
 
-TEST_FLAGS = ["-O0", "-g", "-std=c++20"]
-FLAGS = ["-O3", "-std=c++20"]
-FLAGS_CROSS = ["-O3", "-std=c++20"]
+# The public single-header API promises C++17 compatibility. Compile every
+# native target at that language level so the promise is continuously tested.
+TEST_FLAGS = ["-O0", "-g", "-std=c++17"]
+FLAGS = ["-O3", "-std=c++17"]
+FLAGS_CROSS = ["-O3", "-std=c++17"]
 INC = ["-Iinclude"]
+FFI_SOURCE = "ffi/coda_ffi_safe.cpp"
 
 TARGETS = [
 	"x86_64-linux-gnu",
@@ -59,14 +62,15 @@ def generate() -> None:
 def ensure_generated() -> None:
 	"""Regenerate the single-header amalgamation if it is missing.
 
-	include/coda.hpp is a build artifact (git-ignored), so a clean checkout
-	must be able to produce it on demand before anything that includes it.
+	include/coda.hpp is a build artifact (git-ignored), so every standalone
+	build/test entry point must be able to produce it on a clean checkout.
 	"""
 	if not GENERATED_HEADER.exists():
 		generate()
 
 
 def build() -> None:
+	ensure_generated()
 	ensure_dir(BUILD_DIR)
 	run_cmd(
 		str(ZIG_CXX),
@@ -76,7 +80,7 @@ def build() -> None:
 		"-shared",
 		"-o",
 		"build/libcoda_ffi.so",
-		"ffi/coda_ffi.cpp",
+		FFI_SOURCE,
 	)
 
 
@@ -94,7 +98,7 @@ def test_cpp() -> None:
 	run_cmd("./build/tests")
 
 
-def test_c_ffi() -> None:
+def build_native_ffi_archive() -> None:
 	ensure_generated()
 	ensure_dir(BUILD_DIR)
 	run_cmd(
@@ -104,28 +108,40 @@ def test_c_ffi() -> None:
 		*INC,
 		"-c",
 		"-fPIC",
-		"ffi/coda_ffi.cpp",
+		FFI_SOURCE,
 		"-o",
 		"build/coda_ffi.o",
 	)
 	run_cmd(str(ZIG_AR), "rcs", "build/libcoda_ffi_native.a", "build/coda_ffi.o")
-	run_cmd(
-		str(ZIG_CXX),
-		*TEST_FLAGS,
-		"-I.",
-		"tests/c/test_c_ffi.cpp",
-		"build/libcoda_ffi_native.a",
-		"-o",
-		"build/test_c_ffi",
-	)
-	run_cmd("./build/test_c_ffi")
+
+
+def test_c_ffi() -> None:
+	build_native_ffi_archive()
+	for source, output in [
+		("tests/c/test_c_ffi.cpp", "build/test_c_ffi"),
+		("tests/c/test_ffi_safety.cpp", "build/test_ffi_safety"),
+	]:
+		run_cmd(
+			str(ZIG_CXX),
+			*TEST_FLAGS,
+			"-I.",
+			source,
+			"build/libcoda_ffi_native.a",
+			"-o",
+			output,
+		)
+		run_cmd(f"./{output}")
 
 
 def test_py_ffi() -> None:
+	# Standalone `just test-py-ffi` must not rely on a previous cross/build step.
+	build()
 	run_cmd("python3", "tests/python/test_python_ffi.py")
+	run_cmd("python3", "tests/python/test_python_safety.py")
 
 
 def test_ocaml() -> None:
+	ensure_generated()
 	run_cmd("dune", "exec", "./tests/ocaml/test_ocaml.exe")
 
 
@@ -144,6 +160,7 @@ def run_sample() -> None:
 
 
 def cross(target: str) -> None:
+	ensure_generated()
 	target_dir = DIST_DIR / target
 	ensure_dir(target_dir)
 
@@ -157,7 +174,7 @@ def cross(target: str) -> None:
 		"-c",
 		"-o",
 		f"dist/{target}/coda_ffi.o",
-		"ffi/coda_ffi.cpp",
+		FFI_SOURCE,
 	)
 
 	if "windows" in target:
@@ -208,6 +225,7 @@ def cross(target: str) -> None:
 
 def cross_all() -> None:
 	clean()
+	ensure_generated()
 	for target in TARGETS:
 		cross(target)
 	print("Cross build done. Artifacts are in dist/.")
