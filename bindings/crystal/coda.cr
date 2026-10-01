@@ -297,7 +297,8 @@ module Coda
     protected def create(doc : Doc) : Nil
       created(doc, LibCoda.new_row(doc.to_unsafe), "row")
       @pending.not_nil!.each do |col, val|
-        LibCoda.row_set(doc.to_unsafe, @id, col, col.bytesize, val, val.bytesize)
+        status = LibCoda.row_set(doc.to_unsafe, @id, col, col.bytesize, val, val.bytesize)
+        raise Error.new("Failed to set row field: #{col}") unless status.ok?
       end
       @pending = nil
     end
