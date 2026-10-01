@@ -53,6 +53,14 @@ jobs:
             exit 1
           }
 
+      - name: Test Crystal binding
+        shell: bash
+        run: |
+          devbox run -- just test-crystal > /tmp/crystal.log 2>&1 || {
+            cat /tmp/crystal.log
+            exit 1
+          }
+
       - name: Upload failure logs
         if: failure()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2

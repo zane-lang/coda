@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import os
 import shlex
 import shutil
 import subprocess
@@ -42,9 +43,9 @@ ARTIFACTS = [
 ]
 
 
-def run_cmd(*command: str, cwd: Path = ROOT) -> None:
+def run_cmd(*command: str, cwd: Path = ROOT, env: dict[str, str] | None = None) -> None:
 	print(shlex.join(command))
-	subprocess.run(command, check=True, cwd=cwd)
+	subprocess.run(command, check=True, cwd=cwd, env=env)
 
 
 def ensure_dir(path: Path) -> None:
@@ -143,6 +144,55 @@ def test_py_ffi() -> None:
 def test_ocaml() -> None:
 	ensure_generated()
 	run_cmd("dune", "exec", "./tests/ocaml/test_ocaml.exe")
+
+
+CRYSTAL_LIB_DIR = BUILD_DIR / "crystal"
+
+
+def build_crystal_archive() -> None:
+	"""Build build/crystal/libcoda_ffi.a for the Crystal binding.
+
+	Crystal links with the system C compiler (`$CC`, else `cc`), so the archive
+	is compiled by that compiler rather than zig: the C++ runtime it references
+	has to be the one that linker supplies.
+	"""
+	ensure_generated()
+	ensure_dir(CRYSTAL_LIB_DIR)
+	cc = os.environ.get("CC", "cc")
+	run_cmd(
+		cc,
+		"-x",
+		"c++",
+		*FLAGS,
+		*INC,
+		"-fPIC",
+		"-c",
+		FFI_SOURCE,
+		"-o",
+		"build/crystal/coda_ffi.o",
+	)
+	archive = CRYSTAL_LIB_DIR / "libcoda_ffi.a"
+	archive.unlink(missing_ok=True)
+	run_cmd("ar", "rcs", str(archive), "build/crystal/coda_ffi.o")
+
+
+def crystal_env() -> dict[str, str]:
+	"""The environment that puts build/crystal ahead of Crystal's own libraries."""
+	default = subprocess.run(
+		["crystal", "env", "CRYSTAL_LIBRARY_PATH"],
+		check=True,
+		capture_output=True,
+		text=True,
+	).stdout.strip()
+	paths = [str(CRYSTAL_LIB_DIR)] + ([default] if default else [])
+	return {**os.environ, "CRYSTAL_LIBRARY_PATH": os.pathsep.join(paths)}
+
+
+def test_crystal() -> None:
+	build_crystal_archive()
+	env = crystal_env()
+	for test in ["tests/crystal/test_crystal_ffi.cr", "tests/crystal/test_crystal_safety.cr"]:
+		run_cmd("crystal", "run", test, env=env)
 
 
 def run_sample() -> None:
@@ -260,6 +310,7 @@ def test() -> None:
 	test_c_ffi()
 	test_py_ffi()
 	test_ocaml()
+	test_crystal()
 
 
 def main() -> None:
@@ -272,6 +323,8 @@ def main() -> None:
 	subparsers.add_parser("test-c-ffi")
 	subparsers.add_parser("test-py-ffi")
 	subparsers.add_parser("test-ocaml")
+	subparsers.add_parser("test-crystal")
+	subparsers.add_parser("build-crystal")
 	subparsers.add_parser("test")
 	subparsers.add_parser("run")
 	subparsers.add_parser("cross-all")
@@ -297,6 +350,10 @@ def main() -> None:
 		test_py_ffi()
 	elif args.command == "test-ocaml":
 		test_ocaml()
+	elif args.command == "test-crystal":
+		test_crystal()
+	elif args.command == "build-crystal":
+		build_crystal_archive()
 	elif args.command == "test":
 		test()
 	elif args.command == "run":

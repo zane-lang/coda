@@ -52,6 +52,7 @@ devbox run -- just generate
 
 ```bash
 devbox run -- just test-ocaml
+devbox run -- just test-crystal
 ```
 
 ```ocaml
@@ -66,6 +67,20 @@ match parse_file "config.coda" with
 | Error e -> prerr_endline e.message
 ```
 
+**Crystal** — the source tree includes Crystal bindings in `bindings/crystal/`, linked against a static build of the same C FFI:
+
+```bash
+devbox run -- just build-crystal    # build/crystal/libcoda_ffi.a
+```
+
+```crystal
+require "path/to/coda/bindings/crystal/coda"
+
+Coda::Doc.parse_file("config.coda") do |doc|
+  puts doc.root["key"]
+end
+```
+
 ---
 
 ## API documentation
@@ -75,6 +90,7 @@ match parse_file "config.coda" with
 | C++ header (`include/coda.hpp`) | [`docs/API-CPP.md`](docs/API-CPP.md) |
 | Python bindings (`bindings/python/coda.py`) | [`docs/API-PYTHON.md`](docs/API-PYTHON.md) |
 | OCaml bindings (`bindings/ocaml/`) | [`docs/API-OCAML.md`](docs/API-OCAML.md) |
+| Crystal bindings (`bindings/crystal/`) | [`docs/API-CRYSTAL.md`](docs/API-CRYSTAL.md) |
 | C FFI (`ffi/coda_ffi.h`) | [`docs/API-C-FFI.md`](docs/API-C-FFI.md) |
 
 ---
@@ -82,11 +98,11 @@ match parse_file "config.coda" with
 ## Building & testing
 
 This repo is built and tested inside a [Devbox](https://www.jetify.com/devbox)
-environment (which pins zig, just, python3, dune, and ocaml). `just` recipes are
+environment (which pins zig, just, python3, dune, ocaml, and crystal). `just` recipes are
 thin wrappers around `scripts/tasks.py`.
 
 ```bash
-devbox run -- just test         # run all tests (C++, C FFI, Python, OCaml)
+devbox run -- just test         # run all tests (C++, C FFI, Python, OCaml, Crystal)
 devbox run -- just generate     # regenerate include/coda.hpp (requires quom)
 devbox run -- just build        # build host shared library (build/libcoda_ffi.so)
 devbox run -- just cross-all    # cross-compile for all supported targets
@@ -99,7 +115,7 @@ devbox run -- just test-ocaml
 > `include/coda.hpp` is a generated single-header amalgamation (git-ignored);
 > the build recreates it on demand. The source of truth is `src/`.
 >
-> All four language test suites are driven by a single catalog,
+> All five language test suites are driven by a single catalog,
 > `tests/catalog/catalog.coda`. To add a test, edit that file. See
 > [`contributing/`](contributing/README.md).
 

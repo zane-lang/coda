@@ -5,7 +5,8 @@
     "just@latest",
     "python3@latest",
     "dune@latest",
-    "ocaml@latest"
+    "ocaml@latest",
+    "crystal@latest"
   ],
   "shell": {
     "init_hook": [
