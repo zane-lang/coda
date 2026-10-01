@@ -329,7 +329,8 @@ module Coda
       doc = check
       # coda_row_get returns "" for a missing column, so look for it first.
       LibCoda.row_col_count(doc.to_unsafe, @id).times do |i|
-        if Coda.borrowed(LibCoda.row_col_name_at(doc.to_unsafe, @id, i)) == col
+        name = LibCoda.row_col_name_at(doc.to_unsafe, @id, i)
+        if name.len == col.bytesize && (name.len == 0 || Slice.new(name.ptr, name.len) == col.to_slice)
           return Coda.borrowed(LibCoda.row_col_value_at(doc.to_unsafe, @id, i))
         end
       end
@@ -879,7 +880,7 @@ module Coda
     private def self.use(doc : Doc, & : Doc -> T) : T forall T
       yield doc
     ensure
-      doc.try &.free
+      doc.free
     end
 
     private def self.parse_error(err : LibCoda::Error*) : ParseError
