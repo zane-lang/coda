@@ -72,9 +72,15 @@ module Coda
   # The keys and weights as the C arrays `*_order_weighted` takes. The key
   # strings are returned too: the caller holds them until the call returns,
   # so the C strings stay alive whatever *pairs* is.
+  #
+  # *pairs* is read once, so an `Iterator` works too.
   def self.weights(pairs : Enumerable({::String, Number})) : {::Array(::String), ::Array(UInt8*), ::Array(Float32)}
-    strings = pairs.map { |(key, _)| key }
-    values = pairs.map { |(_, weight)| weight.to_f32 }
+    strings = [] of ::String
+    values = [] of Float32
+    pairs.each do |(key, weight)|
+      strings << key
+      values << weight.to_f32
+    end
     {strings, strings.map(&.to_unsafe), values}
   end
 
@@ -100,7 +106,7 @@ module Coda
   # :nodoc:
   def self.index(i : Int, size : Int, what : ::String) : Int32
     j = i < 0 ? i + size : i
-    raise IndexError.new("#{what} index out of range") unless 0 <= j < size
+    raise IndexError.new("#{what} index out of range") unless 0 <= j && j < size
     j.to_i32
   end
 
@@ -487,8 +493,8 @@ module Coda
     # Orders the fields by descending weight, ties alphabetical.
     def order_weighted(weights : Enumerable({::String, Number})) : Nil
       doc = check
-      return order if weights.empty?
       strings, keys, values = Coda.weights(weights)
+      return order if strings.empty?
       LibCoda.node_order_weighted(doc.to_unsafe, @id, keys.to_unsafe, values.to_unsafe, strings.size)
     end
   end
@@ -539,9 +545,12 @@ module Coda
     end
 
     def []?(index : Int) : Node?
-      self[index]
-    rescue IndexError
-      nil
+      doc = check
+      n = size
+      i = index < 0 ? index + n : index
+      return nil unless 0 <= i && i < n
+      child = LibCoda.array_get(doc.to_unsafe, @id, i)
+      child == 0 ? nil : Coda.wrap(doc, child)
     end
 
     def []=(index : Int, value : Value) : Value
@@ -593,8 +602,9 @@ module Coda
     @pending : ::Array(::String)? = nil
 
     def initialize(columns : Enumerable(::String))
-      raise ArgumentError.new("Table requires at least one column") if columns.empty?
-      @pending = columns.to_a
+      pending = columns.to_a
+      raise ArgumentError.new("Table requires at least one column") if pending.empty?
+      @pending = pending
     end
 
     protected def create(doc : Doc) : Nil
@@ -694,8 +704,9 @@ module Coda
     @pending : ::Array(::String)? = nil
 
     def initialize(columns : Enumerable(::String))
-      raise ArgumentError.new("KeyedTable requires at least one column") if columns.empty?
-      @pending = columns.to_a
+      pending = columns.to_a
+      raise ArgumentError.new("KeyedTable requires at least one column") if pending.empty?
+      @pending = pending
     end
 
     protected def create(doc : Doc) : Nil
@@ -798,8 +809,8 @@ module Coda
     # Orders the rows by descending weight of their keys, ties alphabetical.
     def order_weighted(weights : Enumerable({::String, Number})) : Nil
       doc = check
-      return order if weights.empty?
       strings, keys, values = Coda.weights(weights)
+      return order if strings.empty?
       LibCoda.node_order_weighted(doc.to_unsafe, @id, keys.to_unsafe, values.to_unsafe, strings.size)
     end
   end
@@ -933,8 +944,8 @@ module Coda
 
     def order_weighted(weights : Enumerable({::String, Number})) : Nil
       check
-      return order if weights.empty?
       strings, keys, values = Coda.weights(weights)
+      return order if strings.empty?
       LibCoda.doc_order_weighted(@ptr, keys.to_unsafe, values.to_unsafe, strings.size)
     end
   end

@@ -63,6 +63,19 @@ Coda::Doc.new do |doc|
   expect_error("attached row removed a required field") { table["z"].delete("value") }
 end
 
+Coda::Doc.parse("b 1\na 2\nc 3\n") do |doc|
+  doc.order_weighted({"c" => 3, "b" => 2})
+  raise "weights from a Hash" unless doc.root.keys == ["c", "b", "a"]
+  doc.order_weighted([{"a", 9.0}].each)
+  raise "weights from an Iterator" unless doc.root.keys.first == "a"
+end
+
+Coda::Doc.parse("list [\n x\n y\n]\n") do |doc|
+  list = doc.root["list"].as_array
+  raise "array []?" unless list[-1]?.to_s == "y" && list[2]?.nil? && list[-3]?.nil?
+  raise "table from an Iterator" unless Coda::Table.new(["a", "b"].each).is_a?(Coda::Table)
+end
+
 doc = Coda::Doc.parse("name x\n")
 node = doc.root["name"]
 doc.free
