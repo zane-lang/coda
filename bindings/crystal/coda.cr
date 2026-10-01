@@ -69,10 +69,13 @@ module Coda
   end
 
   # :nodoc:
-  def self.weights(pairs : Enumerable({::String, Number})) : {::Array(UInt8*), ::Array(Float32)}
-    keys = pairs.map { |(key, _)| key.to_unsafe }
+  # The keys and weights as the C arrays `*_order_weighted` takes. The key
+  # strings are returned too: the caller holds them until the call returns,
+  # so the C strings stay alive whatever *pairs* is.
+  def self.weights(pairs : Enumerable({::String, Number})) : {::Array(::String), ::Array(UInt8*), ::Array(Float32)}
+    strings = pairs.map { |(key, _)| key }
     values = pairs.map { |(_, weight)| weight.to_f32 }
-    {keys, values}
+    {strings, strings.map(&.to_unsafe), values}
   end
 
   # :nodoc:
@@ -182,7 +185,7 @@ module Coda
       err = LibCoda::Error.new
       text = LibCoda.node_serialize(doc.to_unsafe, @id, indent, indent.bytesize, pointerof(err))
       if text.ptr.null?
-        message = Coda.borrowed_error(err)
+        message = Coda.borrowed_error(pointerof(err))
         raise Error.new("Serialization failed: #{message}")
       end
       Coda.owned(text)
@@ -219,10 +222,12 @@ module Coda
   end
 
   # :nodoc:
-  def self.borrowed_error(err : LibCoda::Error) : ::String
-    message = borrowed(LibCoda::Str.new(ptr: err.message.ptr, len: err.message.len))
-    LibCoda.error_clear(pointerof(err))
-    message
+  # Copies out the error's message and clears the error.
+  def self.borrowed_error(err : LibCoda::Error*) : ::String
+    message = err.value.message
+    text = message.ptr.null? ? "" : ::String.new(message.ptr, message.len)
+    LibCoda.error_clear(err)
+    text
   end
 
   # A leaf string value.
@@ -483,8 +488,8 @@ module Coda
     def order_weighted(weights : Enumerable({::String, Number})) : Nil
       doc = check
       return order if weights.empty?
-      keys, values = Coda.weights(weights)
-      LibCoda.node_order_weighted(doc.to_unsafe, @id, keys.to_unsafe, values.to_unsafe, keys.size)
+      strings, keys, values = Coda.weights(weights)
+      LibCoda.node_order_weighted(doc.to_unsafe, @id, keys.to_unsafe, values.to_unsafe, strings.size)
     end
   end
 
@@ -794,8 +799,8 @@ module Coda
     def order_weighted(weights : Enumerable({::String, Number})) : Nil
       doc = check
       return order if weights.empty?
-      keys, values = Coda.weights(weights)
-      LibCoda.node_order_weighted(doc.to_unsafe, @id, keys.to_unsafe, values.to_unsafe, keys.size)
+      strings, keys, values = Coda.weights(weights)
+      LibCoda.node_order_weighted(doc.to_unsafe, @id, keys.to_unsafe, values.to_unsafe, strings.size)
     end
   end
 
@@ -835,7 +840,7 @@ module Coda
     def self.parse(text : ::String, filename : ::String? = nil) : Doc
       err = LibCoda::Error.new
       ptr = LibCoda.doc_parse(text, text.bytesize, filename.try(&.to_unsafe) || Pointer(UInt8).null, pointerof(err))
-      raise parse_error(err) if ptr.null?
+      raise parse_error(pointerof(err)) if ptr.null?
       new(ptr)
     end
 
@@ -851,7 +856,7 @@ module Coda
     def self.parse_file(path : ::String | Path) : Doc
       err = LibCoda::Error.new
       ptr = LibCoda.doc_parse_file(path.to_s, pointerof(err))
-      raise parse_error(err) if ptr.null?
+      raise parse_error(pointerof(err)) if ptr.null?
       new(ptr)
     end
 
@@ -865,9 +870,9 @@ module Coda
       doc.try &.free
     end
 
-    private def self.parse_error(err : LibCoda::Error) : ParseError
-      code, line, col, offset = err.code, err.line, err.col, err.offset.to_u64
-      ParseError.new(Coda.borrowed_error(err), code, line, col, offset)
+    private def self.parse_error(err : LibCoda::Error*) : ParseError
+      e = err.value
+      ParseError.new(Coda.borrowed_error(err), e.code, e.line, e.col, e.offset.to_u64)
     end
 
     # Releases the document. Safe to call more than once.
@@ -906,7 +911,7 @@ module Coda
       err = LibCoda::Error.new
       text = LibCoda.doc_serialize(@ptr, indent, indent.bytesize, pointerof(err))
       if text.ptr.null?
-        raise Error.new("Serialization failed: #{Coda.borrowed_error(err)}")
+        raise Error.new("Serialization failed: #{Coda.borrowed_error(pointerof(err))}")
       end
       Coda.owned(text)
     end
@@ -929,8 +934,8 @@ module Coda
     def order_weighted(weights : Enumerable({::String, Number})) : Nil
       check
       return order if weights.empty?
-      keys, values = Coda.weights(weights)
-      LibCoda.doc_order_weighted(@ptr, keys.to_unsafe, values.to_unsafe, keys.size)
+      strings, keys, values = Coda.weights(weights)
+      LibCoda.doc_order_weighted(@ptr, keys.to_unsafe, values.to_unsafe, strings.size)
     end
   end
 
