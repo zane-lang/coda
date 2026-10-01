@@ -13,15 +13,17 @@ src/                 C++ source of truth (header-only library)
 include/             GENERATED single-header amalgamation (git-ignored)
 ffi/                 C ABI (coda_ffi.h / coda_ffi.cpp)
 bindings/            shippable language bindings ONLY (no tests here)
-  python/  ocaml/
+  python/  ocaml/  crystal/
 tests/               tests ONLY
   catalog/           catalog.coda  <-- single source of truth for test cases
   harness/cpp/       C++ harness (framework / adapter / runner / macros)
   harness/python/    Python harness
+  harness/crystal/   Crystal harness
   cpp/               test_cpp.cpp (C++ API)
   c/                 test_c_ffi.cpp (C ABI — C++-written, exercises the C FFI)
   python/            test_python_ffi.py
   ocaml/             test_ocaml.ml (catalog-driven)
+  crystal/           test_crystal_ffi.cr (catalog-driven), test_crystal_safety.cr
 scripts/             tasks.py (build/test logic) + zig wrappers
 examples/  docs/  highlighted/
 ```
@@ -29,7 +31,7 @@ examples/  docs/  highlighted/
 ## Build & test
 
 Everything runs inside a Devbox environment that pins the toolchain
-(zig, just, python3, dune, ocaml).
+(zig, just, python3, dune, ocaml, crystal).
 
 ```bash
 devbox run -- just test        # full suite (this is what CI runs)
@@ -37,6 +39,7 @@ devbox run -- just test-cpp
 devbox run -- just test-c-ffi
 devbox run -- just test-py-ffi
 devbox run -- just test-ocaml
+devbox run -- just test-crystal
 devbox run -- just generate    # regenerate include/coda.hpp (quom)
 devbox run -- just build       # host shared library
 devbox run -- just cross-all   # cross-compile every release target
@@ -50,7 +53,7 @@ wrappers around `tasks.py`.
 
 ## The single source of truth for tests
 
-All four language test runners (C++, C FFI, Python, OCaml) consume the SAME
+All five language test runners (C++, C FFI, Python, OCaml, Crystal) consume the SAME
 catalog file: `tests/catalog/catalog.coda`. To add a test case, **edit
 catalog.coda only** — do not add language-specific fixtures.
 
@@ -64,6 +67,10 @@ The only skipped ops are the `*_throws` family (e.g. `as_array_on_scalar_throws`
 those assert that the C++/Python API *raises* on a type error, but the OCaml
 binding uses `option` / status-code returns instead of exceptions, so the
 assertion is semantically inapplicable rather than missing.
+
+The Crystal runner implements every op, the `*_throws` family included: the
+Crystal binding raises on a wrong kind, a bad index or a missing key, as the
+C++ and Python APIs do.
 
 A catalog entry looks like:
 
@@ -92,6 +99,7 @@ recreate it on demand. Never hand-edit it; edit `src/`.
 ## Style
 
 - C/C++/OCaml: tabs for indentation (matches the existing tree).
+- Crystal: `crystal tool format`, which fixes two-space indentation.
 - See `.editorconfig`.
 - Prefer the AST `Variant::match` / `visitContent` for type dispatch — do NOT
   use try/catch on `as*()` accessors as control flow.

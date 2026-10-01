@@ -14,3 +14,8 @@ indent_size = 2
 [*.py]
 # The existing Python sources use tabs; keep them to avoid churn.
 indent_style = tab
+
+[*.cr]
+# `crystal tool format` fixes two-space indentation.
+indent_style = space
+indent_size = 2

@@ -1,5 +1,19 @@
 # Changelog
 
+## Unreleased
+
+### Added
+- **Crystal binding** in `bindings/crystal/`: `lib_coda.cr` declares the C FFI
+  one-to-one, and `coda.cr` gives the same object API as Python (`Doc`,
+  `Block`, `Array`, `Table`, `KeyedTable`, `Row`, `StringNode`), with the
+  stale-handle and cross-document checks of Python's `safety.py` built in. It
+  links a static archive built by `just build-crystal`. Documented in
+  `docs/API-CRYSTAL.md`.
+- **Crystal tests**: a catalog runner (`tests/crystal/test_crystal_ffi.cr`, via
+  `tests/harness/crystal/`) that runs every catalog op, and the safety checks
+  of the Python suite (`tests/crystal/test_crystal_safety.cr`). `just
+  test-crystal` runs both, and CI runs it.
+
 ## 3.0.0 — repository restructure & FFI fixes
 
 ### Fixed

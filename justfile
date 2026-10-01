@@ -1,6 +1,6 @@
 # Build/test entry points for Coda.
 #
-# Layering: devbox (toolchain: zig, just, python3, dune, ocaml)
+# Layering: devbox (toolchain: zig, just, python3, dune, ocaml, crystal)
 #             -> just (this file, task names)
 #               -> scripts/tasks.py (the actual build/test logic)
 #
@@ -33,6 +33,13 @@ test-py-ffi:
 
 test-ocaml:
 	python3 scripts/tasks.py test-ocaml
+
+test-crystal:
+	python3 scripts/tasks.py test-crystal
+
+# The static archive the Crystal binding links: build/crystal/libcoda_ffi.a.
+build-crystal:
+	python3 scripts/tasks.py build-crystal
 
 test: cross-all
 	python3 scripts/tasks.py test
