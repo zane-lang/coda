@@ -22,7 +22,8 @@ that run. If the workflow itself needs a fix, merge the fix first, then start a
 new run from **main** with the same version and **retry_existing_tag** enabled.
 This builds and publishes the existing tag's exact commit using the updated
 workflow, without changing the tag or creating another version commit. The tag
-must already exist and match its own `pyproject.toml`.
+must already exist, and its version must match `project.version` in
+`pyproject.toml` at the commit the tag points to.
 
 If PyPI publishing succeeded but GitHub release creation failed, create the
 GitHub release from the existing tag and attach the saved run artifacts;
