@@ -18,10 +18,15 @@ to `main` and create release tags. The workflow does not bypass branch protectio
 if a rule rejects either update, the atomic push leaves both refs unchanged.
 
 If building or publishing fails after the push, use **Re-run failed jobs** on
-that run. Starting a new run with the same version or re-running all jobs will
-reject the existing tag. If PyPI publishing succeeded but GitHub release creation
-failed, create the GitHub release from the existing tag and attach the saved run
-artifacts; publishing that version to PyPI again is not supported.
+that run. If the workflow itself needs a fix, merge the fix first, then start a
+new run from **main** with the same version and **retry_existing_tag** enabled.
+This builds and publishes the existing tag's exact commit using the updated
+workflow, without changing the tag or creating another version commit. The tag
+must already exist and match its own `pyproject.toml`.
+
+If PyPI publishing succeeded but GitHub release creation failed, create the
+GitHub release from the existing tag and attach the saved run artifacts;
+publishing that version to PyPI again is not supported.
 
 Manual tag pushes still work, but the tag version must match `pyproject.toml`.
 Releases are serialized so two runs cannot publish concurrently.

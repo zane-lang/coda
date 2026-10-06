@@ -7,6 +7,11 @@ on:
         description: "Release version (e.g. 3.0.1 or v3.0.1)"
         required: true
         type: string
+      retry_existing_tag:
+        description: "Retry publishing an existing tag without changing it"
+        required: false
+        default: false
+        type: boolean
   push:
     tags:
       - "v*"
@@ -53,20 +58,27 @@ jobs:
           RELEASE_VERSION: ${{ inputs.version }}
           RELEASE_TAG: ${{ github.ref_name }}
           RELEASE_EVENT: ${{ github.event_name }}
+          RELEASE_RETRY: ${{ inputs.retry_existing_tag }}
         run: |
           if [ "$RELEASE_EVENT" = "workflow_dispatch" ]; then
-            tag=$(python3 scripts/release.py "$RELEASE_VERSION")
-            if git show-ref --verify --quiet "refs/tags/$tag"; then
-              echo "::error::Tag $tag already exists. Re-run failed jobs to retry a release."
-              exit 1
+            if [ "$RELEASE_RETRY" = "true" ]; then
+              tag="v${RELEASE_VERSION#v}"
+              git checkout --detach "refs/tags/$tag"
+              tag=$(python3 scripts/release.py --check "$tag")
+            else
+              tag=$(python3 scripts/release.py "$RELEASE_VERSION")
+              if git show-ref --verify --quiet "refs/tags/$tag"; then
+                echo "::error::Tag $tag already exists. Enable retry_existing_tag to retry publishing."
+                exit 1
+              fi
+              git config user.name "github-actions[bot]"
+              git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+              git add pyproject.toml
+              if ! git diff --cached --quiet; then
+                git commit -m "Release $tag"
+              fi
+              git tag -a "$tag" -m "Release $tag"
             fi
-            git config user.name "github-actions[bot]"
-            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-            git add pyproject.toml
-            if ! git diff --cached --quiet; then
-              git commit -m "Release $tag"
-            fi
-            git tag -a "$tag" -m "Release $tag"
           else
             tag=$(python3 scripts/release.py --check "$RELEASE_TAG")
           fi
@@ -85,7 +97,7 @@ jobs:
           done
 
       - name: Push version commit and tag together
-        if: github.event_name == 'workflow_dispatch'
+        if: github.event_name == 'workflow_dispatch' && !inputs.retry_existing_tag
         env:
           RELEASE_TAG: ${{ steps.release.outputs.tag }}
         # The built-in token does not trigger tag-push workflows. The dependent
@@ -113,6 +125,9 @@ jobs:
       - name: Cross-compile all FFI libraries
         run: devbox run -- just cross-all
 
+      - name: Install wheel build tools in Devbox
+        run: devbox run -- python3 -m pip install build wheel
+
       - name: Build platform wheels
         run: |
           declare -A WHEEL_PLAT=(
@@ -135,14 +150,16 @@ jobs:
           for target in "${!WHEEL_PLAT[@]}"; do
             plat="${WHEEL_PLAT[$target]}"
             lib="${LIB_FILE[$target]}"
-            cp "dist/${target}/${lib}" bindings/python/
             tmpdir=$(mktemp -d)
-            devbox run -- python3 -m build --wheel --outdir "$tmpdir/"
-            pushd "$tmpdir"
-            devbox run -- python3 -m wheel tags --platform-tag "${plat}" --remove *.whl
-            mv *.whl "$GITHUB_WORKSPACE/wheelhouse/"
-            popd
-            rm -f "bindings/python/${lib}"
+            # Separate source trees prevent setuptools from reusing another
+            # platform's cached native library in build/lib/coda.
+            mkdir -p "$tmpdir/source/bindings"
+            cp pyproject.toml README.md "$tmpdir/source/"
+            cp -R bindings/python "$tmpdir/source/bindings/"
+            cp "dist/${target}/${lib}" "$tmpdir/source/bindings/python/"
+            devbox run -- python3 -m build "$tmpdir/source" --wheel --outdir "$tmpdir/wheels/"
+            devbox run -- python3 -m wheel tags --platform-tag "${plat}" --remove "$tmpdir/wheels"/*.whl
+            mv "$tmpdir/wheels"/*.whl "$GITHUB_WORKSPACE/wheelhouse/"
           done
 
       - name: Upload wheel artifacts
