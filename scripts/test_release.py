@@ -1,6 +1,8 @@
 """Tests for release input validation and metadata updates."""
 
 import tempfile
+import subprocess
+import sys
 import unittest
 from pathlib import Path
 
@@ -44,6 +46,36 @@ class ReleaseTests(unittest.TestCase):
 		with self.assertRaises(ValueError):
 			prepare("v3.0.1", self.path, check=True)
 		self.assertEqual(self.path.read_text(), self.original)
+
+	def test_invalid_metadata_fails_without_modification(self):
+		cases = (
+			'[project\nversion = "3.0.0"\n',
+			'[tool.example]\nversion = "3.0.0"\n',
+			'[project]\nname = "coda-format"\n',
+			'project = "not a table"\n',
+			'[project]\nversion = 3\n',
+			'[project]\nversion = ["3.0.0"]\n',
+			'[project]\nversion = "3.0.0rc1"\n',
+			'[project]\nversion = "v3.0.0"\n',
+			'[project]\nversion = "3.0"\n',
+			'[project]\nversion = "3.00.0"\n',
+		)
+		for text in cases:
+			for check in (False, True):
+				with self.subTest(text=text, check=check):
+					self.path.write_text(text)
+					with self.assertRaisesRegex(ValueError, "pyproject.toml"):
+						prepare("3.0.1", self.path, check=check)
+					self.assertEqual(self.path.read_text(), text)
+				command = [sys.executable, str(Path(__file__).with_name("release.py").resolve()), "3.0.1"]
+				if check:
+					command.append("--check")
+				result = subprocess.run(command, cwd=self.path.parent, capture_output=True, text=True)
+				self.assertEqual(result.returncode, 1)
+				self.assertIn("pyproject.toml", result.stderr)
+				self.assertNotIn("Traceback", result.stderr)
+				self.assertEqual(result.stdout, "")
+				self.assertEqual(self.path.read_text(), text)
 
 
 if __name__ == "__main__":

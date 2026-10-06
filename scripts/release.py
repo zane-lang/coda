@@ -7,13 +7,22 @@ import tomllib
 from pathlib import Path
 
 
+STABLE_VERSION = r"(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)"
+
+
 def prepare(version: str, path: Path, *, check: bool = False) -> str:
-	match = re.fullmatch(r"v?((?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*))", version)
+	"""Return the canonical tag, checking metadata before any version update."""
+	match = re.fullmatch(rf"v?({STABLE_VERSION})", version)
 	if match is None:
 		raise ValueError("Use a stable version such as 3.0.1 or v3.0.1.")
 	version = match[1]
 	text = path.read_text()
-	current = tomllib.loads(text)["project"]["version"]
+	try:
+		current = tomllib.loads(text)["project"]["version"]
+	except (tomllib.TOMLDecodeError, KeyError, TypeError) as error:
+		raise ValueError(f"Cannot read project.version from pyproject.toml: {error}") from error
+	if not isinstance(current, str) or re.fullmatch(STABLE_VERSION, current) is None:
+		raise ValueError("project.version in pyproject.toml must be a stable version string such as 3.0.0.")
 	if check:
 		if current != version:
 			raise ValueError(f"Tag version {version} does not match pyproject.toml ({current}).")
