@@ -30,6 +30,8 @@ examples/  docs/  highlighted/
 
 ## Build & test
 
+For publishing a version, see [Releasing Coda](../docs/RELEASING.md).
+
 Everything runs inside a Devbox environment that pins the toolchain
 (zig, just, python3, dune, ocaml, crystal).
 

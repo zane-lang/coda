@@ -18,6 +18,9 @@ jobs:
     steps:
       - uses: actions/checkout@v6
 
+      - name: Test release tooling
+        run: python3 scripts/test_release.py
+
       - name: Install devbox + packages
         uses: jetify-com/devbox-install-action@v0.15.0
 

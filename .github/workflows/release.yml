@@ -1,21 +1,106 @@
 name: Release
 
 on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Release version (e.g. 3.0.1 or v3.0.1)"
+        required: true
+        type: string
   push:
     tags:
       - "v*"
 
+# Serialize releases, including manual dispatches and manually pushed tags.
+concurrency:
+  group: coda-release
+  cancel-in-progress: false
+
 permissions:
-  contents: write
-  id-token: write
+  contents: read
 
 jobs:
+  prepare:
+    name: Prepare release
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    outputs:
+      tag: ${{ steps.release.outputs.tag }}
+      sha: ${{ steps.release.outputs.sha }}
+    steps:
+      - name: Require main for manual releases
+        if: github.event_name == 'workflow_dispatch'
+        env:
+          RELEASE_REF: ${{ github.ref }}
+        run: |
+          if [ "$RELEASE_REF" != "refs/heads/main" ]; then
+            echo "::error::Run manual releases from main."
+            exit 1
+          fi
+
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.11"
+
+      - name: Validate version and prepare metadata
+        id: release
+        env:
+          RELEASE_VERSION: ${{ inputs.version }}
+          RELEASE_TAG: ${{ github.ref_name }}
+          RELEASE_EVENT: ${{ github.event_name }}
+        run: |
+          if [ "$RELEASE_EVENT" = "workflow_dispatch" ]; then
+            tag=$(python3 scripts/release.py "$RELEASE_VERSION")
+            if git show-ref --verify --quiet "refs/tags/$tag"; then
+              echo "::error::Tag $tag already exists. Re-run failed jobs to retry a release."
+              exit 1
+            fi
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git add pyproject.toml
+            if ! git diff --cached --quiet; then
+              git commit -m "Release $tag"
+            fi
+            git tag -a "$tag" -m "Release $tag"
+          else
+            tag=$(python3 scripts/release.py --check "$RELEASE_TAG")
+          fi
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+
+      - name: Install devbox + packages
+        if: github.event_name == 'workflow_dispatch'
+        uses: jetify-com/devbox-install-action@v0.15.0
+
+      - name: Test before pushing the release
+        if: github.event_name == 'workflow_dispatch'
+        run: |
+          for suite in test-cpp test-c-ffi test-py-ffi test-ocaml test-crystal; do
+            devbox run -- just "$suite"
+          done
+
+      - name: Push version commit and tag together
+        if: github.event_name == 'workflow_dispatch'
+        env:
+          RELEASE_TAG: ${{ steps.release.outputs.tag }}
+        # The built-in token does not trigger tag-push workflows. The dependent
+        # jobs below publish this exact commit in the same workflow run.
+        run: git push --atomic origin HEAD:refs/heads/main "refs/tags/$RELEASE_TAG"
+
   # ── Build all platform wheels in one go ───────────────────────────────────────
   build-wheels:
     name: Build wheels
+    needs: prepare
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
+        with:
+          ref: ${{ needs.prepare.outputs.sha }}
 
       - name: Install devbox + packages
         uses: jetify-com/devbox-install-action@v0.15.0
@@ -79,11 +164,16 @@ jobs:
   # ── Publish to PyPI and create a GitHub Release ───────────────────────────────
   publish:
     name: Publish
-    needs: build-wheels
+    needs: [prepare, build-wheels]
     runs-on: ubuntu-latest
     environment: release
+    permissions:
+      contents: write
+      id-token: write
     steps:
       - uses: actions/checkout@v6
+        with:
+          ref: ${{ needs.prepare.outputs.sha }}
 
       - name: Download all wheels
         uses: actions/download-artifact@v4
@@ -103,6 +193,7 @@ jobs:
       - name: Create GitHub Release
         env:
           GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ needs.prepare.outputs.tag }}
         run: |
           mkdir -p release_assets
           cp dist/*.whl release_assets/
@@ -116,6 +207,7 @@ jobs:
               cp "$f" "release_assets/${base}-${target}.${ext}"
             done
           done
-          gh release create ${{ github.ref_name }} \
+          gh release create "$RELEASE_TAG" \
+            --verify-tag \
             --generate-notes \
             release_assets/*
