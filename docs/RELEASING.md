@@ -6,8 +6,11 @@ version such as `3.0.1` or `v3.0.1`. The workflow:
 1. Validates the version and rejects existing tags or older versions.
 2. Updates `pyproject.toml` and runs all five binding test suites.
 3. Pushes the version commit and annotated `v` tag atomically to `main`.
-4. Builds the platform wheels and native libraries from that exact commit.
-5. Publishes to PyPI and creates a GitHub release with generated notes and assets.
+4. Builds the platform wheels and native libraries from that exact commit:
+   Linux (glibc and musl), Windows and macOS, each for x86-64 and AArch64.
+5. Installs each macOS wheel on a macOS runner of its architecture and parses
+   a document with it, since Linux, where they are built, cannot load them.
+6. Publishes to PyPI and creates a GitHub release with generated notes and assets.
 
 You do not need to edit the version, commit, tag, or push locally. If the version
 was already updated on `main`, the workflow creates only the tag.
