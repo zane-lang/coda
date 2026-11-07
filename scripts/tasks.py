@@ -33,7 +33,13 @@ TARGETS = [
 	"aarch64-linux-musl",
 	"x86_64-windows-gnu",
 	"aarch64-windows-gnu",
+	"x86_64-macos",
+	"aarch64-macos",
 ]
+
+# The oldest macOS a macOS library runs on, which its wheel's platform tag
+# names (macosx_11_0_*): Zig's own default is newer.
+MACOS_MIN = "11.0"
 
 ARTIFACTS = [
 	BUILD_DIR,
@@ -209,6 +215,11 @@ def run_sample() -> None:
 	run_cmd("./build/run")
 
 
+def zig_target(target: str) -> str:
+	"""The target as Zig takes it: a macOS one with its minimum version."""
+	return f"{target}.{MACOS_MIN}" if target.endswith("-macos") else target
+
+
 def cross(target: str) -> None:
 	ensure_generated()
 	target_dir = DIST_DIR / target
@@ -219,7 +230,7 @@ def cross(target: str) -> None:
 		*FLAGS_CROSS,
 		*INC,
 		"-target",
-		target,
+		zig_target(target),
 		"-fPIC",
 		"-c",
 		"-o",
@@ -249,6 +260,29 @@ def cross(target: str) -> None:
 		)
 		print(f"→ dist/{target}/libcoda_ffi.lib")
 		print(f"→ dist/{target}/libcoda_ffi.dll")
+	elif target.endswith("-macos"):
+		# libSystem holds the C library and threads, and Zig links libc++ in
+		# statically, so the library needs nothing else of the system. Its
+		# install name is the one a program that links it finds it by.
+		run_cmd(
+			str(ZIG_AR),
+			"rcs",
+			f"dist/{target}/libcoda_ffi.a",
+			f"dist/{target}/coda_ffi.o",
+		)
+		run_cmd(
+			str(ZIG_CXX),
+			"-target",
+			zig_target(target),
+			"-shared",
+			"-fPIC",
+			"-Wl,-install_name,@rpath/libcoda_ffi.dylib",
+			"-o",
+			f"dist/{target}/libcoda_ffi.dylib",
+			f"dist/{target}/coda_ffi.o",
+		)
+		print(f"→ dist/{target}/libcoda_ffi.a")
+		print(f"→ dist/{target}/libcoda_ffi.dylib")
 	else:
 		run_cmd(
 			str(ZIG_AR),

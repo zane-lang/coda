@@ -3,6 +3,12 @@
 ## Unreleased
 
 ### Added
+- **macOS wheels and libraries.** `just cross-all` builds `libcoda_ffi.dylib`
+  and `libcoda_ffi.a` for `aarch64-macos` and `x86_64-macos`, for macOS 11
+  and later, and a release publishes them as `macosx_11_0_arm64` and
+  `macosx_11_0_x86_64` wheels, so `pip install coda-format` works on a Mac.
+  Before publishing, the release installs each on a macOS runner of its
+  architecture and parses a document with it (`scripts/smoke_wheel.py`).
 - **Crystal binding** in `bindings/crystal/`: `lib_coda.cr` declares the C FFI
   one-to-one, and `coda.cr` gives the same object API as Python (`Doc`,
   `Block`, `Array`, `Table`, `KeyedTable`, `Row`, `StringNode`), with the

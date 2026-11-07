@@ -137,6 +137,8 @@ jobs:
             [aarch64-linux-musl]=musllinux_1_2_aarch64
             [x86_64-windows-gnu]=win_amd64
             [aarch64-windows-gnu]=win_arm64
+            [x86_64-macos]=macosx_11_0_x86_64
+            [aarch64-macos]=macosx_11_0_arm64
           )
           declare -A LIB_FILE=(
             [x86_64-linux-gnu]=libcoda_ffi.so
@@ -145,6 +147,8 @@ jobs:
             [aarch64-linux-musl]=libcoda_ffi.so
             [x86_64-windows-gnu]=libcoda_ffi.dll
             [aarch64-windows-gnu]=libcoda_ffi.dll
+            [x86_64-macos]=libcoda_ffi.dylib
+            [aarch64-macos]=libcoda_ffi.dylib
           )
           mkdir -p wheelhouse
           for target in "${!WHEEL_PLAT[@]}"; do
@@ -174,14 +178,56 @@ jobs:
           name: libs
           path: |
             dist/**/*.so
+            dist/**/*.dylib
             dist/**/*.a
             dist/**/*.dll
             dist/**/*.lib
 
+  # ── Check the macOS wheels on macOS before anything is published ─────────────
+  # Their libraries are cross-built on Linux, which cannot load them, so each
+  # wheel is installed and used on the system it is for.
+  test-macos-wheels:
+    name: Test macOS wheel (${{ matrix.arch }})
+    needs: [prepare, build-wheels]
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: arm64
+            runner: macos-latest
+          - arch: x86_64
+            runner: macos-15-intel
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ needs.prepare.outputs.sha }}
+          sparse-checkout: scripts/smoke_wheel.py
+          sparse-checkout-cone-mode: false
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.11"
+
+      - name: Download all wheels
+        uses: actions/download-artifact@v4
+        with:
+          name: wheels
+          path: wheels/
+
+      # pip picks the wheel whose tag this machine takes; the check is run
+      # from outside the checkout so that the installed package is imported.
+      - name: Install and check the wheel
+        run: |
+          python3 -m venv "$RUNNER_TEMP/venv"
+          "$RUNNER_TEMP/venv/bin/pip" install --no-index --find-links wheels/ coda-format
+          cd "$RUNNER_TEMP"
+          "$RUNNER_TEMP/venv/bin/python" -I "$GITHUB_WORKSPACE/scripts/smoke_wheel.py"
+
   # ── Publish to PyPI and create a GitHub Release ───────────────────────────────
   publish:
     name: Publish
-    needs: [prepare, build-wheels]
+    needs: [prepare, build-wheels, test-macos-wheels]
     runs-on: ubuntu-latest
     environment: release
     permissions:
