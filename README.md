@@ -1,31 +1,75 @@
-# <img height="80" align="right" src="https://raw.githubusercontent.com/zane-lang/logos/refs/heads/main/coda/coda.svg" /> <br> Coda
+# <img height="80" align="right" src="https://raw.githubusercontent.com/zane-lang/logos/refs/heads/main/coda/coda.svg" alt="Coda logo" /> <br> Coda
 
-<img width="700" alt="imprint_coda_20260403010920" src="images/coda-example.svg" />
+Coda is a small configuration format that is easy to read and easy to write by
+hand. It is the format of [Zane](https://github.com/zane-lang/zane)'s project
+files (`zane.coda`, `zane-lock.coda`), but nothing in it is specific to Zane:
+this repository is a standalone C++ library with bindings for Python, C,
+OCaml and Crystal.
 
-A compact configuration format designed to be easy to read and write. The name comes from music — a coda is the concluding passage that ties a composition together. A `.coda` file is the single source of truth for configuration.
+The name comes from music: a coda is the passage that ties a piece together.
 
-The above file in JSON:
+```coda
+# A project's settings
+name myproject
+version 1.0.0
 
-<img width="700" alt="imprint_coda_20260403010924" src="https://github.com/user-attachments/assets/fde8d7b5-3dd0-42ac-a640-980de4baf017" />
+compiler {
+	debug false
+	optimize true
+}
 
----
+targets [
+	x86_64-linux
+	aarch64-macos
+]
 
-## What is Coda?
+# One row per dependency, keyed by its first column
+deps [
+	key url version
+	plot github.com/zane-lang/plot 4.0.3
+	json github.com/zane-lang/json 1.2.0
+]
+```
 
-* Whitespace-sensitive, line-oriented.
-* Every leaf value is a string; interpretation is left to the consumer.
-* Quotes are optional unless a value contains whitespace or syntax characters (`{}[]"#`).
-* Comments are preserved and attach to the node that follows them.
+<details>
+<summary>The same file in JSON</summary>
 
-Coda has three structural constructs: **blocks** `{}`, **arrays** `[]`, and **tables** (inferred from array headers). For the full language specification, see [`docs/SPEC.md`](docs/SPEC.md).
+```json
+{
+  "name": "myproject",
+  "version": "1.0.0",
+  "compiler": { "debug": "false", "optimize": "true" },
+  "targets": ["x86_64-linux", "aarch64-macos"],
+  "deps": {
+    "plot": { "url": "github.com/zane-lang/plot", "version": "4.0.3" },
+    "json": { "url": "github.com/zane-lang/json", "version": "1.2.0" }
+  }
+}
+```
 
----
+</details>
 
-## Installation
+## The format in short
 
-**Python** — install the pre-built package from PyPI (includes the compiled native library):
+- One entry per line, `key value`, with no `=` or `:`. Indentation is for
+  the reader.
+- Three structures: **blocks** `{ }` hold named entries, **arrays** `[ ]` hold
+  a list, and an array whose first line is a header becomes a **table**. A
+  header starting with `key` makes a **keyed table**, whose rows are looked up
+  by their first column.
+- Every value is a string. Whether `4.0.3` is a version or `true` a boolean is
+  up to the program reading it.
+- Quotes are needed only around values with spaces or the characters `{}[]"#`.
+- Comments start with `#`, and are kept with the entry that follows them, so a
+  program can rewrite a file without losing them.
 
-```bash
+The full grammar is in [`docs/SPEC.md`](https://github.com/zane-lang/coda/blob/main/docs/SPEC.md).
+
+## Using it
+
+**Python**: the `coda-format` package on PyPI includes the compiled library.
+
+```sh
 pip install coda-format
 ```
 
@@ -33,90 +77,51 @@ pip install coda-format
 import coda
 
 with coda.Doc.parse_file("config.coda") as doc:
-    print(doc.root()["key"])
+    root = doc.root()
+    print(root["name"])                    # myproject
+    print(root["deps"]["plot"]["version"]) # 4.0.3
 ```
 
-**C++** — Coda is a **header-only library**. Use the generated single header `include/coda.hpp` from a release artifact, or generate it from a source checkout before copying/symlinking it into your project:
+**C++**: Coda is a header-only library. Generate its single header,
+`include/coda.hpp`, from a checkout with `devbox run -- just generate`, copy
+it into your project or add `include/` to your include path, and
+`#include "coda.hpp"`. [`examples/cpp.cpp`](https://github.com/zane-lang/coda/blob/main/examples/cpp.cpp) is a tour of the
+API.
 
-```bash
-devbox run -- just generate
-```
+**C and other languages**: each [release](https://github.com/zane-lang/coda/releases)
+carries the library with a C interface (`ffi/coda_ffi.h`), shared and static,
+for Linux, Windows and macOS on x86-64 and AArch64.
+`devbox run -- just build` builds the shared library for your machine, and
+`devbox run -- just cross-all` every library a release carries.
 
-```cpp
-#include "path/to/coda.hpp"
-```
+**OCaml** and **Crystal**: bindings over the same C library live in
+[`bindings/ocaml/`](https://github.com/zane-lang/coda/tree/main/bindings/ocaml/) and [`bindings/crystal/`](https://github.com/zane-lang/coda/tree/main/bindings/crystal/).
 
-**C FFI / other languages** — build the shared library with `just build` (see [Building & testing](#building--testing) below).
+Each binding has its own API reference:
 
-**OCaml** — the source tree includes Dune bindings in `bindings/ocaml/`, backed by the same C FFI implementation:
-
-```bash
-devbox run -- just test-ocaml
-devbox run -- just test-crystal
-```
-
-```ocaml
-open Coda
-
-match parse_file "config.coda" with
-| Ok doc ->
-    let root = root doc in
-    (match map_get doc root "key" with
-     | Some node -> print_endline (string_get doc node)
-     | None -> ())
-| Error e -> prerr_endline e.message
-```
-
-**Crystal** — the source tree includes Crystal bindings in `bindings/crystal/`, linked against a static build of the same C FFI:
-
-```bash
-devbox run -- just build-crystal    # build/crystal/libcoda_ffi.a
-```
-
-```crystal
-require "path/to/coda/bindings/crystal/coda"
-
-Coda::Doc.parse_file("config.coda") do |doc|
-  puts doc.root["key"]
-end
-```
-
----
-
-## API documentation
-
-| API | File |
+| API | Reference |
 |---|---|
-| C++ header (`include/coda.hpp`) | [`docs/API-CPP.md`](docs/API-CPP.md) |
-| Python bindings (`bindings/python/coda.py`) | [`docs/API-PYTHON.md`](docs/API-PYTHON.md) |
-| OCaml bindings (`bindings/ocaml/`) | [`docs/API-OCAML.md`](docs/API-OCAML.md) |
-| Crystal bindings (`bindings/crystal/`) | [`docs/API-CRYSTAL.md`](docs/API-CRYSTAL.md) |
-| C FFI (`ffi/coda_ffi.h`) | [`docs/API-C-FFI.md`](docs/API-C-FFI.md) |
+| C++ (`include/coda.hpp`) | [`docs/API-CPP.md`](https://github.com/zane-lang/coda/blob/main/docs/API-CPP.md) |
+| Python | [`docs/API-PYTHON.md`](https://github.com/zane-lang/coda/blob/main/docs/API-PYTHON.md) |
+| C (`ffi/coda_ffi.h`) | [`docs/API-C-FFI.md`](https://github.com/zane-lang/coda/blob/main/docs/API-C-FFI.md) |
+| OCaml | [`docs/API-OCAML.md`](https://github.com/zane-lang/coda/blob/main/docs/API-OCAML.md) |
+| Crystal | [`docs/API-CRYSTAL.md`](https://github.com/zane-lang/coda/blob/main/docs/API-CRYSTAL.md) |
 
----
+Editors: [`tree-sitter-coda`](https://github.com/zane-lang/tree-sitter-coda) is
+a Tree-sitter grammar for highlighting Coda files.
 
-## Building & testing
+## Building and testing
 
-This repo is built and tested inside a [Devbox](https://www.jetify.com/devbox)
-environment (which pins zig, just, python3, dune, ocaml, and crystal). `just` recipes are
-thin wrappers around `scripts/tasks.py`.
+The toolchain (Zig, `just`, Python, OCaml, Crystal) comes from
+[devbox](https://www.jetify.com/devbox):
 
-```bash
-devbox run -- just test         # run all tests (C++, C FFI, Python, OCaml, Crystal)
-devbox run -- just generate     # regenerate include/coda.hpp (requires quom)
-devbox run -- just build        # build host shared library (build/libcoda_ffi.so)
-devbox run -- just cross-all    # cross-compile for all supported targets
-devbox run -- just test-cpp
-devbox run -- just test-c-ffi
-devbox run -- just test-py-ffi
-devbox run -- just test-ocaml
+```sh
+devbox run -- just test         # every suite: C++, C, Python, OCaml, Crystal
+devbox run -- just build        # the shared library for this machine
+devbox run -- just cross-all    # the shared library for every supported target
 ```
 
-> `include/coda.hpp` is a generated single-header amalgamation (git-ignored);
-> the build recreates it on demand. The source of truth is `src/`.
->
-> All five language test suites are driven by a single catalog,
-> `tests/catalog/catalog.coda`. To add a test, edit that file. See
-> [`contributing/`](contributing/README.md).
-
-Cross-compiled FFI artifacts are placed under `dist/<target>/`.
+`just` with no arguments lists every recipe. All five test suites read their
+cases from one file, `tests/catalog/catalog.coda`.
+[`contributing/README.md`](https://github.com/zane-lang/coda/blob/main/contributing/README.md) describes the layout and
+standards; [`docs/RELEASING.md`](https://github.com/zane-lang/coda/blob/main/docs/RELEASING.md) how a release is made.
