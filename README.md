@@ -63,7 +63,7 @@ deps [
 - Comments start with `#`, and are kept with the entry that follows them, so a
   program can rewrite a file without losing them.
 
-The full grammar is in [`docs/SPEC.md`](docs/SPEC.md).
+The full grammar is in [`docs/SPEC.md`](https://github.com/zane-lang/coda/blob/main/docs/SPEC.md).
 
 ## Using it
 
@@ -83,27 +83,29 @@ with coda.Doc.parse_file("config.coda") as doc:
 ```
 
 **C++**: Coda is a header-only library. Generate its single header,
-`include/coda.hpp`, from a checkout with `devbox run -- just generate`, then
-`#include "coda.hpp"`. [`examples/cpp.cpp`](examples/cpp.cpp) is a tour of the
+`include/coda.hpp`, from a checkout with `devbox run -- just generate`, copy
+it into your project or add `include/` to your include path, and
+`#include "coda.hpp"`. [`examples/cpp.cpp`](https://github.com/zane-lang/coda/blob/main/examples/cpp.cpp) is a tour of the
 API.
 
 **C and other languages**: each [release](https://github.com/zane-lang/coda/releases)
 carries the library with a C interface (`ffi/coda_ffi.h`), shared and static,
-for Linux, Windows and macOS on x86-64 and AArch64. Build
-it yourself with `devbox run -- just build`.
+for Linux, Windows and macOS on x86-64 and AArch64.
+`devbox run -- just build` builds the shared library for your machine, and
+`devbox run -- just cross-all` every library a release carries.
 
 **OCaml** and **Crystal**: bindings over the same C library live in
-[`bindings/ocaml/`](bindings/ocaml/) and [`bindings/crystal/`](bindings/crystal/).
+[`bindings/ocaml/`](https://github.com/zane-lang/coda/tree/main/bindings/ocaml/) and [`bindings/crystal/`](https://github.com/zane-lang/coda/tree/main/bindings/crystal/).
 
 Each binding has its own API reference:
 
 | API | Reference |
 |---|---|
-| C++ (`include/coda.hpp`) | [`docs/API-CPP.md`](docs/API-CPP.md) |
-| Python | [`docs/API-PYTHON.md`](docs/API-PYTHON.md) |
-| C (`ffi/coda_ffi.h`) | [`docs/API-C-FFI.md`](docs/API-C-FFI.md) |
-| OCaml | [`docs/API-OCAML.md`](docs/API-OCAML.md) |
-| Crystal | [`docs/API-CRYSTAL.md`](docs/API-CRYSTAL.md) |
+| C++ (`include/coda.hpp`) | [`docs/API-CPP.md`](https://github.com/zane-lang/coda/blob/main/docs/API-CPP.md) |
+| Python | [`docs/API-PYTHON.md`](https://github.com/zane-lang/coda/blob/main/docs/API-PYTHON.md) |
+| C (`ffi/coda_ffi.h`) | [`docs/API-C-FFI.md`](https://github.com/zane-lang/coda/blob/main/docs/API-C-FFI.md) |
+| OCaml | [`docs/API-OCAML.md`](https://github.com/zane-lang/coda/blob/main/docs/API-OCAML.md) |
+| Crystal | [`docs/API-CRYSTAL.md`](https://github.com/zane-lang/coda/blob/main/docs/API-CRYSTAL.md) |
 
 Editors: [`tree-sitter-coda`](https://github.com/zane-lang/tree-sitter-coda) is
 a Tree-sitter grammar for highlighting Coda files.
@@ -121,5 +123,5 @@ devbox run -- just cross-all    # the shared library for every supported target
 
 `just` with no arguments lists every recipe. All five test suites read their
 cases from one file, `tests/catalog/catalog.coda`.
-[`contributing/README.md`](contributing/README.md) describes the layout and
-standards; [`docs/RELEASING.md`](docs/RELEASING.md) how a release is made.
+[`contributing/README.md`](https://github.com/zane-lang/coda/blob/main/contributing/README.md) describes the layout and
+standards; [`docs/RELEASING.md`](https://github.com/zane-lang/coda/blob/main/docs/RELEASING.md) how a release is made.
