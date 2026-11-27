@@ -19,7 +19,7 @@ ZIG_CXX = SCRIPTS / "zig-cxx"
 ZIG_AR = SCRIPTS / "zig-ar"
 
 # The public single-header API supports C++17. Compile every native target
-# at that language level so CI tests that support on every run.
+# at that language level so CI checks C++17 support on every run.
 TEST_FLAGS = ["-O0", "-g", "-std=c++17"]
 FLAGS = ["-O3", "-std=c++17"]
 FLAGS_CROSS = ["-O3", "-std=c++17"]
@@ -160,7 +160,7 @@ def build_crystal_archive() -> None:
 
 	Crystal links with the system C compiler (`$CC`, else `cc`), so the archive
 	is compiled by that compiler rather than zig: the C++ runtime it references
-	has to be the C++ runtime that linker supplies.
+	has to be the C++ runtime that the system linker supplies.
 	"""
 	ensure_generated()
 	ensure_dir(CRYSTAL_LIB_DIR)

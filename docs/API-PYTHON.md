@@ -90,7 +90,7 @@ with Doc.parse(text) as doc:
     deps = root["deps"].as_keyed_table()
 ```
 
-`as_string`, `as_block`, `as_array`, `as_table`, and `as_keyed_table` raise `TypeError` when the node has another type.
+`as_string`, `as_block`, `as_array`, `as_table`, and `as_keyed_table` raise `TypeError` when the node is of another node kind.
 
 String nodes also implement `str(node)` and comparison with Python strings.
 
