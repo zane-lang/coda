@@ -59,6 +59,15 @@ install libdir="/usr/local/lib":
 clean:
 	python3 scripts/tasks.py clean
 
-# Check prose with the prose-lint commit pinned in .github/workflows/prose.yml.
+# Check prose with the prose-lint commit and lockfile that CI pins in prose.yml.
 prose:
-	uvx --from git+https://github.com/zane-lang/prose-lint@107c5f768ea3ce4936d6fdff1b0f30fac9237615 prose-lint .
+	#!/usr/bin/env bash
+	set -euo pipefail
+	dir="${XDG_CACHE_HOME:-$HOME/.cache}/prose-lint/107c5f768ea3ce4936d6fdff1b0f30fac9237615"
+	if [ ! -d "$dir" ]; then
+		rm -rf "$dir.tmp"
+		git clone -q https://github.com/zane-lang/prose-lint "$dir.tmp"
+		git -C "$dir.tmp" checkout -q 107c5f768ea3ce4936d6fdff1b0f30fac9237615
+		mv "$dir.tmp" "$dir"
+	fi
+	uv run --frozen --project "$dir" prose-lint .
