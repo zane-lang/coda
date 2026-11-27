@@ -18,8 +18,8 @@ DIST_DIR = ROOT / "dist"
 ZIG_CXX = SCRIPTS / "zig-cxx"
 ZIG_AR = SCRIPTS / "zig-ar"
 
-# The public single-header API promises C++17 compatibility. Compile every
-# native target at that language level so the promise is continuously tested.
+# The public single-header API supports C++17. Compile every native target
+# at that language level so CI tests that support on every run.
 TEST_FLAGS = ["-O0", "-g", "-std=c++17"]
 FLAGS = ["-O3", "-std=c++17"]
 FLAGS_CROSS = ["-O3", "-std=c++17"]
@@ -160,7 +160,7 @@ def build_crystal_archive() -> None:
 
 	Crystal links with the system C compiler (`$CC`, else `cc`), so the archive
 	is compiled by that compiler rather than zig: the C++ runtime it references
-	has to be the one that linker supplies.
+	has to be the C++ runtime that linker supplies.
 	"""
 	ensure_generated()
 	ensure_dir(CRYSTAL_LIB_DIR)
@@ -262,8 +262,8 @@ def cross(target: str) -> None:
 		print(f"→ dist/{target}/libcoda_ffi.dll")
 	elif target.endswith("-macos"):
 		# libSystem holds the C library and threads, and Zig links libc++ in
-		# statically, so the library needs nothing else of the system. Its
-		# install name is the one a program that links it finds it by.
+		# statically, so the library needs nothing else of the system. A
+		# program that links the library finds it by this install name.
 		run_cmd(
 			str(ZIG_AR),
 			"rcs",

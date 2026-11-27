@@ -3,7 +3,7 @@
 
 Run it with the interpreter the wheel is installed in, from outside the
 repository, so `import coda` finds the installed package and not the source
-checkout. It fails unless the native library loaded is the one inside the
+checkout. It fails unless the loaded native library comes from the
 installed package, and unless that library parses and reads a document.
 """
 

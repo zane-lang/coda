@@ -272,7 +272,7 @@ The root block serializes without braces. Nested blocks include braces. Invalid 
 | `CODA_OK` | Success |
 | `CODA_ERR` | Invalid document/handle/ownership/schema or allocation failure |
 | `CODA_NOT_FOUND` | Missing map key, keyed row, or row column |
-| `CODA_BAD_KIND` | Operation does not apply to this node kind |
+| `CODA_BAD_KIND` | Operation does not apply to the node's type |
 | `CODA_OUT_OF_RANGE` | Index is outside the container |
 
 ## ABI version
