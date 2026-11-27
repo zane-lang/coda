@@ -63,6 +63,7 @@ clean:
 prose:
 	#!/usr/bin/env bash
 	set -euo pipefail
+	command -v uv >/dev/null || { echo 'just prose needs uv on PATH: https://docs.astral.sh/uv/' >&2; exit 1; }
 	dir="${XDG_CACHE_HOME:-$HOME/.cache}/prose-lint/107c5f768ea3ce4936d6fdff1b0f30fac9237615"
 	if [ ! -d "$dir" ]; then
 		rm -rf "$dir.tmp"
