@@ -85,7 +85,7 @@ module Coda
   end
 
   # :nodoc:
-  # Wraps a node handle in the class for its kind.
+  # Wraps a node handle in the class that matches `LibCoda.node_kind`.
   def self.wrap(doc : Doc, id : LibCoda::Node) : Node
     case LibCoda.node_kind(doc.to_unsafe, id)
     in .string?      then StringNode.wrap(doc, id)
