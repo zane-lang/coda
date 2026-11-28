@@ -1,4 +1,0 @@
-# prose-lint has no Crystal lexer; Crystal writes comments with a
-# leading #, which the hash lexer reads.
-[languages]
-".cr" = "hash"
