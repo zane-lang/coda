@@ -312,7 +312,7 @@ Calling `order()` on a block or keyed table reorders its entries in place, recur
 3. The sort is applied recursively — nested blocks and keyed tables are also reordered.
 4. Plain-table and array rows are **not** reordered (their order is part of their meaning).
 
-A weighted variant accepts a function `weight(key) → float`. Entries with a **higher** weight sort earlier; entries with equal weight sort alphabetically. The recursive behaviour is otherwise the same.
+A weighted variant accepts a function `weight(key) → float`. Entries with a **higher** weight sort earlier; entries with equal weight sort alphabetically. In every other respect the weighted variant recurses like the unweighted sort.
 
 ```coda
 # Before order()

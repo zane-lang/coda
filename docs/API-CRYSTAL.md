@@ -93,7 +93,7 @@ Coda::Doc.parse(text) do |doc|
 end
 ```
 
-`as_string`, `as_block`, `as_array`, `as_table`, and `as_keyed_table` raise `TypeCastError` for the wrong kind. Lookups return the node's own class, so `case node when Coda::Block` also works.
+`as_string`, `as_block`, `as_array`, `as_table`, and `as_keyed_table` raise `TypeCastError` when the node is of another node kind. Lookups return the node's own class, so `case node when Coda::Block` also works.
 
 String nodes also implement `to_s` and `==` with a `String`.
 
@@ -243,4 +243,4 @@ rescue error : Coda::ParseError
 end
 ```
 
-`Coda::ParseError` inherits from `Coda::Error`. Ownership, stale-handle, schema, and serialization failures raise `Coda::Error`; lookups raise `KeyError` or `IndexError`, and narrowing to the wrong kind raises `TypeCastError`.
+`Coda::ParseError` inherits from `Coda::Error`. Ownership, stale-handle, schema, and serialization failures raise `Coda::Error`; lookups raise `KeyError` or `IndexError`, and narrowing a node to another node kind raises `TypeCastError`.

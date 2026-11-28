@@ -68,8 +68,8 @@ let keyed_table_keys d node =
   let n = keyed_table_row_count d node in
   List.init n (fun i -> keyed_table_row_key_at d node i)
 
-(* "Length" of a node the way the catalog's array_len / array_block_count ops
-   mean it: arrays use array_len, but plain/keyed tables expose their length
+(* "Length" of a node as the catalog's array_len / array_block_count ops
+   define it: arrays use array_len, but plain/keyed tables expose their length
    via the table_* APIs (coda_array_len returns 0 for a TABLE node). *)
 let len_of d node =
   match node_kind d node with
